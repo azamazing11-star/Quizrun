@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>퀴즈런</title>
+    <style>
+      #pre-load-msg { 
+        position:fixed; top:0; left:0; width:100%; height:100%;
+        background:white; display:flex; flex-direction:column;
+        align-items:center; justify-content:center; z-index:99999;
+        font-family:sans-serif; font-size:1.2rem; color:#333;
+      }
+      #pre-load-msg.hidden { display:none; }
+      #pre-load-msg p { margin:10px; }
+      #pre-load-msg #err-detail { color:red; font-size:0.9rem; max-width:90vw; word-break:break-all; }
+    </style>
+  </head>
+  <body>
+    <div id="pre-load-msg">
+      <p>🔄 로딩 중... (Loading)</p>
+      <p id="err-detail"></p>
+    </div>
+    <div id="root"></div>
+    <script>
+      window.onerror = function(msg, src, line, col, err) {
+        var el = document.getElementById('err-detail');
+        if (el) el.textContent = '오류: ' + msg + ' (' + src + ':' + line + ')';
+      };
+      window.onunhandledrejection = function(e) {
+        var el = document.getElementById('err-detail');
+        if (el) el.textContent = '오류: ' + (e.reason || e);
+      };
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Hide the loading overlay once React has had a chance to run
+      window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+          var root = document.getElementById('root');
+          var msg = document.getElementById('pre-load-msg');
+          if (root && root.children.length > 0 && msg) {
+            msg.classList.add('hidden');
+          }
+        }, 3000);
+      });
+    </script>
+  </body>
+</html>

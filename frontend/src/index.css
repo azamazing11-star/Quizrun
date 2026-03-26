@@ -1,0 +1,618 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700;800&display=swap');
+
+:root {
+  --primary: #0ea5e9;
+  /* Vibrant Sky Blue */
+  --primary-hover: #0284c7;
+  --secondary: #fbbf24;
+  /* Warm Yellow accent */
+  --secondary-hover: #f59e0b;
+  --background: #ffffff;
+  /* Pure White */
+  --surface: #ffffff;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --header-bg: #ffffff;
+
+  /* Quiz Answer Colors */
+  --ans-red: #ef4444;
+  --ans-blue: #3b82f6;
+  --ans-yellow: #eab308;
+  --ans-green: #10b981;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--background);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  /* Playful subtle background pattern */
+  background-image: radial-gradient(rgba(100, 116, 139, 0.1) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 0;
+  background-color: #ffffff;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Base Layout Helpers */
+.page-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 2rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.full-screen-container {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+  padding: 0;
+  margin: 0;
+  background: var(--background);
+  /* Use white background instead of primary */
+}
+
+/* Split Layout (like the reference image) */
+.split-layout {
+  display: flex;
+  width: 100%;
+  max-width: 1600px;
+  /* Cap width on ultra-wide monitors */
+  margin: 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4rem;
+  gap: 4rem;
+}
+
+.split-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  color: var(--text);
+  /* Dark text for light background */
+}
+
+.split-right {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+
+/* Responsive Split Layout (for both real mobile and simulator) */
+@media (max-width: 800px) {
+  .split-layout {
+    flex-direction: column;
+    padding: 2rem;
+    gap: 2rem;
+  }
+
+  .split-left h1 {
+    font-size: 2.5rem !important;
+  }
+
+  .split-left p {
+    font-size: 1.1rem !important;
+    margin-bottom: 2rem !important;
+  }
+
+  .split-left .glass-button {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+}
+
+/* Simulator Mobile specific overrides */
+.simulator-mobile .split-layout {
+  flex-direction: column;
+  padding: 2rem 1.5rem;
+  gap: 2.5rem;
+}
+
+.simulator-mobile .split-left {
+  align-items: center;
+  text-align: center;
+}
+
+.simulator-mobile .split-left h1 {
+  font-size: 2.5rem !important;
+}
+
+.simulator-mobile .split-left p {
+  font-size: 1.1rem !important;
+  margin-bottom: 2rem !important;
+}
+
+.simulator-mobile .split-left>div {
+  justify-content: center;
+  width: 100%;
+}
+
+.simulator-mobile .split-left .glass-button {
+  width: 100%;
+}
+
+/* Device Simulator Wrapper */
+.simulator-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-height: 100vh;
+  transition: all 0.3s ease;
+}
+
+.simulator-mobile {
+  width: 390px;
+  height: 844px;
+  /* iPhone roughly */
+  border: 12px solid #1e293b;
+  border-radius: 40px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  position: relative;
+  background: var(--background);
+}
+
+.simulator-mobile::-webkit-scrollbar {
+  display: none;
+}
+
+.simulator-pc {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Toggle Switch Button (Floating) */
+.view-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: white;
+  color: var(--text);
+  border: 2px solid #e2e8f0;
+  padding: 12px 20px;
+  border-radius: 30px;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 9999;
+  transition: all 0.2s;
+}
+
+.view-toggle-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 15px 20px -3px rgba(0, 0, 0, 0.15);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Card System */
+.glass-panel {
+  background: var(--surface);
+  border-radius: 24px;
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.02);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card-container {
+  width: 100%;
+  max-width: 500px;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+/* Modern Button */
+.glass-button {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 14px 28px;
+  font-size: 1.15rem;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.glass-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4);
+  background: var(--primary-hover);
+}
+
+.glass-button.secondary {
+  background: var(--surface);
+  color: var(--primary);
+  border: 2px solid var(--primary);
+  box-shadow: none;
+}
+
+.glass-button.secondary:hover {
+  background: #f0f9ff;
+  color: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.glass-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Modern Inputs */
+.glass-input {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  color: var(--text);
+  padding: 16px 20px;
+  font-size: 1.2rem;
+  font-weight: 500;
+  font-family: 'Outfit', sans-serif;
+  border-radius: 16px;
+  transition: all 0.2s ease;
+  width: 100%;
+  outline: none;
+  text-align: center;
+}
+
+.glass-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.2);
+  background: #ffffff;
+}
+
+.glass-input::placeholder {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.gradient-text {
+  color: var(--primary);
+}
+
+/* Animations */
+@keyframes bounceSlow {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.logo-bounce {
+  animation: bounceSlow 3s ease-in-out infinite;
+}
+
+/* Answers Grid (Quiz / Trivia style) */
+.answers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  width: 100%;
+  margin-top: 2rem;
+}
+
+.answer-card {
+  aspect-ratio: 4/3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: white;
+  border: 4px solid transparent;
+  padding: 1rem;
+  text-align: center;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.15);
+  /* Game-like button press */
+}
+
+.answer-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.15);
+}
+
+.answer-card:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.15);
+}
+
+.answer-card:nth-child(1) {
+  background: var(--ans-red);
+}
+
+.answer-card:nth-child(2) {
+  background: var(--ans-blue);
+}
+
+.answer-card:nth-child(3) {
+  background: var(--ans-yellow);
+}
+
+.answer-card:nth-child(4) {
+  background: var(--ans-green);
+}
+
+/* Header Component */
+.header {
+  width: 100%;
+  padding: 1rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--header-bg);
+  border-bottom: 2px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+.header-logo {
+  height: 40px;
+  object-fit: contain;
+}
+
+.pin-display {
+  background: var(--primary);
+  padding: 8px 20px;
+  border-radius: 12px;
+  font-family: 'Outfit', monospace;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: white;
+  box-shadow: 0 4px 10px rgba(14, 165, 233, 0.3);
+}
+
+/* Host Specific elements */
+.player-chip {
+  background: white;
+  padding: 10px 20px;
+  border-radius: 30px;
+  font-weight: 700;
+  color: var(--text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1rem;
+}
+
+.demo-quiz-card {
+  background: white;
+  border: 2px solid #e2e8f0;
+  padding: 1.5rem;
+  border-radius: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.demo-quiz-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.15);
+  transform: translateY(-2px);
+}
+
+/* New Folder Layout Styles */
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 2rem;
+  justify-items: center;
+  padding: 2rem;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.folder-item {
+  position: relative;
+  width: 160px;
+  height: 120px;
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 0 16px 16px 16px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Folder Tab */
+.folder-item::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: -2px;
+  width: 60px;
+  height: 12px;
+  background: inherit;
+  border: 2px solid #e2e8f0;
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+}
+
+.folder-item:hover {
+  transform: scale(1.05) translateY(-5px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.folder-item .icon-wrapper {
+  margin-bottom: 0.25rem;
+  transition: transform 0.3s ease;
+  cursor: grab;
+}
+
+.folder-item .icon-wrapper:active {
+  cursor: grabbing;
+}
+
+.folder-item:hover .icon-wrapper {
+  transform: translateY(-5px) scale(1.1);
+}
+
+.folder-item h4 {
+  font-size: 1rem;
+  margin: 0;
+  color: var(--text);
+  width: 90%;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.folder-item p {
+  font-size: 0.8rem;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.folder-item.dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+  border: 2px dashed var(--primary);
+}
+
+.folder-item .folder-edit-input {
+  width: 80%;
+  font-size: 0.9rem;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  padding: 2px 4px;
+  text-align: center;
+  font-family: inherit;
+  outline: none;
+}
+
+/* Emoticon Positioning - Points/Clicks 'Code Join' on Home */
+.pondering-emoticon {
+  position: absolute;
+  top: 50%;
+  left: -100px;
+  /* Position it to the left of its container */
+  transform: translateY(-50%);
+  width: 160px;
+  height: auto;
+  z-index: 200;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 15px rgba(0, 0, 0, 0.05));
+  mix-blend-mode: multiply;
+}
+
+/* Responsive adjustments for folders */
+@media (max-width: 640px) {
+  .folder-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .folder-item {
+    width: 130px;
+    height: 100px;
+  }
+
+  .pondering-emoticon {
+    width: 100px;
+    left: -60px;
+  }
+
+  .header-logo,
+  .home-logo {
+    height: 80px;
+  }
+}
+
+/* Action Menu Layout (QuizDetail) */
+.action-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 400px;
+  margin-top: 2rem;
+}
+
+.action-menu-btn {
+  padding: 2rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  transition: all 0.2s;
+  box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.1);
+}
+
+.action-menu-btn:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.15);
+}
