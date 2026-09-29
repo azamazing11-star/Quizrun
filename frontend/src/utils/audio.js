@@ -1,11 +1,29 @@
 // Simple Web Audio API Synthesizer for Retro Game Sounds
 let _audioCtx = null;
-const getAudioCtx = () => {
+export const getAudioCtx = () => {
     if (!_audioCtx) {
-        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtxClass) {
+            _audioCtx = new AudioCtxClass();
+        }
+    }
+    if (_audioCtx && _audioCtx.state === 'suspended') {
+        _audioCtx.resume().catch(() => {});
     }
     return _audioCtx;
 };
+
+// Automatically unlock AudioContext on any user gesture
+if (typeof window !== 'undefined') {
+    const unlock = () => {
+        const ctx = getAudioCtx();
+        if (ctx && ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+        }
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+}
 
 export const playSound = (type) => {
     const audioCtx = getAudioCtx();
@@ -30,6 +48,17 @@ export const playSound = (type) => {
             gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
             oscillator.start(now);
             oscillator.stop(now + 0.1);
+            break;
+
+        case 'step':
+            // Fast retro tick sound for ladder movement
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(600, now);
+            oscillator.frequency.exponentialRampToValueAtTime(200, now + 0.04);
+            gainNode.gain.setValueAtTime(0.2, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.04);
+            oscillator.start(now);
+            oscillator.stop(now + 0.04);
             break;
 
         case 'correct':
@@ -92,6 +121,23 @@ export const playSound = (type) => {
                 osc.stop(t + note.d);
                 t += note.d + 0.05;
             });
+        case 'beep':
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, now);
+            gainNode.gain.setValueAtTime(0.3, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+            oscillator.start(now);
+            oscillator.stop(now + 0.15);
+            break;
+
+        case 'shutter':
+            oscillator.type = 'sawtooth';
+            oscillator.frequency.setValueAtTime(1400, now);
+            oscillator.frequency.exponentialRampToValueAtTime(300, now + 0.09);
+            gainNode.gain.setValueAtTime(0.5, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.09);
+            oscillator.start(now);
+            oscillator.stop(now + 0.09);
             break;
 
         default:

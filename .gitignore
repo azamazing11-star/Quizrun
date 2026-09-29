@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Cloudflared binaries
+backend/bin/*.exe
+backend/bin/cloudflared*
+
+# Production build (built on cloud or local)
+# Keep dist or let cloud build it
+# frontend/dist/
+
+# Uploaded user media
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs and temp files
+*.log
+backend/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+inspect_out.txt
+workspace_marker.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db

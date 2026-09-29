@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&family=Outfit:wght@400;500;700;800&display=swap');
 
 :root {
   --primary: #0ea5e9;
@@ -174,6 +174,7 @@ body {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   position: relative;
   background: var(--background);
+  transform: translate3d(0, 0, 0);
 }
 
 .simulator-mobile::-webkit-scrollbar {
@@ -191,20 +192,22 @@ body {
 .view-toggle-btn {
   position: fixed;
   bottom: 20px;
-  right: 20px;
+  left: 20px;
+  right: auto;
+  width: auto;
   background: white;
   color: var(--text);
   border: 2px solid #e2e8f0;
-  padding: 12px 20px;
-  border-radius: 30px;
+  padding: 8px 16px;
+  border-radius: 20px;
   font-family: 'Outfit', sans-serif;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.85rem;
   cursor: pointer;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-  display: flex;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   z-index: 9999;
   transition: all 0.2s;
 }

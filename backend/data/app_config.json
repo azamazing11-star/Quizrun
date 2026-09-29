@@ -13,6 +13,12 @@
       "bg": "#ffedd5"
     },
     {
+      "id": "law",
+      "title": "법",
+      "count": 8,
+      "bg": "#f9fafb"
+    },
+    {
       "id": "music",
       "title": "음악",
       "count": 10,
@@ -23,6 +29,12 @@
       "title": "상식 퀴즈",
       "count": 20,
       "bg": "#fffbeb"
+    },
+    {
+      "id": "travel",
+      "title": "오락",
+      "count": 8,
+      "bg": "#f0fdfa"
     },
     {
       "id": "psych",
@@ -50,7 +62,7 @@
     },
     {
       "id": "lit",
-      "title": "문학",
+      "title": "디지털 리터러시",
       "count": 11,
       "bg": "#f5f3ff"
     },
@@ -62,7 +74,7 @@
     },
     {
       "id": "tech",
-      "title": "기술",
+      "title": "매너",
       "count": 14,
       "bg": "#f1f5f9"
     },
@@ -77,12 +89,6 @@
       "title": "음식",
       "count": 12,
       "bg": "#fff7ed"
-    },
-    {
-      "id": "travel",
-      "title": "여행",
-      "count": 8,
-      "bg": "#f0fdfa"
     },
     {
       "id": "art",
@@ -115,22 +121,16 @@
       "bg": "#fffbeb"
     },
     {
-      "id": "law",
-      "title": "법",
-      "count": 8,
-      "bg": "#f9fafb"
-    },
-    {
       "id": "lang",
       "title": "언어",
       "count": 11,
       "bg": "#eef2ff"
     },
     {
-      "id": "geo",
-      "title": "지리",
-      "count": 9,
-      "bg": "#ecfeff"
+      "id": "ladder",
+      "title": "사다리",
+      "count": 1,
+      "bg": "#fff7ed"
     }
   ],
   "topic_humor": [
@@ -327,6 +327,692 @@
     {
       "id": "sub-23",
       "title": "동계 스포츠"
+    }
+  ],
+  "topic_tech": [
+    {
+      "id": "sub-1",
+      "title": "식사 매너"
+    },
+    {
+      "id": "sub-2",
+      "title": "비즈니스 매너"
+    },
+    {
+      "id": "sub-4",
+      "title": "명함 매너"
+    },
+    {
+      "id": "sub-19",
+      "title": "음주 매너"
+    },
+    {
+      "id": "sub-6",
+      "title": "경조사 매너"
+    },
+    {
+      "id": "sub-7",
+      "title": "온라인 매너"
+    },
+    {
+      "id": "sub-8",
+      "title": "전화 매너"
+    },
+    {
+      "id": "sub-9",
+      "title": "인사 매너"
+    },
+    {
+      "id": "sub-12",
+      "title": "메신저 매너"
+    },
+    {
+      "id": "sub-21",
+      "title": "이메일 매너"
+    },
+    {
+      "id": "sub-16",
+      "title": "데이트 매너"
+    },
+    {
+      "id": "sub-3",
+      "title": "대중교통 매너"
+    },
+    {
+      "id": "sub-5",
+      "title": "직장 생활 매너"
+    },
+    {
+      "id": "sub-10",
+      "title": "대화/소통 매너"
+    },
+    {
+      "id": "sub-11",
+      "title": "펫티켓"
+    },
+    {
+      "id": "sub-13",
+      "title": "공연/영화관 매너"
+    },
+    {
+      "id": "sub-14",
+      "title": "여행/현지 매너"
+    },
+    {
+      "id": "sub-15",
+      "title": "호텔/숙소 매너"
+    },
+    {
+      "id": "sub-17",
+      "title": "방문/초대 매너"
+    },
+    {
+      "id": "sub-18",
+      "title": "선물 교환 매너"
+    },
+    {
+      "id": "sub-20",
+      "title": "도서관/미술관 매너"
+    },
+    {
+      "id": "sub-22",
+      "title": "캠핑/야외 매너"
+    },
+    {
+      "id": "sub-23",
+      "title": "스포츠/골프 매너"
+    },
+    {
+      "id": "sub-24",
+      "title": "준비중"
+    }
+  ],
+  "topic_trivia": [
+    {
+      "id": "sub-23",
+      "title": "선취업후진학"
+    },
+    {
+      "id": "sub-1",
+      "title": "일반 상식"
+    },
+    {
+      "id": "sub-2",
+      "title": "수도 퀴즈"
+    },
+    {
+      "id": "sub-3",
+      "title": "인물 상식"
+    },
+    {
+      "id": "sub-4",
+      "title": "역사 사건"
+    },
+    {
+      "id": "sub-5",
+      "title": "스포츠 상식"
+    },
+    {
+      "id": "sub-6",
+      "title": "디지털 리터러시"
+    },
+    {
+      "id": "sub-7",
+      "title": "기업가"
+    },
+    {
+      "id": "sub-8",
+      "title": "속담 퀴즈"
+    },
+    {
+      "id": "sub-9",
+      "title": "경제 용어"
+    },
+    {
+      "id": "sub-10",
+      "title": "과학 원리"
+    },
+    {
+      "id": "sub-11",
+      "title": "영화 명대사"
+    },
+    {
+      "id": "sub-12",
+      "title": "가요 제목"
+    },
+    {
+      "id": "sub-13",
+      "title": "브랜드 로고"
+    },
+    {
+      "id": "sub-14",
+      "title": "철자 퀴즈"
+    },
+    {
+      "id": "sub-15",
+      "title": "수학 난제"
+    },
+    {
+      "id": "sub-16",
+      "title": "세계 최고 기록"
+    },
+    {
+      "id": "sub-17",
+      "title": "기네스북"
+    },
+    {
+      "id": "sub-18",
+      "title": "사자성어"
+    },
+    {
+      "id": "sub-19",
+      "title": "유명 슬로건"
+    },
+    {
+      "id": "sub-20",
+      "title": "동물 상식"
+    },
+    {
+      "id": "sub-21",
+      "title": "식물 상식"
+    },
+    {
+      "id": "sub-22",
+      "title": "미스터리"
+    },
+    {
+      "id": "sub-24",
+      "title": "준비중"
+    }
+  ],
+  "topic_law": [
+    {
+      "id": "sub-1",
+      "title": "성범죄"
+    },
+    {
+      "id": "sub-2",
+      "title": "디지털 성범죄"
+    },
+    {
+      "id": "sub-3",
+      "title": "헌법 정신"
+    },
+    {
+      "id": "sub-4",
+      "title": "노동법"
+    },
+    {
+      "id": "sub-5",
+      "title": "소비자 보호"
+    },
+    {
+      "id": "sub-6",
+      "title": "저작권법"
+    },
+    {
+      "id": "sub-7",
+      "title": "부동산법"
+    },
+    {
+      "id": "sub-8",
+      "title": "상속과 증여"
+    },
+    {
+      "id": "sub-9",
+      "title": "교통 법규"
+    },
+    {
+      "id": "sub-10",
+      "title": "국제법"
+    },
+    {
+      "id": "sub-11",
+      "title": "재판 절차"
+    },
+    {
+      "id": "sub-12",
+      "title": "변호사 가이드"
+    },
+    {
+      "id": "sub-13",
+      "title": "범죄 예방"
+    },
+    {
+      "id": "sub-14",
+      "title": "법철학"
+    },
+    {
+      "id": "sub-15",
+      "title": "법률 상식"
+    },
+    {
+      "id": "sub-16",
+      "title": "인권법"
+    },
+    {
+      "id": "sub-17",
+      "title": "행정법"
+    },
+    {
+      "id": "sub-18",
+      "title": "상법"
+    },
+    {
+      "id": "sub-19",
+      "title": "개인정보보호"
+    },
+    {
+      "id": "sub-20",
+      "title": "환경법"
+    },
+    {
+      "id": "sub-21",
+      "title": "조세법"
+    },
+    {
+      "id": "sub-22",
+      "title": "가족법"
+    },
+    {
+      "id": "sub-23",
+      "title": "소년법"
+    },
+    {
+      "id": "sub-24",
+      "title": "준비중"
+    }
+  ],
+  "topic_music": [
+    {
+      "id": "sub-1",
+      "title": "최신가요"
+    },
+    {
+      "id": "sub-2",
+      "title": "2010"
+    },
+    {
+      "id": "sub-3",
+      "title": "재즈"
+    },
+    {
+      "id": "sub-4",
+      "title": "록/메탈"
+    },
+    {
+      "id": "sub-5",
+      "title": "힙합"
+    },
+    {
+      "id": "sub-6",
+      "title": "악기 종류"
+    },
+    {
+      "id": "sub-7",
+      "title": "화성학"
+    },
+    {
+      "id": "sub-8",
+      "title": "작곡법"
+    },
+    {
+      "id": "sub-9",
+      "title": "음악사"
+    },
+    {
+      "id": "sub-10",
+      "title": "팝송 명곡"
+    },
+    {
+      "id": "sub-11",
+      "title": "뮤지컬"
+    },
+    {
+      "id": "sub-12",
+      "title": "국악"
+    },
+    {
+      "id": "sub-13",
+      "title": "밴드 음악"
+    },
+    {
+      "id": "sub-14",
+      "title": "오디션"
+    },
+    {
+      "id": "sub-15",
+      "title": "스트리밍"
+    },
+    {
+      "id": "sub-16",
+      "title": "LP 수집"
+    },
+    {
+      "id": "sub-17",
+      "title": "콘서트"
+    },
+    {
+      "id": "sub-18",
+      "title": "빌보드"
+    },
+    {
+      "id": "sub-19",
+      "title": "음원 차트"
+    },
+    {
+      "id": "sub-20",
+      "title": "보컬 트레이닝"
+    },
+    {
+      "id": "sub-21",
+      "title": "댄스 안무"
+    },
+    {
+      "id": "sub-22",
+      "title": "EDM"
+    },
+    {
+      "id": "sub-23",
+      "title": "인디 음악"
+    },
+    {
+      "id": "sub-24",
+      "title": "준비중"
+    }
+  ],
+  "topic_econ": [
+    {
+      "id": "sub-1",
+      "title": "종합경제_초급"
+    },
+    {
+      "id": "sub-2",
+      "title": "거시경제"
+    },
+    {
+      "id": "sub-3",
+      "title": "주식 시장"
+    },
+    {
+      "id": "sub-4",
+      "title": "부동산"
+    },
+    {
+      "id": "sub-5",
+      "title": "화폐의 역사"
+    },
+    {
+      "id": "sub-6",
+      "title": "인플레이션"
+    },
+    {
+      "id": "sub-7",
+      "title": "금리 정책"
+    },
+    {
+      "id": "sub-8",
+      "title": "재테크 기초"
+    },
+    {
+      "id": "sub-9",
+      "title": "세계 경제사"
+    },
+    {
+      "id": "sub-10",
+      "title": "기회비용"
+    },
+    {
+      "id": "sub-11",
+      "title": "수요와 공급"
+    },
+    {
+      "id": "sub-12",
+      "title": "암호화폐"
+    },
+    {
+      "id": "sub-13",
+      "title": "조세 제도"
+    },
+    {
+      "id": "sub-14",
+      "title": "노동 경제"
+    },
+    {
+      "id": "sub-15",
+      "title": "무역 전쟁"
+    },
+    {
+      "id": "sub-16",
+      "title": "경제 지표"
+    },
+    {
+      "id": "sub-17",
+      "title": "은행의 역할"
+    },
+    {
+      "id": "sub-18",
+      "title": "소비 트렌드"
+    },
+    {
+      "id": "sub-19",
+      "title": "마케팅"
+    },
+    {
+      "id": "sub-20",
+      "title": "연금 보험"
+    },
+    {
+      "id": "sub-21",
+      "title": "게임 이론"
+    },
+    {
+      "id": "sub-22",
+      "title": "행동 경제학"
+    },
+    {
+      "id": "sub-23",
+      "title": "창업론"
+    },
+    {
+      "id": "sub-24",
+      "title": "준비중"
+    }
+  ],
+  "topic_travel": [
+    {
+      "id": "sub-1",
+      "title": "인물"
+    },
+    {
+      "id": "sub-2",
+      "title": "스포츠"
+    },
+    {
+      "id": "sub-3",
+      "title": "드라마"
+    },
+    {
+      "id": "sub-4",
+      "title": "호텔/리조트"
+    },
+    {
+      "id": "sub-5",
+      "title": "캠핑/차박"
+    },
+    {
+      "id": "sub-6",
+      "title": "항공 상식"
+    },
+    {
+      "id": "sub-7",
+      "title": "축제 투어"
+    },
+    {
+      "id": "sub-8",
+      "title": "맛집 투어"
+    },
+    {
+      "id": "sub-9",
+      "title": "오지 탐험"
+    },
+    {
+      "id": "sub-10",
+      "title": "크루즈"
+    },
+    {
+      "id": "sub-11",
+      "title": "기차 여행"
+    },
+    {
+      "id": "sub-12",
+      "title": "비자 정보"
+    },
+    {
+      "id": "sub-13",
+      "title": "환율 계산"
+    },
+    {
+      "id": "sub-14",
+      "title": "여행 에세이"
+    },
+    {
+      "id": "sub-15",
+      "title": "카메라 명소"
+    },
+    {
+      "id": "sub-16",
+      "title": "현지 매너"
+    },
+    {
+      "id": "sub-17",
+      "title": "테마 파크"
+    },
+    {
+      "id": "sub-18",
+      "title": "쇼핑 리스트"
+    },
+    {
+      "id": "sub-19",
+      "title": "안전 여행"
+    },
+    {
+      "id": "sub-20",
+      "title": "섬 여행"
+    },
+    {
+      "id": "sub-21",
+      "title": "산행 가이드"
+    },
+    {
+      "id": "sub-22",
+      "title": "온천/스파"
+    },
+    {
+      "id": "sub-23",
+      "title": "둘레길"
+    },
+    {
+      "id": "sub-24",
+      "title": "준비중"
+    }
+  ],
+  "topic_lit": [
+    {
+      "id": "sub-1",
+      "title": "철자법"
+    },
+    {
+      "id": "sub-2",
+      "title": "현대 시"
+    },
+    {
+      "id": "sub-3",
+      "title": "셰익스피어"
+    },
+    {
+      "id": "sub-4",
+      "title": "추리 소설"
+    },
+    {
+      "id": "sub-5",
+      "title": "판타지"
+    },
+    {
+      "id": "sub-6",
+      "title": "에세이"
+    },
+    {
+      "id": "sub-7",
+      "title": "문학 비평"
+    },
+    {
+      "id": "sub-8",
+      "title": "노벨상"
+    },
+    {
+      "id": "sub-9",
+      "title": "그리스 신화"
+    },
+    {
+      "id": "sub-10",
+      "title": "동화와 전설"
+    },
+    {
+      "id": "sub-11",
+      "title": "희곡"
+    },
+    {
+      "id": "sub-12",
+      "title": "수필"
+    },
+    {
+      "id": "sub-13",
+      "title": "문학사"
+    },
+    {
+      "id": "sub-14",
+      "title": "한국 문학"
+    },
+    {
+      "id": "sub-15",
+      "title": "세계 명작"
+    },
+    {
+      "id": "sub-16",
+      "title": "등단 가이드"
+    },
+    {
+      "id": "sub-17",
+      "title": "시 창작"
+    },
+    {
+      "id": "sub-18",
+      "title": "소설 작법"
+    },
+    {
+      "id": "sub-19",
+      "title": "웹소설"
+    },
+    {
+      "id": "sub-20",
+      "title": "하이틴"
+    },
+    {
+      "id": "sub-21",
+      "title": "무협"
+    },
+    {
+      "id": "sub-22",
+      "title": "SF 문학"
+    },
+    {
+      "id": "sub-23",
+      "title": "평전"
+    },
+    {
+      "id": "sub-24",
+      "title": "준비중"
     }
   ]
 }
