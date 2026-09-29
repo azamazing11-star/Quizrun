@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGlobalSession } from '../context/GlobalSessionContext';
 import QRCode from 'react-qr-code';
+import { getParticipantJoinUrl } from '../utils/url';
 import { PlayCircle, MonitorPlay, Zap, BookOpen, FlaskConical, Globe, Trophy, Music, Film, Coffee, Map, Palette, Database, Cpu, Leaf, Moon, Microscope, Beaker, Atom, Compass, Book, Scale, Languages, Landmark, Edit3, Folder, Smile, ArrowLeft, Scissors, Hammer, Crown, Copy, CheckCircle2, RefreshCw, Monitor, Users, Sparkles } from 'lucide-react';
 
 const ICON_MAP = {
@@ -408,9 +409,7 @@ export default function Home({ socket }) {
     const [isRestartingTunnel, setIsRestartingTunnel] = useState(false);
     const [isTunnelVerifying, setIsTunnelVerifying] = useState(false);
 
-    const joinUrl = publicUrl 
-        ? `${publicUrl}/participant?pin=${onlinePin}`
-        : `http://${serverIp || window.location.hostname}:5173/participant?pin=${onlinePin}`;
+    const joinUrl = getParticipantJoinUrl(onlinePin, publicUrl, serverIp);
 
     const handleCopyUrl = () => {
         if (!onlinePin) return;
@@ -690,7 +689,7 @@ export default function Home({ socket }) {
                                 </button>
                             </div>
 
-                            {publicUrl ? (
+                            {publicUrl || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('192.168.') && !window.location.hostname.startsWith('10.')) ? (
                                 <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '5px 8px', borderRadius: '8px', marginBottom: '8px', width: '100%' }}>
                                     🚀 5G / LTE / Wi-Fi 어디서나 접속 가능
                                 </div>

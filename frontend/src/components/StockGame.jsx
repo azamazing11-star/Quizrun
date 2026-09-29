@@ -10,6 +10,7 @@ import {
 import QRCode from 'react-qr-code';
 import Confetti from 'react-confetti';
 import { playSound } from '../utils/audio';
+import { getParticipantJoinUrl } from '../utils/url';
 import { useGlobalSession } from '../context/GlobalSessionContext';
 import {
     MARKET_SECTORS_DIRECTORY,
@@ -992,7 +993,7 @@ export function StockGameScreenView({
     const [selectedSector, setSelectedSector] = useState(null);
     const [showScreenQrModal, setShowScreenQrModal] = useState(false);
 
-    const targetJoinUrl = publicUrl ? `${publicUrl}/participant?pin=${pin}` : `http://${serverIp || (typeof window !== 'undefined' ? window.location.hostname : '')}:5173/participant?pin=${pin}`;
+    const targetJoinUrl = getParticipantJoinUrl(pin, publicUrl, serverIp);
 
     // A~J 10개 종목에 1:1 매칭되는 당해 연도 핵심 뉴스 10선
     const yearNewsList = useMemo(() => generateStockNewsForYear(year, stocks), [year, stocks]);

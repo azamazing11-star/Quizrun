@@ -639,7 +639,7 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
                                     </div>
                                 </div>
 
-                                {publicUrl ? (
+                                {publicUrl || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('192.168.') && !window.location.hostname.startsWith('10.')) ? (
                                     <div style={{ fontSize: '0.72rem', color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '8px', fontWeight: '800', textAlign: 'center' }}>
                                         🚀 LTE / 5G / 외부 Wi-Fi 접속 가능
                                     </div>
