@@ -102,10 +102,13 @@ export default function Home({ socket }) {
         gameMode, 
         setGameMode, 
         onlinePin, 
+        setOnlinePin,
         serverIp, 
+        setServerIp,
         publicUrl, 
         setPublicUrl,
-        onlineParticipants = [] 
+        onlineParticipants = [],
+        setOnlineParticipants
     } = useGlobalSession();
     const [isCopied, setIsCopied] = useState(false);
     const [currentMode, setCurrentMode] = useState('intro'); // 'intro', 'quizrun', 'gamerun'
@@ -411,6 +414,44 @@ export default function Home({ socket }) {
 
     const joinUrl = getParticipantJoinUrl(onlinePin, publicUrl, serverIp);
 
+    const createOnlineRoom = (forceNew = false) => {
+        if (isSubScreen || !socket) return;
+        const requestedPin = forceNew ? undefined : (onlinePin || undefined);
+        socket.emit('host:createRoom', { pin: requestedPin, mode: 'normal' }, (res) => {
+            if (res && res.success) {
+                setOnlinePin(res.pin);
+                if (res.ip) setServerIp(res.ip);
+                if (res.publicUrl) setPublicUrl(res.publicUrl);
+                if (res.participants && Array.isArray(res.participants)) {
+                    setOnlineParticipants(res.participants);
+                }
+            }
+        });
+    };
+
+    useEffect(() => {
+        if (isSubScreen || !socket) return;
+        if (!onlinePin) {
+            if (socket.connected) {
+                createOnlineRoom(false);
+            }
+            const onConnect = () => createOnlineRoom(false);
+            socket.on('connect', onConnect);
+
+            // Active interval fallback: try every 1.5s until pin is created
+            const timer = setInterval(() => {
+                if (socket.connected && !onlinePin) {
+                    createOnlineRoom(false);
+                }
+            }, 1500);
+
+            return () => {
+                socket.off('connect', onConnect);
+                clearInterval(timer);
+            };
+        }
+    }, [isSubScreen, socket, onlinePin]);
+
     const handleCopyUrl = () => {
         if (!onlinePin) return;
         navigator.clipboard.writeText(joinUrl);
@@ -418,13 +459,14 @@ export default function Home({ socket }) {
         setTimeout(() => setIsCopied(false), 2000);
     };
 
-    const handleRestartTunnel = () => {
+    const handleRefreshPin = () => {
         if (socket) {
             setIsRestartingTunnel(true);
-            socket.emit('tunnel:restart');
-            setTimeout(() => setIsRestartingTunnel(false), 6000);
+            createOnlineRoom(true);
+            setTimeout(() => setIsRestartingTunnel(false), 800);
         }
     };
+
 
     // --- INTRO FIGHTING VS SCREEN VIEW ---
     if (currentMode === 'intro') {
@@ -639,8 +681,13 @@ export default function Home({ socket }) {
                                     </div>
                                 )
                             ) : (
-                                <div style={{ height: '135px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <div 
+                                    onClick={handleRefreshPin}
+                                    style={{ height: '135px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                    title="클릭하여 PIN 발급"
+                                >
                                     <RefreshCw size={24} className="animate-spin" color="var(--primary)" />
+                                    <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '8px', fontWeight: 'bold' }}>클릭하여 PIN 발급</span>
                                 </div>
                             )}
 
@@ -667,9 +714,9 @@ export default function Home({ socket }) {
                                     {isCopied ? '복사 완료!' : '주소 복사'}
                                 </button>
                                 <button
-                                    onClick={handleRestartTunnel}
+                                    onClick={handleRefreshPin}
                                     disabled={isRestartingTunnel}
-                                    title="인터넷 터널 새로고침"
+                                    title="새 방 PIN 및 QR 새로고침"
                                     style={{
                                         padding: '6px 8px',
                                         borderRadius: '8px',
