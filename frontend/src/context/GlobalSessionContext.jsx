@@ -3,7 +3,9 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 const GlobalSessionContext = createContext();
 
 export function GlobalSessionProvider({ children }) {
-    const [gameMode, setGameMode] = useState(() => {
+    const tabIdRef = useRef(Math.random().toString(36).substring(2, 9) + Date.now().toString(36));
+
+    const [gameMode, setGameModeState] = useState(() => {
         const saved = localStorage.getItem('quizrun_global_session');
         if (saved) {
             try {
@@ -107,22 +109,23 @@ export function GlobalSessionProvider({ children }) {
         };
     }, [gameMode, participantCount, scores, onlinePin, serverIp, publicUrl, onlineParticipants]);
 
-    const broadcastSession = (customPayload = {}) => {
+    const broadcastSession = (partialPayload = {}) => {
+        sessionRef.current = { ...sessionRef.current, ...partialPayload };
         try {
             const bc = new BroadcastChannel('quizrun_session_sync');
             bc.postMessage({
+                senderId: tabIdRef.current,
                 type: 'SESSION_UPDATE',
-                payload: {
-                    gameMode: sessionRef.current.gameMode,
-                    onlinePin: sessionRef.current.onlinePin,
-                    serverIp: sessionRef.current.serverIp,
-                    publicUrl: sessionRef.current.publicUrl,
-                    onlineParticipants: sessionRef.current.onlineParticipants,
-                    ...customPayload
-                }
+                payload: partialPayload
             });
             setTimeout(() => bc.close(), 300);
         } catch (e) {}
+    };
+
+    const setGameMode = (mode) => {
+        const val = mode || 'online';
+        setGameModeState(val);
+        broadcastSession({ gameMode: val });
     };
 
     const setOnlinePin = (pin) => {
@@ -179,6 +182,29 @@ export function GlobalSessionProvider({ children }) {
         broadcastSession({ onlineParticipants: val });
     };
 
+    const isCreatingRoomRef = useRef(false);
+
+    const createOnlineRoom = (socket, forceNew = false) => {
+        if (isSubScreen || !socket) return;
+        if (isCreatingRoomRef.current) return;
+
+        const currentPin = sessionRef.current.onlinePin;
+        const requestedPin = forceNew ? undefined : (currentPin || undefined);
+
+        isCreatingRoomRef.current = true;
+        socket.emit('host:createRoom', { pin: requestedPin, mode: 'normal' }, (res) => {
+            isCreatingRoomRef.current = false;
+            if (res && res.success) {
+                setOnlinePin(res.pin);
+                if (res.ip) setServerIp(res.ip);
+                if (res.publicUrl) setPublicUrl(res.publicUrl);
+                if (res.participants && Array.isArray(res.participants)) {
+                    setOnlineParticipants(res.participants);
+                }
+            }
+        });
+    };
+
     // BroadcastChannel synchronization between Main Screen and Sub-Monitor
     useEffect(() => {
         let sessionBc;
@@ -186,11 +212,13 @@ export function GlobalSessionProvider({ children }) {
             sessionBc = new BroadcastChannel('quizrun_session_sync');
 
             const handleMsg = (e) => {
-                const { type, payload } = e.data || {};
+                const { senderId, type, payload } = e.data || {};
+                if (senderId === tabIdRef.current) return;
 
                 if (type === 'REQUEST_SESSION' && !isSubScreen) {
                     // Leader responds with current full session
                     sessionBc.postMessage({
+                        senderId: tabIdRef.current,
                         type: 'SESSION_UPDATE',
                         payload: {
                             gameMode: sessionRef.current.gameMode,
@@ -201,12 +229,27 @@ export function GlobalSessionProvider({ children }) {
                         }
                     });
                 } else if (type === 'SESSION_UPDATE' && payload) {
-                    // Update state from peer
-                    if (payload.onlinePin !== undefined) setOnlinePinState(payload.onlinePin);
-                    if (payload.serverIp !== undefined) setServerIpState(payload.serverIp);
-                    if (payload.publicUrl !== undefined) setPublicUrlState(payload.publicUrl);
-                    if (payload.onlineParticipants !== undefined) setOnlineParticipantsState(payload.onlineParticipants);
-                    if (payload.gameMode !== undefined) setGameMode(payload.gameMode);
+                    // Update state only if changed
+                    if (payload.onlinePin !== undefined && payload.onlinePin !== sessionRef.current.onlinePin) {
+                        setOnlinePinState(payload.onlinePin);
+                        sessionRef.current.onlinePin = payload.onlinePin;
+                    }
+                    if (payload.serverIp !== undefined && payload.serverIp !== sessionRef.current.serverIp) {
+                        setServerIpState(payload.serverIp);
+                        sessionRef.current.serverIp = payload.serverIp;
+                    }
+                    if (payload.publicUrl !== undefined && payload.publicUrl !== sessionRef.current.publicUrl) {
+                        setPublicUrlState(payload.publicUrl);
+                        sessionRef.current.publicUrl = payload.publicUrl;
+                    }
+                    if (payload.onlineParticipants !== undefined) {
+                        setOnlineParticipantsState(payload.onlineParticipants);
+                        sessionRef.current.onlineParticipants = payload.onlineParticipants;
+                    }
+                    if (payload.gameMode !== undefined && payload.gameMode !== sessionRef.current.gameMode) {
+                        setGameModeState(payload.gameMode);
+                        sessionRef.current.gameMode = payload.gameMode;
+                    }
                 }
             };
 
@@ -214,7 +257,7 @@ export function GlobalSessionProvider({ children }) {
 
             // If SubScreen mounts, proactively ask the Main Screen for the active session
             if (isSubScreen) {
-                sessionBc.postMessage({ type: 'REQUEST_SESSION' });
+                sessionBc.postMessage({ senderId: tabIdRef.current, type: 'REQUEST_SESSION' });
             }
 
             return () => {
@@ -353,7 +396,8 @@ export function GlobalSessionProvider({ children }) {
             cfUrl,
             setCfUrl,
             onlineParticipants,
-            setOnlineParticipants
+            setOnlineParticipants,
+            createOnlineRoom
         }}>
             {children}
         </GlobalSessionContext.Provider>

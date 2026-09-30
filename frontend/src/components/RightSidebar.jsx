@@ -41,7 +41,8 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
         publicUrl,
         setPublicUrl,
         onlineParticipants,
-        setOnlineParticipants
+        setOnlineParticipants,
+        createOnlineRoom
     } = useGlobalSession();
 
     const [editingNum, setEditingNum] = useState(null);
@@ -70,64 +71,37 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
         )
     );
 
-    const createOnlineRoom = (forceNew = false) => {
-        if (isSubScreen || !socket) return;
-        const requestedPin = forceNew ? undefined : (onlinePin || undefined);
-        socket.emit('host:createRoom', { pin: requestedPin, mode: 'normal' }, (res) => {
-            if (res && res.success) {
-                setOnlinePin(res.pin);
-                if (res.ip) setServerIp(res.ip);
-                if (res.publicUrl) setPublicUrl(res.publicUrl);
-                if (res.participants && Array.isArray(res.participants)) {
-                    setOnlineParticipants(res.participants);
-                }
-            }
-        });
-    };
-
     useEffect(() => {
-        if (isSubScreen) return;
-        if (gameMode === 'online' && socket) {
-            if (socket.connected) {
-                createOnlineRoom(false);
+        if (isSubScreen || !socket) return;
+
+        const handleParticipantsUpdate = (participants) => {
+            if (Array.isArray(participants)) {
+                setOnlineParticipants(participants);
             }
+        };
 
-            const handleSocketConnect = () => {
-                createOnlineRoom(false);
-            };
+        const handleStateUpdate = (data) => {
+            if (data && data.participants && Array.isArray(data.participants)) {
+                setOnlineParticipants(data.participants);
+            }
+        };
 
-            socket.on('connect', handleSocketConnect);
+        const handleTunnelUpdate = (data) => {
+            if (data && data.publicUrl) {
+                setPublicUrl(data.publicUrl);
+            }
+        };
 
-            const handleParticipantsUpdate = (participants) => {
-                if (Array.isArray(participants)) {
-                    setOnlineParticipants(participants);
-                }
-            };
+        socket.on('host:participantsUpdated', handleParticipantsUpdate);
+        socket.on('room:stateUpdate', handleStateUpdate);
+        socket.on('tunnel:updated', handleTunnelUpdate);
 
-            const handleStateUpdate = (data) => {
-                if (data && data.participants && Array.isArray(data.participants)) {
-                    setOnlineParticipants(data.participants);
-                }
-            };
-
-            const handleTunnelUpdate = (data) => {
-                if (data && data.publicUrl) {
-                    setPublicUrl(data.publicUrl);
-                }
-            };
-
-            socket.on('host:participantsUpdated', handleParticipantsUpdate);
-            socket.on('room:stateUpdate', handleStateUpdate);
-            socket.on('tunnel:updated', handleTunnelUpdate);
-
-            return () => {
-                socket.off('connect', handleSocketConnect);
-                socket.off('host:participantsUpdated', handleParticipantsUpdate);
-                socket.off('room:stateUpdate', handleStateUpdate);
-                socket.off('tunnel:updated', handleTunnelUpdate);
-            };
-        }
-    }, [gameMode, socket]);
+        return () => {
+            socket.off('host:participantsUpdated', handleParticipantsUpdate);
+            socket.off('room:stateUpdate', handleStateUpdate);
+            socket.off('tunnel:updated', handleTunnelUpdate);
+        };
+    }, [isSubScreen, socket]);
 
     const joinUrl = getParticipantJoinUrl(onlinePin, publicUrl, serverIp);
 
@@ -629,7 +603,7 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
                                         <button 
                                             onClick={() => {
                                                 if (window.confirm("새 방을 생성하시겠습니까? 새로운 PIN 번호가 발급되며 기존 참여자는 재접속해야 합니다.")) {
-                                                    createOnlineRoom(true);
+                                                    createOnlineRoom(socket, true);
                                                 }
                                             }}
                                             title="새 방 PIN 발급"

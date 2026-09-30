@@ -108,7 +108,8 @@ export default function Home({ socket }) {
         publicUrl, 
         setPublicUrl,
         onlineParticipants = [],
-        setOnlineParticipants
+        setOnlineParticipants,
+        createOnlineRoom
     } = useGlobalSession();
     const [isCopied, setIsCopied] = useState(false);
     const [currentMode, setCurrentMode] = useState('intro'); // 'intro', 'quizrun', 'gamerun'
@@ -414,43 +415,20 @@ export default function Home({ socket }) {
 
     const joinUrl = getParticipantJoinUrl(onlinePin, publicUrl, serverIp);
 
-    const createOnlineRoom = (forceNew = false) => {
-        if (isSubScreen || !socket) return;
-        const requestedPin = forceNew ? undefined : (onlinePin || undefined);
-        socket.emit('host:createRoom', { pin: requestedPin, mode: 'normal' }, (res) => {
-            if (res && res.success) {
-                setOnlinePin(res.pin);
-                if (res.ip) setServerIp(res.ip);
-                if (res.publicUrl) setPublicUrl(res.publicUrl);
-                if (res.participants && Array.isArray(res.participants)) {
-                    setOnlineParticipants(res.participants);
-                }
-            }
-        });
-    };
-
     useEffect(() => {
         if (isSubScreen || !socket) return;
-        if (!onlinePin) {
+        if (gameMode === 'online' && !onlinePin) {
             if (socket.connected) {
-                createOnlineRoom(false);
+                createOnlineRoom(socket, false);
             }
-            const onConnect = () => createOnlineRoom(false);
+            const onConnect = () => createOnlineRoom(socket, false);
             socket.on('connect', onConnect);
-
-            // Active interval fallback: try every 1.5s until pin is created
-            const timer = setInterval(() => {
-                if (socket.connected && !onlinePin) {
-                    createOnlineRoom(false);
-                }
-            }, 1500);
 
             return () => {
                 socket.off('connect', onConnect);
-                clearInterval(timer);
             };
         }
-    }, [isSubScreen, socket, onlinePin]);
+    }, [isSubScreen, socket, gameMode, onlinePin, createOnlineRoom]);
 
     const handleCopyUrl = () => {
         if (!onlinePin) return;
@@ -462,7 +440,7 @@ export default function Home({ socket }) {
     const handleRefreshPin = () => {
         if (socket) {
             setIsRestartingTunnel(true);
-            createOnlineRoom(true);
+            createOnlineRoom(socket, true);
             setTimeout(() => setIsRestartingTunnel(false), 800);
         }
     };
