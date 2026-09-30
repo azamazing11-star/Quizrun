@@ -26,6 +26,21 @@ export function GlobalSessionProvider({ children }) {
     });
 
     const [scores, setScores] = useState(() => {
+        // If this is a newly opened browser window/tab, always start scores fresh at 0
+        const isFreshStartup = typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('quizrun_app_session');
+        if (isFreshStartup && typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('quizrun_app_session', 'active');
+            const saved = localStorage.getItem('quizrun_global_session');
+            let initialCount = 0;
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    initialCount = parsed.participantCount ?? 0;
+                } catch (e) {}
+            }
+            return Array.from({ length: initialCount }, (_, i) => ({ num: i + 1, score: 0 }));
+        }
+
         const saved = localStorage.getItem('quizrun_global_session');
         if (saved) {
             try {

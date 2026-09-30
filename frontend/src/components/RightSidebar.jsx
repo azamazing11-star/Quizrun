@@ -19,7 +19,8 @@ import {
     QrCode as QrIcon,
     TrendingUp,
     DollarSign,
-    ArrowLeft
+    ArrowLeft,
+    RotateCcw
 } from 'lucide-react';
 
 export default function RightSidebar({ socket, isStockGame = false, onExitToLobby, onEndGame }) {
@@ -50,6 +51,15 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
     const [isCopied, setIsCopied] = useState(false);
     const [showMiniQr, setShowMiniQr] = useState(false);
     const [bulkAmount, setBulkAmount] = useState(100000000);
+
+    const handleResetAllScores = () => {
+        if (window.confirm("모든 참가자의 점수를 0점으로 초기화하시겠습니까?")) {
+            resetScores();
+            if (socket && onlinePin) {
+                socket.emit('host:resetScores', { pin: onlinePin });
+            }
+        }
+    };
 
     // Detect if this window is the Sub-Monitor screen
     const isSubScreen = Boolean(
@@ -925,6 +935,28 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
                                             <Sparkles size={14} color="var(--secondary-hover)" /> 
                                             {isStockGame ? '실시간 누적 금액' : '실시간 누적 점수판'}
                                         </span>
+                                        <button
+                                            onClick={handleResetAllScores}
+                                            style={{
+                                                padding: '3px 8px',
+                                                fontSize: '0.72rem',
+                                                fontWeight: '800',
+                                                color: '#ef4444',
+                                                background: '#fef2f2',
+                                                border: '1px solid #fecaca',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '3px',
+                                                boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            title="모든 참가자의 점수를 0점으로 초기화합니다"
+                                        >
+                                            <RotateCcw size={11} />
+                                            0점 초기화
+                                        </button>
                                     </div>
 
                                     <div style={{
