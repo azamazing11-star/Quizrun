@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useGlobalSession } from '../context/GlobalSessionContext';
 import QRCode from 'react-qr-code';
 import { getParticipantJoinUrl } from '../utils/url';
-import { PlayCircle, MonitorPlay, Zap, BookOpen, FlaskConical, Globe, Trophy, Music, Film, Coffee, Map, Palette, Database, Cpu, Leaf, Moon, Microscope, Beaker, Atom, Compass, Book, Scale, Languages, Landmark, Edit3, Folder, Smile, ArrowLeft, Scissors, Hammer, Crown, Copy, CheckCircle2, RefreshCw, Monitor, Users, Sparkles } from 'lucide-react';
+import { PlayCircle, MonitorPlay, Zap, BookOpen, FlaskConical, Globe, Trophy, Music, Film, Coffee, Map, Palette, Database, Cpu, Leaf, Moon, Microscope, Beaker, Atom, Compass, Book, Scale, Languages, Landmark, Edit3, Folder, Smile, ArrowLeft, Scissors, Hammer, Crown, Copy, CheckCircle2, RefreshCw, Monitor, Users, Sparkles, Cloud } from 'lucide-react';
+import GitSyncModal from '../components/GitSyncModal';
 
 const ICON_MAP = {
     '경제': <Landmark size={24} color="#059669" />,
@@ -112,6 +113,7 @@ export default function Home({ socket }) {
         createOnlineRoom
     } = useGlobalSession();
     const [isCopied, setIsCopied] = useState(false);
+    const [showGitModal, setShowGitModal] = useState(false);
     const [currentMode, setCurrentMode] = useState('intro'); // 'intro', 'quizrun', 'gamerun'
 
     // Detect if this window is the Sub-Monitor screen
@@ -492,6 +494,36 @@ export default function Home({ socket }) {
                     </button>
                 )}
 
+                {/* Top-Right: GitHub Sync & Cloud Backup Launcher */}
+                {!isSubScreen && (
+                    <button
+                        onClick={() => setShowGitModal(true)}
+                        style={{
+                            position: 'absolute',
+                            top: '24px',
+                            right: '24px',
+                            zIndex: 200,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                            color: 'white',
+                            padding: '10px 18px',
+                            borderRadius: '16px',
+                            fontWeight: '800',
+                            fontSize: '0.92rem',
+                            border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                            cursor: 'pointer',
+                            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.25)',
+                            transition: 'all 0.2s'
+                        }}
+                        title="깃허브 백업 및 최신 버전 업데이트 창을 엽니다."
+                    >
+                        <Cloud size={18} color="#38bdf8" />
+                        <span>☁️ 깃허브 동기화</span>
+                    </button>
+                )}
+
                 {/* Custom Levitating & Neon CSS Styles */}
                 <style>{`
                     @keyframes levitate {
@@ -847,6 +879,8 @@ export default function Home({ socket }) {
                 <div style={{ position: 'absolute', bottom: '15px', right: '20px', fontSize: '0.75rem', color: '#64748b' }}>
                     Server IP: {window.location.hostname} | Socket: <span style={{ color: socketConnected ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>{socketConnected ? 'Connected' : 'Disconnected'}</span>
                 </div>
+
+                <GitSyncModal isOpen={showGitModal} onClose={() => setShowGitModal(false)} />
             </div>
         );
     }
@@ -1078,6 +1112,8 @@ export default function Home({ socket }) {
                 <span>Server IP: {window.location.hostname}</span>
                 <span>Socket: <span style={{ color: socketConnected ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>{socketConnected ? 'Connected' : 'Disconnected'}</span></span>
             </div>
+
+            <GitSyncModal isOpen={showGitModal} onClose={() => setShowGitModal(false)} />
         </div>
     );
 }

@@ -406,6 +406,127 @@ app.get('/api/network-info', (req, res) => {
   });
 });
 
+// --- GIT MANAGEMENT & DEPLOYMENT SYNC ENDPOINTS ---
+const { exec: gitExec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(gitExec);
+const ROOT_DIR = path.resolve(__dirname, '..');
+const FRONTEND_DIR = path.join(ROOT_DIR, 'frontend');
+
+let isGitOperating = false;
+
+// 1. Get Git Status & Current Commit
+app.get('/api/git/status', async (req, res) => {
+  try {
+    const logRes = await execPromise('git log -1 --format="%h|%s|%an|%ad" --date=short', { cwd: ROOT_DIR });
+    const [hash, message, author, date] = (logRes.stdout || '').trim().split('|');
+    
+    const statusRes = await execPromise('git status --porcelain', { cwd: ROOT_DIR });
+    const hasUncommittedChanges = Boolean(statusRes.stdout && statusRes.stdout.trim().length > 0);
+
+    let remoteCommit = null;
+    try {
+      await execPromise('git fetch origin main', { cwd: ROOT_DIR, timeout: 7000 });
+      const revRes = await execPromise('git rev-list --count HEAD..origin/main', { cwd: ROOT_DIR });
+      const behindCount = parseInt(revRes.stdout.trim(), 10) || 0;
+      remoteCommit = { behindCount };
+    } catch (e) {}
+
+    res.json({
+      success: true,
+      currentCommit: {
+        hash: hash || 'Unknown',
+        message: message || '',
+        author: author || '',
+        date: date || ''
+      },
+      hasUncommittedChanges,
+      remoteCommit,
+      isBusy: isGitOperating
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 2. Sync / Backup to GitHub (Push)
+app.post('/api/git/push', async (req, res) => {
+  if (isGitOperating) {
+    return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
+  }
+  isGitOperating = true;
+  try {
+    const customMessage = req.body?.message || `Auto-backup: Quizrun data & settings (${new Date().toLocaleString('ko-KR')})`;
+    console.log('[Git Sync] Staging all files...');
+    await execPromise('git add .', { cwd: ROOT_DIR });
+
+    const statusRes = await execPromise('git status --porcelain', { cwd: ROOT_DIR });
+    let didCommit = false;
+    if (statusRes.stdout && statusRes.stdout.trim().length > 0) {
+      console.log(`[Git Sync] Committing changes: ${customMessage}`);
+      await execPromise(`git commit -m "${customMessage.replace(/"/g, '\\"')}"`, { cwd: ROOT_DIR });
+      didCommit = true;
+    }
+
+    console.log('[Git Sync] Pushing to GitHub (origin/main)...');
+    const pushRes = await execPromise('git push origin main', { cwd: ROOT_DIR, timeout: 30000 });
+    console.log('[Git Sync] Push successful:', pushRes.stdout);
+
+    isGitOperating = false;
+    res.json({
+      success: true,
+      message: didCommit ? '변경된 데이터가 깃허브에 성공적으로 백업(Push)되었습니다!' : '이미 깃허브와 최신 상태로 동일합니다.',
+      didCommit
+    });
+  } catch (err) {
+    isGitOperating = false;
+    console.error('[Git Sync] Push error:', err);
+    res.status(500).json({
+      success: false,
+      message: `깃허브 업로드 중 오류가 발생했습니다: ${err.message}`
+    });
+  }
+});
+
+// 3. Update from GitHub (Pull & Rebuild)
+app.post('/api/git/pull', async (req, res) => {
+  if (isGitOperating) {
+    return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
+  }
+  isGitOperating = true;
+  try {
+    console.log('[Git Update] Pulling latest changes from GitHub...');
+    const pullRes = await execPromise('git pull origin main', { cwd: ROOT_DIR, timeout: 30000 });
+    console.log('[Git Update] Pull output:', pullRes.stdout);
+
+    // Rebuild frontend production bundle so web UI reflects updates
+    console.log('[Git Update] Rebuilding frontend production bundle...');
+    await execPromise('npm run build', { cwd: FRONTEND_DIR, timeout: 60000 });
+    console.log('[Git Update] Frontend build completed.');
+
+    // Reload persisted quizzes and config into memory
+    PERSISTED_QUIZZES = loadPersistedData(QUIZ_DATA_PATH);
+    APP_CONFIG = loadPersistedData(APP_CONFIG_PATH, DEFAULT_APP_CONFIG);
+    if (typeof io !== 'undefined' && io) {
+      io.emit('config:updated', APP_CONFIG);
+    }
+
+    isGitOperating = false;
+    res.json({
+      success: true,
+      message: '깃허브 최신 코드로 업데이트 및 빌드가 완료되었습니다! 화면을 새로고침합니다.',
+      output: pullRes.stdout
+    });
+  } catch (err) {
+    isGitOperating = false;
+    console.error('[Git Update] Pull error:', err);
+    res.status(500).json({
+      success: false,
+      message: `깃허브 업데이트 중 오류가 발생했습니다: ${err.message}`
+    });
+  }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {

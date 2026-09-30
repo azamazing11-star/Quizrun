@@ -20,8 +20,10 @@ import {
     TrendingUp,
     DollarSign,
     ArrowLeft,
-    RotateCcw
+    RotateCcw,
+    Cloud
 } from 'lucide-react';
+import GitSyncModal from './GitSyncModal';
 
 export default function RightSidebar({ socket, isStockGame = false, onExitToLobby, onEndGame }) {
     const {
@@ -51,6 +53,7 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
     const [confettiActive, setConfettiActive] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
     const [showMiniQr, setShowMiniQr] = useState(false);
+    const [showGitModal, setShowGitModal] = useState(false);
     const [bulkAmount, setBulkAmount] = useState(100000000);
 
     const handleResetAllScores = () => {
@@ -478,6 +481,30 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
                         </div>
                         <span>{isStockGame ? '진행 방식 & 금액 관리' : '진행 방식 & 점수 관리'}</span>
                     </div>
+
+                    {/* GitHub Sync Button */}
+                    <button
+                        onClick={() => setShowGitModal(true)}
+                        title="깃허브 클라우드 백업 및 최신 버전 업데이트"
+                        style={{
+                            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                            color: 'white',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '10px',
+                            padding: '5px 10px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            fontSize: '0.74rem',
+                            fontWeight: '800',
+                            boxShadow: '0 2px 6px rgba(15, 23, 42, 0.15)',
+                            transition: 'all 0.15s'
+                        }}
+                    >
+                        <Cloud size={13} color="#38bdf8" />
+                        <span>GitHub</span>
+                    </button>
                 </div>
 
                 {/* Body Content */}
@@ -1349,6 +1376,9 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
                     </div>
                 </div>
             )}
+
+            {/* GitHub Sync Modal */}
+            <GitSyncModal isOpen={showGitModal} onClose={() => setShowGitModal(false)} />
         </>
     );
 }
