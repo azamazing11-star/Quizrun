@@ -520,7 +520,7 @@ export default function Home({ socket }) {
                         title="깃허브 백업 및 최신 버전 업데이트 창을 엽니다."
                     >
                         <Cloud size={18} color="#38bdf8" />
-                        <span>☁️ 깃허브 동기화</span>
+                        <span>GitHub</span>
                     </button>
                 )}
 
