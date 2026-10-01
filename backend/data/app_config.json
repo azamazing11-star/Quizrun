@@ -822,23 +822,23 @@
   "topic_travel": [
     {
       "id": "sub-1",
-      "title": "인물"
+      "title": "인물퀴즈"
     },
     {
       "id": "sub-2",
-      "title": "스포츠"
+      "title": "스포츠퀴즈"
     },
     {
       "id": "sub-3",
-      "title": "드라마"
+      "title": "드라마퀴즈"
     },
     {
       "id": "sub-4",
-      "title": "호텔/리조트"
+      "title": "예능퀴즈"
     },
     {
       "id": "sub-5",
-      "title": "캠핑/차박"
+      "title": "절대음감"
     },
     {
       "id": "sub-6",
