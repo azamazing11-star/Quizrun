@@ -1201,6 +1201,8 @@ io.on('connection', (socket) => {
       existingP.id = socket.id;
       socket.join(pin);
       io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+      io.to(pin).emit('host:participantsUpdated', room.participants);
+      io.to(pin).emit('stock_game:participant_joined', { participants: room.participants, participant: existingP });
       const currentQ = room.quiz?.questions?.[room.currentQuestionIndex];
       if (callback) callback({ 
         success: true, 
@@ -1251,6 +1253,8 @@ io.on('connection', (socket) => {
     socket.join(pin);
 
     io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+    io.to(pin).emit('host:participantsUpdated', room.participants);
+    io.to(pin).emit('stock_game:participant_joined', { participants: room.participants, participant: newParticipant });
     if (callback) callback({ 
       success: true, 
       roomState: room.state === 'lobby' ? 'waiting' : room.state, 
@@ -1310,6 +1314,7 @@ io.on('connection', (socket) => {
       if (p) {
         p.groupId = groupId;
         io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+        io.to(pin).emit('host:participantsUpdated', room.participants);
       }
     }
   });
@@ -1398,6 +1403,7 @@ io.on('connection', (socket) => {
           groupScores: { ...room.groupScores }
         });
         io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+        io.to(pin).emit('host:participantsUpdated', room.participants);
 
         // Immediate feedback for participant
         if (callback) callback({ 
@@ -1441,8 +1447,40 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('stock_game:vip_hint_selected', (data) => {
+    if (data && data.pin) {
+      const room = rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:vip_hint_selected', data);
+      }
+      io.to(data.pin).emit('stock_game:vip_hint_selected', data);
+      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:vip_hint_selected', payload: data });
+    }
+  });
+
+  socket.on('stock_game:participant_activity', (data) => {
+    if (data && data.pin) {
+      const room = rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:participant_activity', data);
+      }
+      io.to(data.pin).emit('stock_game:participant_activity', data);
+      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:participant_activity', payload: data });
+    }
+  });
+
+  socket.on('stock_game:state_sync', (data) => {
+    if (data && data.pin) {
+      io.to(data.pin).emit('stock_game:state_sync', data);
+    }
+  });
+
   socket.on('stock_game:request_sync', (data) => {
     if (data && data.pin) {
+      const room = rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:request_sync', data);
+      }
       io.to(data.pin).emit('stock_game:request_sync', data);
       io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:request_sync', payload: data });
     }

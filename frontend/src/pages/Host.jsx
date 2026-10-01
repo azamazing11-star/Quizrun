@@ -231,8 +231,40 @@ export default function Host({ socket }) {
     const screenChannelRef = useRef(null);
     const [isScreenConnected, setIsScreenConnected] = useState(false);
     const [audioOutputTarget, setAudioOutputTarget] = useState('screen'); // 'screen' | 'host' | 'none'
-    const [showNextPreview, setShowNextPreview] = useState(true);
     const [allQuizQuestions, setAllQuizQuestions] = useState(location.state?.customQuiz?.questions || []);
+
+    const quizCounts = React.useMemo(() => {
+        const list = Array.isArray(allQuizQuestions) ? allQuizQuestions : [];
+        const total = list.length;
+        const ox = list.filter(q => q.type === 'ox' || (q.options && q.options.length === 2)).length;
+        const mcq = list.filter(q => q.type === 'mcq' || (q.options && q.options.length > 2 && q.options.some(opt => opt && String(opt).trim() !== ''))).length;
+        const short = list.filter(q => q.type === 'short' || ((!q.options || q.options.length === 0 || q.options.every(opt => !opt || String(opt).trim() === '')) && Boolean(q.answer && String(q.answer).trim() !== ''))).length;
+        return { total, mcq, ox, short };
+    }, [allQuizQuestions]);
+
+    useEffect(() => {
+        if ((!allQuizQuestions || allQuizQuestions.length === 0) && socket) {
+            const customQuiz = location.state?.customQuiz;
+            if (customQuiz && Array.isArray(customQuiz.questions) && customQuiz.questions.length > 0) {
+                setAllQuizQuestions(customQuiz.questions);
+                return;
+            }
+            const topicId = location.state?.topicId || quizId;
+            const subId = location.state?.subId;
+            if (topicId && subId && topicId !== 'general') {
+                socket.emit('quiz:getQuestions', { topicId, subId }, (res) => {
+                    if (res && res.success && res.data) {
+                        const combined = [
+                            ...(res.data.mcq || []).map(q => ({ ...q, type: 'mcq' })),
+                            ...(res.data.ox || []).map(q => ({ ...q, type: 'ox' })),
+                            ...(res.data.short || []).map(q => ({ ...q, type: 'short' }))
+                        ];
+                        setAllQuizQuestions(combined);
+                    }
+                });
+            }
+        }
+    }, [socket, location.state, quizId, allQuizQuestions]);
 
     const openScreenWindow = () => {
         const screenWin = window.open(
@@ -444,6 +476,11 @@ export default function Host({ socket }) {
         socket.on('network:updated', handleNetworkUpdate);
         socket.on('host:participantsUpdated', (updated) => {
             setParticipants(updated);
+            try {
+                const bc = new BroadcastChannel('quizrun_screen_sync');
+                bc.postMessage({ type: 'PARTICIPANTS_UPDATE', payload: { participants: updated } });
+                setTimeout(() => bc.close(), 200);
+            } catch (e) {}
         });
         socket.on('host:participantAnswered', ({ answeredCount, groupScores }) => {
             setAnsweredCount(answeredCount);
@@ -843,13 +880,6 @@ export default function Host({ socket }) {
             });
         }
     }, [isGame, gameId]);
-
-    // Auto-create room for custom quizzes coming from QuizDetail
-    useEffect(() => {
-        if (!isGame && location.state?.customQuiz && gameState === 'setup') {
-            createRoom('normal');
-        }
-    }, [isGame, location.state?.customQuiz]);
 
     // Word Bomb timer countdown
     useEffect(() => {
@@ -2099,23 +2129,205 @@ export default function Host({ socket }) {
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                            <button className="glass-button" onClick={() => createRoom('normal')} style={{ width: '100%', background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: 'white', fontWeight: '900', fontSize: '1.05rem', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)' }}>
-                                🚀 전체 문제 시작 (일반 모드)
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            <button
+                                className="glass-button"
+                                onClick={() => {
+                                    if (quizCounts.total === 0) {
+                                        alert('저장된 문제가 0개입니다. 먼저 문제를 추가해주세요.');
+                                        return;
+                                    }
+                                    createRoom('normal');
+                                }}
+                                disabled={quizCounts.total === 0}
+                                style={{
+                                    width: '100%',
+                                    background: quizCounts.total > 0 ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : '#e2e8f0',
+                                    color: quizCounts.total > 0 ? 'white' : '#94a3b8',
+                                    fontWeight: '900',
+                                    fontSize: '1.05rem',
+                                    boxShadow: quizCounts.total > 0 ? '0 4px 12px rgba(59, 130, 246, 0.3)' : 'none',
+                                    cursor: quizCounts.total > 0 ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '14px 20px',
+                                    border: 'none',
+                                    borderRadius: '14px'
+                                }}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    🚀 전체 문제 시작 (일반 모드)
+                                </span>
+                                <span style={{
+                                    fontSize: '0.86rem',
+                                    padding: '4px 12px',
+                                    borderRadius: '20px',
+                                    background: quizCounts.total > 0 ? 'rgba(255, 255, 255, 0.25)' : '#cbd5e1',
+                                    color: quizCounts.total > 0 ? 'white' : '#64748b',
+                                    fontWeight: 'bold'
+                                }}>
+                                    {quizCounts.total}문제
+                                </span>
                             </button>
+
                             {!isOffline && (
-                                <button className="glass-button" onClick={() => createRoom('buzzer')} style={{ width: '100%', background: 'var(--secondary)', color: 'white' }}>
-                                    <Zap size={20} fill="white" /> 버저 모드
+                                <button
+                                    className="glass-button"
+                                    onClick={() => {
+                                        if (quizCounts.total === 0) {
+                                            alert('저장된 문제가 0개입니다. 먼저 문제를 추가해주세요.');
+                                            return;
+                                        }
+                                        createRoom('buzzer');
+                                    }}
+                                    disabled={quizCounts.total === 0}
+                                    style={{
+                                        width: '100%',
+                                        background: quizCounts.total > 0 ? 'var(--secondary)' : '#e2e8f0',
+                                        color: quizCounts.total > 0 ? 'white' : '#94a3b8',
+                                        cursor: quizCounts.total > 0 ? 'pointer' : 'not-allowed',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        padding: '14px 20px',
+                                        border: 'none',
+                                        borderRadius: '14px'
+                                    }}
+                                >
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <Zap size={20} fill={quizCounts.total > 0 ? 'white' : '#94a3b8'} /> 버저 모드
+                                    </span>
+                                    <span style={{
+                                        fontSize: '0.86rem',
+                                        padding: '4px 12px',
+                                        borderRadius: '20px',
+                                        background: quizCounts.total > 0 ? 'rgba(255, 255, 255, 0.25)' : '#cbd5e1',
+                                        color: quizCounts.total > 0 ? 'white' : '#64748b',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        {quizCounts.total}문제
+                                    </span>
                                 </button>
                             )}
-                            <button className="glass-button" onClick={() => createRoom('mcq_only')} style={{ width: '100%' }}>
-                                <ClipboardCheck size={20} /> 객관식 모드
+
+                            <button
+                                className="glass-button"
+                                onClick={() => {
+                                    if (quizCounts.mcq === 0) {
+                                        alert('이 퀴즈에는 객관식 문제가 없습니다. 문제가 있는 다른 모드를 선택해주세요.');
+                                        return;
+                                    }
+                                    createRoom('mcq_only');
+                                }}
+                                disabled={quizCounts.mcq === 0}
+                                style={{
+                                    width: '100%',
+                                    background: quizCounts.mcq > 0 ? 'white' : '#f8fafc',
+                                    border: quizCounts.mcq > 0 ? '2px solid #3b82f6' : '1.5px solid #e2e8f0',
+                                    color: quizCounts.mcq > 0 ? '#1e293b' : '#94a3b8',
+                                    cursor: quizCounts.mcq > 0 ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '14px 20px',
+                                    borderRadius: '14px',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <ClipboardCheck size={20} color={quizCounts.mcq > 0 ? '#3b82f6' : '#94a3b8'} /> 객관식 모드
+                                </span>
+                                <span style={{
+                                    fontSize: '0.86rem',
+                                    padding: '4px 12px',
+                                    borderRadius: '20px',
+                                    background: quizCounts.mcq > 0 ? '#eff6ff' : '#e2e8f0',
+                                    color: quizCounts.mcq > 0 ? '#2563eb' : '#64748b',
+                                    fontWeight: 'bold',
+                                    border: quizCounts.mcq > 0 ? '1px solid #bfdbfe' : 'none'
+                                }}>
+                                    {quizCounts.mcq}문제
+                                </span>
                             </button>
-                            <button className="glass-button" onClick={() => createRoom('ox_only')} style={{ width: '100%', background: '#6366f1', color: 'white' }}>
-                                ⭕ OX 모드
+
+                            <button
+                                className="glass-button"
+                                onClick={() => {
+                                    if (quizCounts.ox === 0) {
+                                        alert('이 퀴즈에는 OX 문제가 없습니다. 문제가 있는 다른 모드를 선택해주세요.');
+                                        return;
+                                    }
+                                    createRoom('ox_only');
+                                }}
+                                disabled={quizCounts.ox === 0}
+                                style={{
+                                    width: '100%',
+                                    background: quizCounts.ox > 0 ? '#6366f1' : '#e2e8f0',
+                                    color: quizCounts.ox > 0 ? 'white' : '#94a3b8',
+                                    cursor: quizCounts.ox > 0 ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '14px 20px',
+                                    border: 'none',
+                                    borderRadius: '14px',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    ⭕ OX 모드
+                                </span>
+                                <span style={{
+                                    fontSize: '0.86rem',
+                                    padding: '4px 12px',
+                                    borderRadius: '20px',
+                                    background: quizCounts.ox > 0 ? 'rgba(255, 255, 255, 0.25)' : '#cbd5e1',
+                                    color: quizCounts.ox > 0 ? 'white' : '#64748b',
+                                    fontWeight: 'bold'
+                                }}>
+                                    {quizCounts.ox}문제
+                                </span>
                             </button>
-                            <button className="glass-button" onClick={() => createRoom('short_only')} style={{ width: '100%' }}>
-                                <Type size={20} /> 주관식 모드
+
+                            <button
+                                className="glass-button"
+                                onClick={() => {
+                                    if (quizCounts.short === 0) {
+                                        alert('이 퀴즈에는 주관식 문제가 없습니다. 문제가 있는 다른 모드를 선택해주세요.');
+                                        return;
+                                    }
+                                    createRoom('short_only');
+                                }}
+                                disabled={quizCounts.short === 0}
+                                style={{
+                                    width: '100%',
+                                    background: quizCounts.short > 0 ? 'white' : '#f8fafc',
+                                    border: quizCounts.short > 0 ? '2px solid #06b6d4' : '1.5px solid #e2e8f0',
+                                    color: quizCounts.short > 0 ? '#1e293b' : '#94a3b8',
+                                    cursor: quizCounts.short > 0 ? 'pointer' : 'not-allowed',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '14px 20px',
+                                    borderRadius: '14px',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Type size={20} color={quizCounts.short > 0 ? '#0891b2' : '#94a3b8'} /> 주관식 모드
+                                </span>
+                                <span style={{
+                                    fontSize: '0.86rem',
+                                    padding: '4px 12px',
+                                    borderRadius: '20px',
+                                    background: quizCounts.short > 0 ? '#ecfeff' : '#e2e8f0',
+                                    color: quizCounts.short > 0 ? '#0891b2' : '#64748b',
+                                    fontWeight: 'bold',
+                                    border: quizCounts.short > 0 ? '1px solid #a5f3fc' : 'none'
+                                }}>
+                                    {quizCounts.short}문제
+                                </span>
                             </button>
                         </div>
                     </div>

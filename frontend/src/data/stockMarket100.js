@@ -2699,24 +2699,28 @@ function getArticleSpecificGlossary(headline, content, sector) {
 }
 
 function formatDualFactorsContent(headline, origContent, isUp) {
-    if (origContent && origContent.includes('[🟢 긍정적 요인 / 호재]')) {
-        return origContent;
-    }
-
     const cleanHead = (headline || '').replace(/\[.*?\]\s*/, '');
+    if (isUp) {
+        return `🟢 [기쁜 호재 소식!]
+"${cleanHead}"
+이 소식으로 회사의 물건이 전 세계에서 인기를 얻고 많은 돈을 벌어들이고 있어요! 공장이 활발하게 돌아가며 주가가 오를 가능성이 아주 높습니다.
 
-    return `[🟢 긍정적 요인 / 호재]
-"${cleanHead}" 이슈로 인해 관련 산업과 핵심 수혜 기업들의 매출 및 영업이익 가시성이 대폭 개선되고 있습니다. 현장 가동률 상승 및 신규 프로젝트 수주 낭보로 기관 및 외국인 매수세가 강하게 유입되는 긍정적 모멘텀을 형성 중입니다.
+💡 [핵심 포인트]: 판매량 증가와 새로운 계약 체결로 회사의 이익이 크게 늘어납니다.`;
+    } else {
+        return `🔴 [주의할 위험 소식!]
+"${cleanHead}"
+이 소식으로 인해 원재료 비용이 오르고 물건을 사는 손님이 줄어들어 회사가 손해를 볼 수 있어요. 주가가 떨어질 가능성이 있습니다.
 
-[🔴 부정적 요인 / 리스크]
-${origContent || '다만 글로벌 경기 불확실성과 이자 비용 부담이 지속되고 있으며, 단기 상승에 따른 차익 실현 매물 출회 및 원자재 가격 변동성 우려가 공존하고 있습니다.'}`;
+💡 [핵심 포인트]: 원가 상승과 시장 경쟁 심화로 단기적인 이익이 줄어들 수 있습니다.`;
+    }
 }
 
 function formatEasyNewsContent(headline, origContent, year, sector) {
     const cleanHead = (headline || '').replace(/\[.*?\]\s*/, '');
-    return `🐣 [쉬운 뉴스 요약]
-${year === 2015 ? '2016년' : `${year}년`} [${sector || '관련'}] 시장에서 중요한 경제 사건이 일어났어요!
-"${cleanHead}" 소식으로 전 세계의 관심을 받게 되었으며, 이 뉴스로 회사들이 버는 돈과 주식 가격이 크게 움직이고 있답니다.`;
+    return `🐣 [초등학생도 이해하는 쉬운 뉴스]
+${year === 2015 ? '2016년' : `${year}년`} [${sector || '관련'}] 시장에 큰 사건이 일어났어요!
+"${cleanHead}"
+이 뉴스로 인해 회사들이 버는 돈과 사람들의 관심이 크게 달라지고 있답니다.`;
 }
 
 

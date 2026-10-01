@@ -284,6 +284,12 @@ export default function ScreenView({ socket }) {
                             setScreenData(prev => ({ ...prev, pin: payload.pin }));
                         }
                     }
+                } else if (type === 'PARTICIPANTS_UPDATE' || type === 'HOST_PARTICIPANTS_UPDATED') {
+                    if (payload && Array.isArray(payload.participants)) {
+                        setScreenData(prev => ({ ...prev, participants: payload.participants }));
+                    } else if (Array.isArray(payload)) {
+                        setScreenData(prev => ({ ...prev, participants: payload }));
+                    }
                 } else if (type === 'SCORES_UPDATE') {
                     if (payload && payload.scores) {
                         setLiveScores(payload.scores);
@@ -296,6 +302,9 @@ export default function ScreenView({ socket }) {
 
                         if (payload.scores && payload.scores.length > 0) {
                             setLiveScores(payload.scores);
+                        }
+                        if (payload.participants && Array.isArray(payload.participants)) {
+                            setScreenData(prev => ({ ...prev, participants: payload.participants }));
                         }
 
                         setScreenData(prev => ({
@@ -377,7 +386,22 @@ export default function ScreenView({ socket }) {
             }
         };
 
+        const handleParticipantsUpdated = (list) => {
+            if (list && Array.isArray(list)) {
+                setScreenData(prev => ({ ...prev, participants: list }));
+            }
+        };
+
+        const handleParticipantJoined = (data) => {
+            if (data?.participants && Array.isArray(data.participants)) {
+                setScreenData(prev => ({ ...prev, participants: data.participants }));
+            }
+        };
+
         socket.on('stock_game:state_sync', handleStockSync);
+        socket.on('host:participantsUpdated', handleParticipantsUpdated);
+        socket.on('stock_game:participant_joined', handleParticipantJoined);
+
         const onRoomMsg = (msg) => {
             if (msg && msg.event === 'stock_game:state_sync' && msg.payload) {
                 handleStockSync(msg.payload);
@@ -398,6 +422,8 @@ export default function ScreenView({ socket }) {
 
         return () => {
             socket.off('stock_game:state_sync', handleStockSync);
+            socket.off('host:participantsUpdated', handleParticipantsUpdated);
+            socket.off('stock_game:participant_joined', handleParticipantJoined);
             socket.off('room:message', onRoomMsg);
             socket.off('tunnel:updated', handleNetworkUpdate);
             socket.off('network:updated', handleNetworkUpdate);

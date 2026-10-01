@@ -1840,6 +1840,15 @@ export function StockGameHost({ socket, pin, participants = [] }) {
 
     const stockList = useMemo(() => Object.values(activeStocks), [activeStocks]);
 
+    // 실시간 참여자 목록 (소켓 실시간 업데이트 반영)
+    const [liveParticipants, setLiveParticipants] = useState(participants || []);
+
+    useEffect(() => {
+        if (participants && participants.length > 0) {
+            setLiveParticipants(participants);
+        }
+    }, [participants]);
+
     // 현재 진행 연도 (2015 ~ 2025)
     const [currentYear, setCurrentYear] = useState(2015);
     const [selectedTeamId, setSelectedTeamId] = useState('1');
@@ -1850,6 +1859,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     const [selectedNews, setSelectedNews] = useState(null);
     const [selectedSector, setSelectedSector] = useState(null);
     const [allOrdersModalOpen, setAllOrdersModalOpen] = useState(false);
+    const [showHostQrModal, setShowHostQrModal] = useState(false);
     const [activeTab, setActiveTab] = useState('decision'); // 'decision' (주문표) | 'matrix' (전체 현황표)
     
     // 권한 관리 (전체 토글 및 조별 개별 토글)
@@ -1861,16 +1871,22 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     const [predictions, setPredictions] = useState({}); // { [teamId]: { [stockKey]: 'UP' | 'DOWN' } }
     const [predictionResults, setPredictionResults] = useState({}); // { [teamId]: { hits, total, qualified, year } }
 
+    // 참여자 100% 특별 힌트 선택 열람 현황 (메인 모니터 단독 표시용)
+    const [hostVipHints, setHostVipHints] = useState({}); // { [teamId]: { nickname, stockKey, year, timestamp } }
+
+    // 참여자 실시간 활동 진행 상황 (뉴스 확인, 예측 투표 등)
+    const [participantActivities, setParticipantActivities] = useState({});
+
     // 주문 입력 폼: { [stockKey]: number }
     const [orderInputs, setOrderInputs] = useState({
         A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0
     });
 
-    // 참여자 리스트 생성 (온라인: participants, 오프라인: contextScores 기반 동적 인원수)
+    // 참여자 리스트 생성 (온라인: liveParticipants, 오프라인: contextScores 기반 동적 인원수)
     const teamList = useMemo(() => {
-        if (participants && participants.length > 0) {
-            return participants.map((p, idx) => ({
-                id: String(p.id || p.nickname || idx + 1),
+        if (liveParticipants && liveParticipants.length > 0) {
+            return liveParticipants.map((p, idx) => ({
+                id: String(p.id || p.nickname || p.groupId || idx + 1),
                 name: p.nickname || `${p.groupId || idx + 1}조`,
                 initialSeed: p.score && p.score > 0 ? p.score : 100000000
             }));
@@ -1885,7 +1901,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 initialSeed: ctxScore && ctxScore > 0 ? ctxScore : 100000000
             };
         });
-    }, [participants, contextScores]);
+    }, [liveParticipants, contextScores]);
 
     // 전체 조별 포트폴리오
     const [portfolios, setPortfolios] = useState(() => {
@@ -2000,6 +2016,10 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 event: 'stock_game:state_sync',
                 payload
             });
+            socket.emit('stock_game:state_sync', {
+                pin,
+                ...payload
+            });
         }
     };
 
@@ -2043,6 +2063,53 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         }
                         broadcastStockState({ portfolios: nextP });
                         return nextP;
+                    });
+                } else if (event.data?.type === 'STOCK_GAME_VIP_HINT_SELECTED' && event.data.payload) {
+                    const { teamId, nickname, stockKey, year } = event.data.payload;
+                    const key = teamId || nickname || '1';
+                    setHostVipHints(prev => ({
+                        ...prev,
+                        [key]: {
+                            teamId: key,
+                            nickname: nickname || key,
+                            stockKey,
+                            year: year || currentYear,
+                            timestamp: new Date().toLocaleTimeString()
+                        }
+                    }));
+                } else if (event.data?.type === 'STOCK_GAME_PARTICIPANT_ACTIVITY' && event.data.payload) {
+                    const { teamId, nickname, action, stockKey, direction } = event.data.payload;
+                    const key = teamId || nickname || '1';
+                    setParticipantActivities(prev => {
+                        const existing = prev[key] || { newsRead: [], predictionsCount: 0, tradesCount: 0, lastAction: '' };
+                        let nextNews = [...(existing.newsRead || [])];
+                        let nextPreds = existing.predictionsCount || 0;
+                        let nextTrades = existing.tradesCount || 0;
+                        let lastAction = '';
+
+                        if (action === 'READ_NEWS' && stockKey) {
+                            if (!nextNews.includes(stockKey)) nextNews.push(stockKey);
+                            lastAction = `[${stockKey}] 뉴스 확인`;
+                        } else if (action === 'PREDICT') {
+                            nextPreds++;
+                            lastAction = `[${stockKey}] ${direction === 'UP' ? '상승' : '하락'} 예측`;
+                        } else if (action === 'TRADE') {
+                            nextTrades++;
+                            lastAction = `[${stockKey}] 매매 체결`;
+                        }
+
+                        return {
+                            ...prev,
+                            [key]: {
+                                ...existing,
+                                nickname: nickname || key,
+                                newsRead: nextNews,
+                                predictionsCount: nextPreds,
+                                tradesCount: nextTrades,
+                                lastAction,
+                                lastTime: new Date().toLocaleTimeString()
+                            }
+                        };
                     });
                 }
             };
@@ -2088,18 +2155,106 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     });
                 }
             };
+            const handleVipHintMsg = (msg) => {
+                const data = msg.payload || msg;
+                if (data && (data.teamId || data.nickname)) {
+                    const teamKey = data.teamId || data.nickname || '1';
+                    setHostVipHints(prev => ({
+                        ...prev,
+                        [teamKey]: {
+                            teamId: teamKey,
+                            nickname: data.nickname || teamKey,
+                            stockKey: data.stockKey,
+                            year: data.year || currentYear,
+                            timestamp: new Date().toLocaleTimeString()
+                        }
+                    }));
+                }
+            };
+            const handleActivityMsg = (msg) => {
+                const data = msg.payload || msg;
+                if (data && (data.teamId || data.nickname)) {
+                    const teamKey = data.teamId || data.nickname || '1';
+                    setParticipantActivities(prev => {
+                        const existing = prev[teamKey] || { newsRead: [], predictionsCount: 0, tradesCount: 0, lastAction: '' };
+                        let nextNews = [...(existing.newsRead || [])];
+                        let nextPreds = existing.predictionsCount || 0;
+                        let nextTrades = existing.tradesCount || 0;
+                        let lastAction = '';
+
+                        if (data.action === 'READ_NEWS' && data.stockKey) {
+                            if (!nextNews.includes(data.stockKey)) nextNews.push(data.stockKey);
+                            lastAction = `[${data.stockKey}] 뉴스 확인`;
+                        } else if (data.action === 'PREDICT') {
+                            nextPreds++;
+                            lastAction = `[${data.stockKey}] ${data.direction === 'UP' ? '상승' : '하락'} 예측`;
+                        } else if (data.action === 'TRADE') {
+                            nextTrades++;
+                            lastAction = `[${data.stockKey}] 매매 체결`;
+                        }
+
+                        return {
+                            ...prev,
+                            [teamKey]: {
+                                ...existing,
+                                nickname: data.nickname || teamKey,
+                                newsRead: nextNews,
+                                predictionsCount: nextPreds,
+                                tradesCount: nextTrades,
+                                lastAction,
+                                lastTime: new Date().toLocaleTimeString()
+                            }
+                        };
+                    });
+                }
+            };
+            const handleParticipantsUpdated = (list) => {
+                if (list && Array.isArray(list)) {
+                    setLiveParticipants(list);
+                    setPortfolios(prev => {
+                        const next = { ...prev };
+                        let modified = false;
+                        list.forEach((p, idx) => {
+                            const key = String(p.id || p.nickname || p.groupId || idx + 1);
+                            if (!next[key]) {
+                                const seed = p.score && p.score > 0 ? p.score : 100000000;
+                                next[key] = {
+                                    seedMoney: seed,
+                                    cash: seed,
+                                    holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
+                                    history: { 2015: { asset: seed, rank: 1, returnRate: 0 } }
+                                };
+                                modified = true;
+                            }
+                        });
+                        return modified ? next : prev;
+                    });
+                }
+            };
+
             const handleRoomMessage = (msg) => {
                 if (msg && msg.event === 'stock_game:predict' && msg.payload) {
                     handlePredictMsg(msg.payload);
                 } else if (msg && msg.event === 'stock_game:execute_order' && msg.payload) {
                     handleExecuteOrderMsg(msg.payload);
+                } else if (msg && msg.event === 'stock_game:vip_hint_selected' && msg.payload) {
+                    handleVipHintMsg(msg.payload);
+                } else if (msg && msg.event === 'stock_game:participant_activity' && msg.payload) {
+                    handleActivityMsg(msg.payload);
                 } else if (msg && (msg.event === 'stock_game:request_sync' || msg.type === 'stock_game:request_sync')) {
                     broadcastStockState();
                 }
             };
             const handleDirectRequestSync = () => broadcastStockState();
+
             socket.on('stock_game:predict', handlePredictMsg);
             socket.on('stock_game:execute_order', handleExecuteOrderMsg);
+            socket.on('stock_game:vip_hint_selected', handleVipHintMsg);
+            socket.on('stock_game:participant_activity', handleActivityMsg);
+            socket.on('stock_game:participant_joined', (data) => {
+                if (data && data.participants) handleParticipantsUpdated(data.participants);
+            });
+            socket.on('host:participantsUpdated', handleParticipantsUpdated);
             socket.on('stock_game:request_sync', handleDirectRequestSync);
             socket.on('room:message', handleRoomMessage);
         }
@@ -2112,6 +2267,10 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             if (socket) {
                 socket.off('stock_game:predict');
                 socket.off('stock_game:execute_order');
+                socket.off('stock_game:vip_hint_selected');
+                socket.off('stock_game:participant_activity');
+                socket.off('stock_game:participant_joined');
+                socket.off('host:participantsUpdated');
                 socket.off('stock_game:request_sync');
                 socket.off('room:message');
             }
@@ -2128,6 +2287,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             setHostPeekNames(false);
             setPredictions({});
             setPredictionResults({});
+            setHostVipHints({});
+            setParticipantActivities({});
             
             const resetPortfolios = {};
             teamList.forEach(t => {
@@ -2195,18 +2356,13 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         });
         setPredictionResults(nextPredResults);
 
-        if (qualifiedTeamNames.length > 0) {
-            setTimeout(() => {
-                alert(`🎯 [뉴스 예측 적중 알림]\n5개 이상 맞춘 ${qualifiedTeamNames.join(', ')}에 다음 연도(${nextYear}년) 100% 특별 힌트 혜택이 부여되었습니다!`);
-            }, 300);
-        }
-
-        // 연도 결산 및 포트폴리오 자산 가치 평가
+        // 연도 결산 및 포트폴리오 자산 가치 평가 (모든 보유 주식 유지 및 가치 재평가)
+        let updatedPortfolios = {};
         setPortfolios(prev => {
             const updated = { ...prev };
-            teamList.forEach(team => {
-                const p = updated[team.id];
-                if (!p) return;
+            Object.keys(updated).forEach(key => {
+                const p = updated[key];
+                if (!p || !p.holdings) return;
 
                 let stockVal = 0;
                 stockList.forEach(s => {
@@ -2215,37 +2371,45 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     stockVal += qty * price;
                 });
 
-                const totalAsset = p.cash + stockVal;
-                const retRate = p.seedMoney > 0 ? (((totalAsset - p.seedMoney) / p.seedMoney) * 100).toFixed(1) : 0;
+                const totalAsset = (p.cash || 0) + stockVal;
+                const retRate = (p.seedMoney && p.seedMoney > 0) ? (((totalAsset - p.seedMoney) / p.seedMoney) * 100).toFixed(1) : 0;
 
-                // 우측 사이드바 실시간 누적 금액 동기화
-                if (participants && participants.length > 0 && socket && pin) {
-                    socket.emit('host:adjustScore', { pin, nickname: team.name, exactScore: Math.round(totalAsset) });
+                const targetTeam = teamList.find(t => t.id === key);
+                if (targetTeam && socket && pin) {
+                    socket.emit('host:adjustScore', { pin, nickname: targetTeam.name, exactScore: Math.round(totalAsset) });
                 } else if (setExactScore) {
-                    const numKey = Number(team.id) || team.id;
+                    const numKey = Number(key) || key;
                     setExactScore(numKey, Math.round(totalAsset));
                 }
 
-                updated[team.id] = {
+                updated[key] = {
                     ...p,
                     history: {
-                        ...p.history,
+                        ...(p.history || {}),
                         [nextYear]: {
                             asset: totalAsset,
                             stockValue: stockVal,
-                            cash: p.cash,
+                            cash: p.cash || 0,
                             returnRate: Number(retRate)
                         }
                     }
                 };
             });
+            updatedPortfolios = updated;
             return updated;
         });
 
         broadcastStockState({ 
             year: nextYear,
+            portfolios: updatedPortfolios,
             predictionResults: nextPredResults
         });
+
+        if (qualifiedTeamNames.length > 0) {
+            setTimeout(() => {
+                alert(`🎯 [뉴스 예측 적중 알림]\n5개 이상 맞춘 ${qualifiedTeamNames.join(', ')}에 다음 연도(${nextYear}년) 100% 특별 힌트 혜택이 부여되었습니다!`);
+            }, 300);
+        }
     };
 
     // 이전 연도로 되돌리기
@@ -3236,11 +3400,88 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const [selectedStockKey, setSelectedStockKey] = useState(null); // 특정 종목 클릭 시 뉴스 & 매매 상세화면 전환
     const [selectedNews, setSelectedNews] = useState(null);
     const [selectedSector, setSelectedSector] = useState(null);
-    const [participantEasyNews, setParticipantEasyNews] = useState(false);
+    const [participantEasyNews, setParticipantEasyNews] = useState(true); // 초등학생 친화형 쉬운 뉴스 기본 활성화
+    const [showAnalysis, setShowAnalysis] = useState(false); // 기업 분석 및 차트 접기/펼치기
 
     // 매수 / 매도 주문 상태
     const [tradeType, setTradeType] = useState('BUY'); // 'BUY' | 'SELL'
     const [tradeQty, setTradeQty] = useState(0);
+
+    // 참여자 예측 투표 및 힌트 보상 모달 상태
+    const [localVotes, setLocalVotes] = useState({});
+    const [rewardModalOpen, setRewardModalOpen] = useState(false);
+    const [chosenHintStock, setChosenHintStock] = useState(null);
+
+    const myTeamId = String(groupId || 1);
+    const stockList = useMemo(() => Object.values(gameState.stocks || {}), [gameState.stocks]);
+    const rawPortfolio = (nickname && gameState.portfolios?.[nickname]) || gameState.portfolios?.[myTeamId];
+
+    // 실시간 활동 정보 전송 헬퍼 (호스트 모니터링용)
+    const emitActivity = (action, stockKey = null, direction = null) => {
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({
+                type: 'STOCK_GAME_PARTICIPANT_ACTIVITY',
+                payload: { teamId: myTeamId, nickname, action, stockKey, direction }
+            });
+            setTimeout(() => bc.close(), 200);
+        } catch (e) {}
+
+        if (socket) {
+            socket.emit('stock_game:participant_activity', {
+                pin,
+                teamId: myTeamId,
+                nickname,
+                action,
+                stockKey,
+                direction
+            });
+            socket.emit('room:message', {
+                pin,
+                event: 'stock_game:participant_activity',
+                payload: {
+                    teamId: myTeamId,
+                    nickname,
+                    action,
+                    stockKey,
+                    direction
+                }
+            });
+        }
+    };
+
+    // 모바일 하드웨어 뒤로가기 버튼(Galaxy 등) 트랩 및 단계별 뒤로가기
+    useEffect(() => {
+        window.history.pushState({ page: 'stock_game_root' }, '');
+
+        const handlePopState = () => {
+            if (rewardModalOpen) {
+                setRewardModalOpen(false);
+                window.history.pushState({ page: 'stock_game_root' }, '');
+            } else if (selectedNews) {
+                setSelectedNews(null);
+                window.history.pushState({ page: 'stock_game_root' }, '');
+            } else if (selectedSector) {
+                setSelectedSector(null);
+                window.history.pushState({ page: 'stock_game_root' }, '');
+            } else if (selectedStockKey) {
+                setSelectedStockKey(null);
+                setTradeQty(0);
+                setShowAnalysis(false);
+                window.history.pushState({ page: 'stock_game_root' }, '');
+            } else if (activeTab !== 'stocks') {
+                setActiveTab('stocks');
+                window.history.pushState({ page: 'stock_game_root' }, '');
+            } else {
+                window.history.pushState({ page: 'stock_game_root' }, '');
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, [rewardModalOpen, selectedNews, selectedSector, selectedStockKey, activeTab]);
 
     useEffect(() => {
         if (!socket) return;
@@ -3283,10 +3524,6 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         };
     }, [socket, pin]);
 
-    const stockList = useMemo(() => Object.values(gameState.stocks || {}), [gameState.stocks]);
-    const myTeamId = String(groupId || 1);
-    const rawPortfolio = (nickname && gameState.portfolios?.[nickname]) || gameState.portfolios?.[myTeamId];
-
     // 내 포트폴리오 계산
     const myPortfolio = useMemo(() => {
         const defaultSeed = (myScore && myScore > 0) ? myScore : 100000000;
@@ -3326,12 +3563,6 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
 
     const yearNewsList = useMemo(() => generateStockNewsForYear(gameState.year, gameState.stocks || {}), [gameState.year, gameState.stocks]);
     const hasMyVipHint = gameState.allowAllVipHint || Boolean(gameState.permissions[myTeamId]?.hint);
-    const hasMyNewsAccess = gameState.allowAllNews || Boolean(gameState.permissions[myTeamId]?.news);
-
-    // 참여자 예측 투표 및 힌트 보상 모달 상태
-    const [localVotes, setLocalVotes] = useState({});
-    const [rewardModalOpen, setRewardModalOpen] = useState(false);
-    const [chosenHintStock, setChosenHintStock] = useState(null);
 
     const myPredictions = useMemo(() => {
         const fromHost = gameState.predictions?.[myTeamId] || {};
@@ -3347,6 +3578,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
             ...prev,
             [stockKey]: nextVal
         }));
+
+        emitActivity('PREDICT', stockKey, nextVal);
 
         try {
             const bc = new BroadcastChannel('quizrun_screen_sync');
@@ -3378,6 +3611,40 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const myResult = gameState.predictionResults?.[myTeamId];
     const isQualified = Boolean(myResult?.qualified);
     const myHitsCount = myResult?.hits ?? 0;
+    const votedCount = Object.values(myPredictions).filter(Boolean).length;
+
+    // 100% 특별 힌트 종목 선택 핸들러
+    const handleSelectVipHint = (stockKey) => {
+        setChosenHintStock(stockKey);
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({
+                type: 'STOCK_GAME_VIP_HINT_SELECTED',
+                payload: { teamId: myTeamId, nickname, stockKey, year: gameState.year }
+            });
+            setTimeout(() => bc.close(), 200);
+        } catch (e) {}
+
+        if (socket) {
+            socket.emit('stock_game:vip_hint_selected', {
+                pin,
+                teamId: myTeamId,
+                nickname,
+                stockKey,
+                year: gameState.year
+            });
+            socket.emit('room:message', {
+                pin,
+                event: 'stock_game:vip_hint_selected',
+                payload: {
+                    teamId: myTeamId,
+                    nickname,
+                    stockKey,
+                    year: gameState.year
+                }
+            });
+        }
+    };
 
     // 현재 선택된 종목 객체
     const activeStockItem = useMemo(() => {
@@ -3385,7 +3652,16 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         return stockList.find(s => s.key === selectedStockKey) || null;
     }, [selectedStockKey, stockList]);
 
-    // 퍼센트 버튼 클릭 핸들러 (50% 누르면 가진 금액에서 살 수 있는 수량 자동 계산)
+    // 종목 상세 화면 열기
+    const handleOpenStockDetail = (key, defaultTrade = 'BUY') => {
+        setSelectedStockKey(key);
+        setTradeType(defaultTrade);
+        setTradeQty(0);
+        setShowAnalysis(false);
+        emitActivity('READ_NEWS', key);
+    };
+
+    // 퍼센트 버튼 클릭 핸들러 (50% 누르면 가진 금액/보유수량에서 살 수 있는/팔 수 있는 수량 자동 계산)
     const handleSetPercentage = (pct, stockItem) => {
         if (!stockItem) return;
         const price = stockItem.prices ? (stockItem.prices[gameState.year] ?? stockItem.prices[2015] ?? 0) : 0;
@@ -3408,7 +3684,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         if (!stockItem) return;
         const qty = parseInt(tradeQty, 10);
         if (isNaN(qty) || qty <= 0) {
-            alert('올바른 거래 수량을 설정해 주세요.');
+            alert('올바른 거래 수량을 입력해 주세요.');
             return;
         }
 
@@ -3437,6 +3713,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         }
 
         playSound('submit');
+        emitActivity('TRADE', stockItem.key);
+
         const updatedPortfolio = {
             ...myPortfolio,
             cash: newCash,
@@ -3565,7 +3843,33 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 </div>
             </div>
 
-            {/* Mobile / Responsive Navigation Tabs (10대 뉴스 탭 제거 후 주식 클릭 시 뉴스 표시) */}
+            {/* Prediction / Hits Quick Notification Bar */}
+            {gameState.year > 2015 && (
+                <div style={{
+                    background: '#1e293b',
+                    padding: '8px 16px',
+                    borderBottom: '1px solid #334155',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: '0.82rem'
+                }}>
+                    <span style={{ color: '#94a3b8', fontWeight: '700' }}>
+                        🎯 예측 현황: <strong style={{ color: '#38bdf8' }}>{votedCount}/10개 완료</strong>
+                    </span>
+                    {myResult ? (
+                        <span style={{ color: isQualified ? '#f59e0b' : '#38bdf8', fontWeight: '900' }}>
+                            {isQualified ? '👑 5개 이상 적중 (특별 힌트 지급)' : `적중 결과: ${myHitsCount} / 10개`}
+                        </span>
+                    ) : (
+                        <span style={{ color: '#cbd5e1' }}>
+                            5개 이상 적중 시 100% 힌트 획득
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* Mobile / Responsive Navigation Tabs */}
             <div style={{
                 display: 'flex',
                 background: '#1e293b',
@@ -3601,7 +3905,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
             </div>
 
             {/* Main Content Area */}
-            <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
+            <div style={{ flex: 1, padding: '14px', overflowY: 'auto' }}>
 
                 {/* A) 종목 상세 & 뉴스 & 매수/매도 화면 (특정 주식을 클릭했을 때 표시) */}
                 {selectedStockKey && activeStockItem ? (
@@ -3630,14 +3934,14 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                         const isOverShares = tradeType === 'SELL' && myHoldingsQty < numQty;
 
                         return (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                 {/* Top Back Header Bar */}
                                 <div style={{
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
                                     background: '#0f172a',
-                                    padding: '10px 14px',
+                                    padding: '8px 12px',
                                     borderRadius: '12px',
                                     border: '1px solid #1e293b'
                                 }}>
@@ -3645,24 +3949,25 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                         onClick={() => {
                                             setSelectedStockKey(null);
                                             setTradeQty(0);
+                                            setShowAnalysis(false);
                                         }}
                                         style={{
                                             background: '#334155',
                                             color: '#ffffff',
                                             border: 'none',
                                             borderRadius: '8px',
-                                            padding: '8px 14px',
+                                            padding: '8px 12px',
                                             fontWeight: '800',
-                                            fontSize: '0.88rem',
+                                            fontSize: '0.86rem',
                                             cursor: 'pointer',
                                             display: 'flex',
                                             alignItems: 'center',
                                             gap: '6px'
                                         }}
                                     >
-                                        <ArrowLeft size={16} /> 이전 (주식 리스트)
+                                        <ArrowLeft size={16} /> 목록으로
                                     </button>
-                                    <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: '700' }}>
+                                    <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: '700' }}>
                                         종목 상세 및 뉴스 / 주문
                                     </span>
                                 </div>
@@ -3672,29 +3977,29 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                     background: '#0f172a',
                                     border: '1px solid #1e293b',
                                     borderRadius: '16px',
-                                    padding: '16px',
+                                    padding: '14px 16px',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '12px'
+                                    gap: '10px'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                             <div style={{
-                                                width: '42px',
-                                                height: '42px',
-                                                borderRadius: '12px',
+                                                width: '40px',
+                                                height: '40px',
+                                                borderRadius: '10px',
                                                 background: s.badgeColor || '#3b82f6',
                                                 color: 'white',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
                                                 fontWeight: '900',
-                                                fontSize: '1.3rem'
+                                                fontSize: '1.25rem'
                                             }}>
                                                 {s.key}
                                             </div>
                                             <div>
-                                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '900', color: '#f8fafc' }}>
+                                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#f8fafc' }}>
                                                     {gameState.isPubliclyRevealed ? `${s.sector} (${s.realName})` : `${s.key} ${s.sector}`}
                                                 </h3>
                                                 <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
@@ -3704,12 +4009,12 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                         </div>
 
                                         <div style={{ textAlign: 'right' }}>
-                                            <div style={{ fontSize: '1.35rem', fontWeight: '900', color: '#ffffff' }}>
+                                            <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#ffffff' }}>
                                                 {price.toLocaleString()}원
                                             </div>
                                             {gameState.year > 2015 && (
                                                 <div style={{
-                                                    fontSize: '0.82rem',
+                                                    fontSize: '0.8rem',
                                                     fontWeight: '800',
                                                     color: diff > 0 ? '#f43f5e' : (diff < 0 ? '#38bdf8' : '#94a3b8')
                                                 }}>
@@ -3721,21 +4026,21 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                     </div>
                                 </div>
 
-                                {/* Stock Specific News Section (주식 클릭 시 보이는 관련 뉴스) */}
+                                {/* Stock Specific News Section (간결하고 직관적인 뉴스 카드) */}
                                 <div style={{
                                     background: '#0f172a',
                                     border: '1px solid #1e293b',
                                     borderRadius: '16px',
-                                    padding: '16px',
+                                    padding: '14px 16px',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '12px'
+                                    gap: '10px'
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <Newspaper size={18} color="#f59e0b" />
-                                            <h4 style={{ margin: 0, fontSize: '1.02rem', fontWeight: '900', color: '#f8fafc' }}>
-                                                [{s.key}] {gameState.year}년 종목 이슈 및 분석 뉴스
+                                            <Newspaper size={17} color="#f59e0b" />
+                                            <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '900', color: '#f8fafc' }}>
+                                                [{s.key}] {gameState.year}년 뉴스 이슈
                                             </h4>
                                         </div>
                                         <button
@@ -3745,45 +4050,45 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                 color: participantEasyNews ? '#1e293b' : '#f8fafc',
                                                 border: 'none',
                                                 borderRadius: '8px',
-                                                padding: '4px 10px',
-                                                fontSize: '0.78rem',
+                                                padding: '3px 8px',
+                                                fontSize: '0.74rem',
                                                 fontWeight: '800',
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            {participantEasyNews ? '📰 원본 뉴스 보기' : '🐣 Easy 쉬운 뉴스 보기'}
+                                            {participantEasyNews ? '📰 원본 뉴스 보기' : '🐣 쉬운 뉴스 보기'}
                                         </button>
                                     </div>
 
                                     {stockNews ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                                 <span style={{
                                                     background: '#f43f5e',
                                                     color: 'white',
                                                     padding: '2px 8px',
                                                     borderRadius: '6px',
-                                                    fontSize: '0.75rem',
+                                                    fontSize: '0.72rem',
                                                     fontWeight: '800'
                                                 }}>
                                                     {stockNews.tag || '속보'}
                                                 </span>
-                                                <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                                                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                                                     {stockNews.media || '경제종합'} · {stockNews.date || `${gameState.year}.06`}
                                                 </span>
                                             </div>
 
-                                            <div style={{ fontSize: '1rem', fontWeight: '800', color: '#f1f5f9', lineHeight: '1.4' }}>
+                                            <div style={{ fontSize: '0.98rem', fontWeight: '800', color: '#f1f5f9', lineHeight: '1.4' }}>
                                                 {stockNews.headline}
                                             </div>
 
                                             <div style={{
-                                                background: participantEasyNews ? 'rgba(245, 158, 11, 0.12)' : '#1e293b',
-                                                borderRadius: '12px',
-                                                padding: '12px 14px',
-                                                fontSize: '0.9rem',
+                                                background: participantEasyNews ? 'rgba(245, 158, 11, 0.1)' : '#1e293b',
+                                                borderRadius: '10px',
+                                                padding: '10px 12px',
+                                                fontSize: '0.88rem',
                                                 color: participantEasyNews ? '#fef3c7' : '#cbd5e1',
-                                                lineHeight: '1.7',
+                                                lineHeight: '1.6',
                                                 border: participantEasyNews ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.05)',
                                                 whiteSpace: 'pre-line',
                                                 wordBreak: 'keep-all',
@@ -3795,20 +4100,20 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             {/* Term Glossary Footnotes */}
                                             {stockNews.glossary && stockNews.glossary.length > 0 && (
                                                 <div style={{
-                                                    background: 'rgba(59, 130, 246, 0.12)',
-                                                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                                                    borderRadius: '12px',
-                                                    padding: '10px 14px',
+                                                    background: 'rgba(59, 130, 246, 0.08)',
+                                                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                                                    borderRadius: '10px',
+                                                    padding: '8px 12px',
                                                     display: 'flex',
                                                     flexDirection: 'column',
-                                                    gap: '6px'
+                                                    gap: '4px'
                                                 }}>
-                                                    <div style={{ fontSize: '0.82rem', fontWeight: '900', color: '#60a5fa' }}>
+                                                    <div style={{ fontSize: '0.78rem', fontWeight: '900', color: '#60a5fa' }}>
                                                         📌 주요 경제/산업 용어 해설
                                                     </div>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                                                         {stockNews.glossary.map((g, idx) => (
-                                                            <div key={idx} style={{ fontSize: '0.78rem', color: '#93c5fd', lineHeight: '1.4' }}>
+                                                            <div key={idx} style={{ fontSize: '0.75rem', color: '#93c5fd', lineHeight: '1.35' }}>
                                                                 <strong style={{ color: '#bfdbfe' }}>• {g.term}:</strong> {g.def}
                                                             </div>
                                                         ))}
@@ -3816,37 +4121,33 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                 </div>
                                             )}
 
-                                            {/* 10-Year Price Trend Chart */}
-                                            <StockPriceTrendChart stockItem={s} currentYear={gameState.year} />
-
-                                            {/* Fundamental & Technical Analysis Panel */}
-                                            <FundamentalTechnicalAnalysis stockItem={s} currentYear={gameState.year} newsItem={stockNews} />
-
-                                            {/* Prediction Vote Bar */}
+                                            {/* Prediction Vote Bar (심플한 상승/하락 버튼) */}
                                             <div style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'space-between',
-                                                background: 'rgba(30, 41, 59, 0.5)',
+                                                background: 'rgba(30, 41, 59, 0.6)',
                                                 padding: '8px 12px',
                                                 borderRadius: '10px',
-                                                border: '1px solid rgba(255, 255, 255, 0.06)'
+                                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                marginTop: '2px'
                                             }}>
-                                                <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: '700' }}>
-                                                    당해 연도 주가 등락 예측:
+                                                <span style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: '800' }}>
+                                                    당해 연도 등락 예측:
                                                 </span>
                                                 <div style={{ display: 'flex', gap: '8px' }}>
                                                     <button
                                                         onClick={() => handleToggleVote(s.key, 'UP')}
                                                         style={{
-                                                            background: myVote === 'UP' ? '#ef4444' : 'rgba(239, 68, 68, 0.1)',
+                                                            background: myVote === 'UP' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(239, 68, 68, 0.12)',
                                                             color: myVote === 'UP' ? 'white' : '#fca5a5',
-                                                            border: myVote === 'UP' ? '1px solid #ef4444' : '1px solid rgba(239, 68, 68, 0.3)',
+                                                            border: myVote === 'UP' ? '1.5px solid #f87171' : '1px solid rgba(239, 68, 68, 0.3)',
                                                             borderRadius: '8px',
                                                             padding: '6px 14px',
-                                                            fontSize: '0.8rem',
-                                                            fontWeight: '800',
-                                                            cursor: 'pointer'
+                                                            fontSize: '0.84rem',
+                                                            fontWeight: '900',
+                                                            cursor: 'pointer',
+                                                            boxShadow: myVote === 'UP' ? '0 2px 10px rgba(239, 68, 68, 0.4)' : 'none'
                                                         }}
                                                     >
                                                         ▲ 상승 {myVote === 'UP' && '✓'}
@@ -3854,14 +4155,15 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                     <button
                                                         onClick={() => handleToggleVote(s.key, 'DOWN')}
                                                         style={{
-                                                            background: myVote === 'DOWN' ? '#3b82f6' : 'rgba(59, 130, 246, 0.1)',
+                                                            background: myVote === 'DOWN' ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'rgba(59, 130, 246, 0.12)',
                                                             color: myVote === 'DOWN' ? 'white' : '#93c5fd',
-                                                            border: myVote === 'DOWN' ? '1px solid #3b82f6' : '1px solid rgba(59, 130, 246, 0.3)',
+                                                            border: myVote === 'DOWN' ? '1.5px solid #60a5fa' : '1px solid rgba(59, 130, 246, 0.3)',
                                                             borderRadius: '8px',
                                                             padding: '6px 14px',
-                                                            fontSize: '0.8rem',
-                                                            fontWeight: '800',
-                                                            cursor: 'pointer'
+                                                            fontSize: '0.84rem',
+                                                            fontWeight: '900',
+                                                            cursor: 'pointer',
+                                                            boxShadow: myVote === 'DOWN' ? '0 2px 10px rgba(59, 130, 246, 0.4)' : 'none'
                                                         }}
                                                     >
                                                         ▼ 하락 {myVote === 'DOWN' && '✓'}
@@ -3869,14 +4171,49 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                 </div>
                                             </div>
 
+                                            {/* Collapsible Fundamental & Technical Analysis Toggle Button */}
+                                            <button
+                                                onClick={() => setShowAnalysis(!showAnalysis)}
+                                                style={{
+                                                    background: showAnalysis ? '#334155' : 'rgba(56, 189, 248, 0.12)',
+                                                    color: showAnalysis ? '#cbd5e1' : '#38bdf8',
+                                                    border: showAnalysis ? '1px solid #475569' : '1px solid rgba(56, 189, 248, 0.35)',
+                                                    borderRadius: '10px',
+                                                    padding: '8px 12px',
+                                                    fontSize: '0.82rem',
+                                                    fontWeight: '800',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '6px',
+                                                    width: '100%',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                <BarChart3 size={15} />
+                                                <span>{showAnalysis ? '📊 기업 분석 및 10년 차트 닫기 ▲' : '📊 기업 분석 및 10년 차트 보기 ▼'}</span>
+                                            </button>
+
+                                            {/* Collapsible Content */}
+                                            {showAnalysis && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                                                    {/* 10-Year Price Trend Chart */}
+                                                    <StockPriceTrendChart stockItem={s} currentYear={gameState.year} />
+
+                                                    {/* Fundamental & Technical Analysis Panel */}
+                                                    <FundamentalTechnicalAnalysis stockItem={s} currentYear={gameState.year} newsItem={stockNews} />
+                                                </div>
+                                            )}
+
                                             {/* VIP Hint Box (if unlocked) */}
                                             {hasMyVipHint && stockNews.vipHint && (
                                                 <div style={{
                                                     background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.1) 100%)',
                                                     border: '1.5px solid #f59e0b',
                                                     borderRadius: '12px',
-                                                    padding: '12px 14px',
-                                                    fontSize: '0.85rem',
+                                                    padding: '10px 12px',
+                                                    fontSize: '0.84rem',
                                                     color: '#fef3c7',
                                                     fontWeight: '700'
                                                 }}>
@@ -3885,21 +4222,21 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             )}
                                         </div>
                                     ) : (
-                                        <div style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                                        <div style={{ color: '#64748b', fontSize: '0.82rem' }}>
                                             2015년은 기준가 연도입니다. 2016년부터 뉴스가 제공됩니다.
                                         </div>
                                     )}
                                 </div>
 
-                                {/* Trading Console (매수 / 매도 주문 입력) */}
+                                {/* Trading Console (매수 / 매도 주문 입력 - 주 단위 표시 및 완벽한 반응형) */}
                                 <div style={{
                                     background: '#0f172a',
                                     border: '1.5px solid #3b82f6',
                                     borderRadius: '16px',
-                                    padding: '16px',
+                                    padding: '14px 16px',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '14px',
+                                    gap: '12px',
                                     boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
                                 }}>
                                     {/* 1) Mode Switcher: 매수 / 매도 */}
@@ -3911,13 +4248,13 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             }}
                                             style={{
                                                 flex: 1,
-                                                padding: '12px',
+                                                padding: '10px',
                                                 borderRadius: '10px',
                                                 background: tradeType === 'BUY' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : '#1e293b',
                                                 color: 'white',
                                                 border: tradeType === 'BUY' ? '2px solid #f87171' : '1px solid #334155',
                                                 fontWeight: '900',
-                                                fontSize: '1.05rem',
+                                                fontSize: '1rem',
                                                 cursor: 'pointer',
                                                 boxShadow: tradeType === 'BUY' ? '0 4px 14px rgba(239, 68, 68, 0.4)' : 'none'
                                             }}
@@ -3931,13 +4268,13 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             }}
                                             style={{
                                                 flex: 1,
-                                                padding: '12px',
+                                                padding: '10px',
                                                 borderRadius: '10px',
                                                 background: tradeType === 'SELL' ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : '#1e293b',
                                                 color: 'white',
                                                 border: tradeType === 'SELL' ? '2px solid #60a5fa' : '1px solid #334155',
                                                 fontWeight: '900',
-                                                fontSize: '1.05rem',
+                                                fontSize: '1rem',
                                                 cursor: 'pointer',
                                                 boxShadow: tradeType === 'SELL' ? '0 4px 14px rgba(59, 130, 246, 0.4)' : 'none'
                                             }}
@@ -3947,7 +4284,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                     </div>
 
                                     {/* Mode status summary */}
-                                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', background: '#1e293b', padding: '8px 12px', borderRadius: '8px' }}>
+                                    <div style={{ fontSize: '0.8rem', color: '#94a3b8', background: '#1e293b', padding: '6px 10px', borderRadius: '8px' }}>
                                         {tradeType === 'BUY'
                                             ? `보유 현금(${availableCash.toLocaleString()}원)으로 [${s.key} ${s.sector}] 주식을 매수합니다.`
                                             : `보유 주식(${myHoldingsQty.toLocaleString()}주)을 매도하여 현금화합니다.`}
@@ -3956,11 +4293,11 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                     {/* 2) Quantity & Percentage Controls */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#e2e8f0' }}>
-                                                거래 수량 설정 (개수):
+                                            <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#e2e8f0' }}>
+                                                주문 수량 설정 (주):
                                             </span>
                                             {/* Percentage buttons: 10%, 25%, 50%, 75%, 100% */}
-                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                            <div style={{ display: 'flex', gap: '3px' }}>
                                                 {[10, 25, 50, 75, 100].map(pctVal => (
                                                     <button
                                                         key={pctVal}
@@ -3970,8 +4307,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                             color: '#f8fafc',
                                                             border: '1px solid rgba(255,255,255,0.2)',
                                                             borderRadius: '6px',
-                                                            padding: '4px 8px',
-                                                            fontSize: '0.75rem',
+                                                            padding: '3px 6px',
+                                                            fontSize: '0.72rem',
                                                             fontWeight: '800',
                                                             cursor: 'pointer'
                                                         }}
@@ -3982,49 +4319,62 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             </div>
                                         </div>
 
-                                        {/* Stepper Input row */}
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        {/* Stepper Input row (한 화면에 +10과 +100까지 모두 컴팩트하게 표시) */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%' }}>
                                             <button
                                                 onClick={() => setTradeQty(Math.max(0, numQty - 100))}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 12px', fontWeight: 'bold', cursor: 'pointer' }}
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
                                                 -100
                                             </button>
                                             <button
                                                 onClick={() => setTradeQty(Math.max(0, numQty - 10))}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 12px', fontWeight: 'bold', cursor: 'pointer' }}
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '40px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
                                                 -10
                                             </button>
-                                            <input
-                                                type="number"
-                                                value={tradeQty || ''}
-                                                placeholder="0"
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value, 10);
-                                                    setTradeQty(isNaN(val) ? 0 : Math.max(0, val));
-                                                }}
-                                                style={{
-                                                    flex: 1,
-                                                    background: '#090d16',
-                                                    color: '#ffffff',
-                                                    border: '1px solid #475569',
-                                                    borderRadius: '10px',
-                                                    padding: '10px',
-                                                    textAlign: 'center',
-                                                    fontWeight: '900',
-                                                    fontSize: '1.2rem'
-                                                }}
-                                            />
+                                            <div style={{
+                                                flex: 1,
+                                                minWidth: '80px',
+                                                maxWidth: '140px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                background: '#090d16',
+                                                border: '1px solid #475569',
+                                                borderRadius: '8px',
+                                                padding: '4px 8px'
+                                            }}>
+                                                <input
+                                                    type="number"
+                                                    value={tradeQty || ''}
+                                                    placeholder="0"
+                                                    onChange={(e) => {
+                                                        const val = parseInt(e.target.value, 10);
+                                                        setTradeQty(isNaN(val) ? 0 : Math.max(0, val));
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        minWidth: 0,
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        outline: 'none',
+                                                        color: '#ffffff',
+                                                        textAlign: 'right',
+                                                        fontWeight: '900',
+                                                        fontSize: '1.15rem'
+                                                    }}
+                                                />
+                                                <span style={{ color: '#94a3b8', fontWeight: '800', fontSize: '0.95rem', marginLeft: '4px' }}>주</span>
+                                            </div>
                                             <button
                                                 onClick={() => setTradeQty(numQty + 10)}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 12px', fontWeight: 'bold', cursor: 'pointer' }}
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '40px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
                                                 +10
                                             </button>
                                             <button
                                                 onClick={() => setTradeQty(numQty + 100)}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 12px', fontWeight: 'bold', cursor: 'pointer' }}
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
                                                 +100
                                             </button>
@@ -4035,46 +4385,47 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                     <div style={{
                                         background: '#1e293b',
                                         borderRadius: '12px',
-                                        padding: '12px 16px',
+                                        padding: '10px 14px',
                                         display: 'flex',
                                         flexDirection: 'column',
-                                        gap: '6px',
+                                        gap: '5px',
                                         border: '1px solid #334155'
                                     }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                                            <span style={{ color: '#94a3b8' }}>1주당 가격</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                            <span style={{ color: '#94a3b8' }}>1주당 시세</span>
                                             <span style={{ fontWeight: '700' }}>{price.toLocaleString()}원</span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                                            <span style={{ color: '#94a3b8' }}>총 거래 주문 금액</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                                            <span style={{ color: '#94a3b8' }}>총 {tradeType === 'BUY' ? '매수' : '매도'} 금액</span>
                                             <span style={{ fontWeight: '900', color: tradeType === 'BUY' ? '#f43f5e' : '#38bdf8' }}>
                                                 {orderTotalCost.toLocaleString()}원
                                             </span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', paddingTop: '4px', borderTop: '1px dashed #334155' }}>
-                                            <span style={{ color: '#94a3b8' }}>현재 가진 금액(예수금)</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', paddingTop: '4px', borderTop: '1px dashed #334155' }}>
+                                            <span style={{ color: '#94a3b8' }}>현재 예수금(보유 현금)</span>
                                             <span style={{ fontWeight: '700', color: '#10b981' }}>{availableCash.toLocaleString()}원</span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', fontWeight: '900' }}>
-                                            <span style={{ color: '#f8fafc' }}>거래 후 예상 잔액</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', fontWeight: '900' }}>
+                                            <span style={{ color: '#f8fafc' }}>체결 후 예상 예수금</span>
                                             <span style={{ color: afterCash >= 0 ? '#38bdf8' : '#ef4444' }}>
                                                 {afterCash.toLocaleString()}원
                                             </span>
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: '800' }}>
-                                            <span style={{ color: '#cbd5e1' }}>가진 금액과의 차이</span>
-                                            <span style={{ color: cashDiff >= 0 ? '#10b981' : '#f43f5e' }}>
-                                                {cashDiff > 0 ? `+${cashDiff.toLocaleString()}` : `${cashDiff.toLocaleString()}`}원
-                                            </span>
-                                        </div>
+
+                                        {tradeType === 'SELL' && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                                                <span>매도 후 남은 주식 수량</span>
+                                                <span style={{ fontWeight: '800', color: '#38bdf8' }}>{Math.max(0, myHoldingsQty - numQty)}주</span>
+                                            </div>
+                                        )}
 
                                         {isOverBudget && (
-                                            <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 'bold', marginTop: '4px', textAlign: 'center' }}>
+                                            <div style={{ color: '#ef4444', fontSize: '0.78rem', fontWeight: 'bold', marginTop: '4px', textAlign: 'center' }}>
                                                 ⚠️ 가진 금액(예수금)이 {(orderTotalCost - availableCash).toLocaleString()}원 부족합니다!
                                             </div>
                                         )}
                                         {isOverShares && (
-                                            <div style={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 'bold', marginTop: '4px', textAlign: 'center' }}>
+                                            <div style={{ color: '#ef4444', fontSize: '0.78rem', fontWeight: 'bold', marginTop: '4px', textAlign: 'center' }}>
                                                 ⚠️ 보유한 주식 수량({myHoldingsQty}주)보다 많이 매도할 수 없습니다!
                                             </div>
                                         )}
@@ -4093,12 +4444,12 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '12px',
-                                            padding: '14px',
-                                            fontSize: '1.05rem',
+                                            padding: '12px',
+                                            fontSize: '1rem',
                                             fontWeight: '900',
                                             cursor: (numQty <= 0 || isOverBudget || isOverShares) ? 'not-allowed' : 'pointer',
                                             boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-                                            marginTop: '4px'
+                                            marginTop: '2px'
                                         }}
                                     >
                                         ✓ {orderTotalCost.toLocaleString()}원 {tradeType === 'BUY' ? '매수 체결 완료' : '매도 체결 완료'}
@@ -4112,7 +4463,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                         {/* 1) Stocks Tab: 종목 클릭 시 뉴스와 매매 화면으로 진입 */}
                         {activeTab === 'stocks' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                <div style={{ fontSize: '0.88rem', color: '#94a3b8', marginBottom: '2px' }}>
+                                <div style={{ fontSize: '0.84rem', color: '#94a3b8', marginBottom: '2px' }}>
                                     💡 <strong>종목을 클릭하면</strong> 해당 기업의 뉴스 확인 및 매수/매도를 진행할 수 있습니다.
                                 </div>
                                 {stockList.map(s => {
@@ -4121,19 +4472,18 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                     const prevP = s.prices[prevYear] ?? price;
                                     const diff = price - prevP;
                                     const pct = prevP > 0 ? ((diff / prevP) * 100).toFixed(1) : '0.0';
+                                    const myHoldings = myPortfolio.holdings?.[s.key] || 0;
+                                    const curVote = myPredictions[s.key];
 
                                     return (
                                         <div
                                             key={s.key}
-                                            onClick={() => {
-                                                setSelectedStockKey(s.key);
-                                                setTradeQty(0);
-                                            }}
+                                            onClick={() => handleOpenStockDetail(s.key)}
                                             style={{
                                                 background: '#0f172a',
-                                                border: '1px solid #1e293b',
+                                                border: curVote ? '1px solid #38bdf8' : '1px solid #1e293b',
                                                 borderRadius: '14px',
-                                                padding: '14px 16px',
+                                                padding: '12px 14px',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'space-between',
@@ -4142,12 +4492,12 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                 boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
                                             }}
                                             onMouseEnter={(e) => e.currentTarget.style.borderColor = s.badgeColor || '#38bdf8'}
-                                            onMouseLeave={(e) => e.currentTarget.style.borderColor = '#1e293b'}
+                                            onMouseLeave={(e) => e.currentTarget.style.borderColor = curVote ? '#38bdf8' : '#1e293b'}
                                         >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                 <div style={{
-                                                    width: '38px',
-                                                    height: '38px',
+                                                    width: '36px',
+                                                    height: '36px',
                                                     borderRadius: '10px',
                                                     background: s.badgeColor || '#3b82f6',
                                                     color: 'white',
@@ -4155,27 +4505,39 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
                                                     fontWeight: '900',
-                                                    fontSize: '1.2rem'
+                                                    fontSize: '1.15rem'
                                                 }}>
                                                     {s.key}
                                                 </div>
                                                 <div>
-                                                    <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#f8fafc' }}>
-                                                        {gameState.isPubliclyRevealed ? `${s.sector} (${s.realName})` : `${s.key} ${s.sector}`}
+                                                    <div style={{ fontSize: '1rem', fontWeight: '800', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <span>{gameState.isPubliclyRevealed ? `${s.sector} (${s.realName})` : `${s.key} ${s.sector}`}</span>
+                                                        {curVote && (
+                                                            <span style={{
+                                                                fontSize: '0.72rem',
+                                                                padding: '1px 6px',
+                                                                borderRadius: '4px',
+                                                                background: curVote === 'UP' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                                                color: curVote === 'UP' ? '#f87171' : '#60a5fa',
+                                                                fontWeight: '800'
+                                                            }}>
+                                                                {curVote === 'UP' ? '▲상승' : '▼하락'}
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                                                        내 보유: <strong>{myPortfolio.holdings?.[s.key] || 0}주</strong> · <span style={{ color: '#38bdf8' }}>뉴스/매매 →</span>
+                                                    <div style={{ fontSize: '0.76rem', color: '#94a3b8' }}>
+                                                        내 보유: <strong style={{ color: myHoldings > 0 ? '#38bdf8' : '#64748b' }}>{myHoldings}주</strong> · <span style={{ color: '#38bdf8' }}>뉴스/매매 →</span>
                                                     </div>
                                                 </div>
                                             </div>
 
                                             <div style={{ textAlign: 'right' }}>
-                                                <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#ffffff' }}>
+                                                <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#ffffff' }}>
                                                     {price.toLocaleString()}원
                                                 </div>
                                                 {gameState.year > 2015 && (
                                                     <div style={{
-                                                        fontSize: '0.8rem',
+                                                        fontSize: '0.78rem',
                                                         fontWeight: '800',
                                                         color: diff > 0 ? '#f43f5e' : (diff < 0 ? '#38bdf8' : '#94a3b8')
                                                     }}>
@@ -4193,7 +4555,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                         {/* 2) Sectors Reference Tab */}
                         {activeTab === 'sectors' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '4px' }}>
+                                <div style={{ fontSize: '0.86rem', color: '#94a3b8', marginBottom: '4px' }}>
                                     100대 기업 14대 시장 섹터 도감 (클릭 시 상세 열람)
                                 </div>
                                 {MARKET_SECTORS_DIRECTORY.map(s => (
@@ -4248,34 +4610,44 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                 </div>
 
                                 <div style={{ background: '#0f172a', padding: '16px', borderRadius: '16px', border: '1px solid #1e293b' }}>
-                                    <div style={{ fontSize: '1rem', fontWeight: '800', marginBottom: '10px' }}>보유 주식 목록 (클릭 시 뉴스/매매)</div>
+                                    <div style={{ fontSize: '1rem', fontWeight: '800', marginBottom: '10px' }}>보유 주식 목록 (클릭 시 즉시 매도)</div>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                        {stockList.map(s => {
-                                            const qty = myPortfolio.holdings?.[s.key] || 0;
-                                            if (qty === 0) return null;
-                                            const price = s.prices[gameState.year] ?? s.prices[2015];
-                                            return (
-                                                <div
-                                                    key={s.key}
-                                                    onClick={() => {
-                                                        setSelectedStockKey(s.key);
-                                                        setTradeQty(0);
-                                                    }}
-                                                    style={{
-                                                        display: 'flex',
-                                                        justifyContent: 'space-between',
-                                                        fontSize: '0.88rem',
-                                                        padding: '8px 10px',
-                                                        background: '#1e293b',
-                                                        borderRadius: '8px',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                >
-                                                    <span>[{s.key}] {s.sector} ({qty}주)</span>
-                                                    <span style={{ fontWeight: 'bold', color: '#38bdf8' }}>{(qty * price).toLocaleString()}원 →</span>
-                                                </div>
-                                            );
-                                        })}
+                                        {stockList.filter(s => (myPortfolio.holdings?.[s.key] || 0) > 0).length === 0 ? (
+                                            <div style={{ color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '16px 0' }}>
+                                                현재 보유 중인 주식이 없습니다. (100% 현금 보유)
+                                            </div>
+                                        ) : (
+                                            stockList.map(s => {
+                                                const qty = myPortfolio.holdings?.[s.key] || 0;
+                                                if (qty === 0) return null;
+                                                const price = s.prices[gameState.year] ?? s.prices[2015];
+                                                return (
+                                                    <div
+                                                        key={s.key}
+                                                        onClick={() => handleOpenStockDetail(s.key, 'SELL')}
+                                                        style={{
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            alignItems: 'center',
+                                                            fontSize: '0.88rem',
+                                                            padding: '10px 12px',
+                                                            background: '#1e293b',
+                                                            borderRadius: '10px',
+                                                            cursor: 'pointer',
+                                                            border: '1px solid rgba(255,255,255,0.06)'
+                                                        }}
+                                                    >
+                                                        <div>
+                                                            <strong style={{ color: '#f8fafc' }}>[{s.key}] {s.sector}</strong>
+                                                            <div style={{ fontSize: '0.76rem', color: '#38bdf8', marginTop: '2px' }}>
+                                                                보유: {qty}주 (평가: {(qty * price).toLocaleString()}원)
+                                                            </div>
+                                                        </div>
+                                                        <span style={{ fontWeight: 'bold', color: '#60a5fa', fontSize: '0.82rem' }}>매도 진행 →</span>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -4289,10 +4661,10 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 isOpen={rewardModalOpen}
                 onClose={() => setRewardModalOpen(false)}
                 currentYear={gameState.year}
-                stocks={gameState.stocks}
+                stocks={gameState.stocks || {}}
                 hits={myHitsCount}
                 selectedStockKey={chosenHintStock}
-                onSelectStock={(key) => setChosenHintStock(key)}
+                onSelectStock={handleSelectVipHint}
             />
 
             {/* Modals */}
@@ -4315,18 +4687,6 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                     isPubliclyRevealed={gameState.isPubliclyRevealed}
                 />
             )}
-
-            {/* Special Hint Qualified Reward Modal */}
-            <SpecialHintRewardModal
-                isOpen={rewardModalOpen}
-                onClose={() => setRewardModalOpen(false)}
-                hits={myHitsCount}
-                total={10}
-                currentYear={gameState.year}
-                stocks={gameState.stocks || {}}
-                selectedStockKey={chosenHintStock}
-                onSelectStock={(key) => setChosenHintStock(key)}
-            />
         </div>
     );
 }

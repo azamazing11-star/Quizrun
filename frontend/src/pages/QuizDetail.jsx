@@ -229,45 +229,52 @@ export default function QuizDetail({ socket }) {
     };
 
     const handleStartGame = () => {
+        let allQuestions = [];
         if (subId === 'sub-comprehensive') {
-            const totalCount = counts.mcq + counts.short + (counts.ox || 0);
-            if (totalCount === 0) {
+            if (quizData && quizData.sequentialQuestions && quizData.sequentialQuestions.length > 0) {
+                allQuestions = [...quizData.sequentialQuestions];
+            } else {
+                allQuestions = [
+                    ...(quizData?.mcq || []).map(q => ({ ...q, type: 'mcq' })),
+                    ...(quizData?.ox || []).map(q => ({ ...q, type: 'ox' })),
+                    ...(quizData?.short || []).map(q => ({ ...q, type: 'short' }))
+                ];
+            }
+            if (allQuestions.length === 0) {
                 alert('이 종합 폴더에는 저장된 문제가 없습니다. 각 서브 폴더에서 문제를 먼저 만들어주세요!');
                 return;
             }
-            setShowOrderModal(true);
-            return;
-        }
+        } else {
+            let data = quizData;
+            
+            if (!data) {
+                const key = `quizrun_data_${topicId}_${subId}`;
+                const saved = localStorage.getItem(key);
+                if (saved) {
+                    data = JSON.parse(saved);
+                }
+            }
 
-        let data = quizData;
-        
-        if (!data) {
-            const key = `quizrun_data_${topicId}_${subId}`;
-            const saved = localStorage.getItem(key);
-            if (saved) {
-                data = JSON.parse(saved);
+            if (!data || ((data.mcq || []).length === 0 && (data.short || []).length === 0 && (data.ox || []).length === 0)) {
+                alert('저장된 문제가 없습니다. 문제를 먼저 만들어주세요!');
+                return;
+            }
+
+            allQuestions = [
+                ...(data.mcq || []).map(q => ({ ...q, type: 'mcq' })),
+                ...(data.ox || []).map(q => ({ ...q, type: 'ox' })),
+                ...(data.short || []).map(q => ({ ...q, type: 'short' }))
+            ];
+            
+            if (allQuestions.length === 0) {
+                alert('저장된 문제가 없습니다!');
+                return;
             }
         }
 
-        if (!data || ((data.mcq || []).length === 0 && (data.short || []).length === 0 && (data.ox || []).length === 0)) {
-            alert('저장된 문제가 없습니다. 문제를 먼저 만들어주세요!');
-            return;
-        }
-
-        const allQuestions = [
-            ...(data.mcq || []).map(q => ({ ...q, type: 'mcq' })),
-            ...(data.ox || []).map(q => ({ ...q, type: 'ox' })),
-            ...(data.short || []).map(q => ({ ...q, type: 'short' }))
-        ];
-        
-        if (allQuestions.length === 0) {
-            alert('저장된 문제가 없습니다!');
-            return;
-        }
-
-        const mcqCount = (data.mcq || []).length;
-        const oxCount = (data.ox || []).length;
-        const shortCount = (data.short || []).length;
+        const mcqCount = allQuestions.filter(q => q.type === 'mcq' || (q.options && q.options.length > 2)).length;
+        const oxCount = allQuestions.filter(q => q.type === 'ox' || (q.options && q.options.length === 2)).length;
+        const shortCount = allQuestions.filter(q => q.type === 'short' || (!q.options || q.options.length === 0)).length;
         const typeCount = (mcqCount > 0 ? 1 : 0) + (oxCount > 0 ? 1 : 0) + (shortCount > 0 ? 1 : 0);
         const resolvedQuizType = typeCount > 1 ? 'mixed' : (shortCount > 0 ? 'short' : (oxCount > 0 ? 'ox' : 'mcq'));
 

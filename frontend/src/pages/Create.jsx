@@ -985,18 +985,16 @@ export default function Create({ socket }) {
     };
 
     const handleRemoveQuestion = (index) => {
-        if (questions.length > 1) {
-            const newQuestions = questions.filter((_, i) => i !== index);
-            setQuestions(newQuestions);
-            setSelectedIndices(prev => {
-                const next = new Set();
-                prev.forEach(i => {
-                    if (i < index) next.add(i);
-                    else if (i > index) next.add(i - 1);
-                });
-                return next;
+        const newQuestions = questions.filter((_, i) => i !== index);
+        setQuestions(newQuestions);
+        setSelectedIndices(prev => {
+            const next = new Set();
+            prev.forEach(i => {
+                if (i < index) next.add(i);
+                else if (i > index) next.add(i - 1);
             });
-        }
+            return next;
+        });
     };
 
     const handleQuestionTextChange = (index, text) => {
@@ -1184,8 +1182,26 @@ export default function Create({ socket }) {
         });
 
         if (validQuestions.length === 0) {
-            alert('저장할 문제의 질문 텍스트 또는 미디어/정답을 입력해주세요!');
-            return;
+            if (topicId && subId) {
+                const confirmed = window.confirm('작성된 문제가 없거나 모두 삭제된 상태입니다.\n해당 세부 주제의 문제를 모두 비운(0개) 상태로 저장하시겠습니까?');
+                if (!confirmed) return;
+
+                const key = `quizrun_data_${topicId}_${subId}`;
+                const existing = localStorage.getItem(key);
+                let data = existing ? JSON.parse(existing) : { mcq: [], short: [], ox: [] };
+                if (!data.ox) data.ox = [];
+                data[mode] = [];
+
+                localStorage.setItem(key, JSON.stringify(data));
+                socket.emit('quiz:saveQuestions', { topicId, subId, data }, (res) => {
+                    alert('모든 문제가 삭제되어 빈 폴더로 저장되었습니다.');
+                    navigate(`/quiz/${topicId}/${subId}`);
+                });
+                return;
+            } else {
+                alert('게임을 시작하려면 최소 1개 이상의 문제를 작성해주세요!');
+                return;
+            }
         }
 
         // 각 유효 문제에 대해 검증
@@ -1300,11 +1316,17 @@ export default function Create({ socket }) {
                         </div>
                     </div>
                     <button
-                        onClick={() => navigate('/')}
+                        onClick={() => {
+                            if (topicId && subId) {
+                                navigate(`/quiz/${topicId}/${subId}`);
+                            } else {
+                                navigate(-1);
+                            }
+                        }}
                         className="glass-button secondary"
-                        style={{ marginTop: '3rem', width: '100%' }}
+                        style={{ marginTop: '3rem', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                     >
-                        <ArrowLeft size={18} /> 홈으로 돌아가기
+                        <ArrowLeft size={18} /> 이전
                     </button>
                 </div>
             </div>
@@ -1731,7 +1753,27 @@ export default function Create({ socket }) {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {questions.map((q, qIndex) => {
+                    {questions.length === 0 ? (
+                        <div className="glass-panel" style={{ padding: '3.5rem 2rem', textAlign: 'center', background: 'rgba(255, 255, 255, 0.95)', border: '2px dashed #cbd5e1', borderRadius: '16px' }}>
+                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🗑️</div>
+                            <h3 style={{ fontSize: '1.25rem', color: '#334155', margin: '0 0 0.5rem', fontWeight: 'bold' }}>
+                                등록된 문제가 없습니다
+                            </h3>
+                            <p style={{ fontSize: '0.95rem', color: '#64748b', margin: '0 0 1.5rem', lineHeight: 1.6 }}>
+                                모든 문제를 삭제한 상태로 유지하려면 하단의 <strong>[저장하기]</strong> 버튼을 누르세요.<br />
+                                새 문제를 만들려면 아래 <strong>[+ 문제 추가하기]</strong> 버튼이나 상단의 <strong>[엑셀 파일로 올리기]</strong>를 사용하세요.
+                            </p>
+                            <button
+                                type="button"
+                                className="glass-button secondary"
+                                onClick={handleAddQuestion}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem', background: '#f0f9ff', color: 'var(--primary)', borderColor: 'var(--primary)', fontWeight: 'bold' }}
+                            >
+                                <PlusCircle size={18} /> 새 문제 추가하기
+                            </button>
+                        </div>
+                    ) : (
+                        questions.map((q, qIndex) => {
                         const isSelected = selectedIndices.has(qIndex);
                         const isDragOver = dragOverIndex === qIndex;
 
@@ -1840,7 +1882,7 @@ export default function Create({ socket }) {
                                     <input
                                         type="file"
                                         accept="audio/*,video/*,image/*"
-                                        onChange={(e) => handleFileUpload(qIndex, e.target.files[0])}
+                                        onChange={(e) => handleMediaFileUpload(qIndex, e.target.files[0])}
                                         style={{ display: 'none' }}
                                         id={`file-upload-${qIndex}`}
                                     />
@@ -2115,7 +2157,7 @@ export default function Create({ socket }) {
                         </p>
                     </div>
                 );
-            })}
+            }))}
         </div>
 
             <button
