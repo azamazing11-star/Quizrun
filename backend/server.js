@@ -415,22 +415,53 @@ const FRONTEND_DIR = path.join(ROOT_DIR, 'frontend');
 
 let isGitOperating = false;
 
-// 1. Get Git Status & Current Commit
+// 1. Get Git Status & Current Commit (Compare Local vs GitHub Remote)
 app.get('/api/git/status', async (req, res) => {
   try {
     const logRes = await execPromise('git log -1 --format="%h|%s|%an|%ad" --date=short', { cwd: ROOT_DIR });
     const [hash, message, author, date] = (logRes.stdout || '').trim().split('|');
     
     const statusRes = await execPromise('git status --porcelain', { cwd: ROOT_DIR });
-    const hasUncommittedChanges = Boolean(statusRes.stdout && statusRes.stdout.trim().length > 0);
+    const rawStatus = (statusRes.stdout || '').trim();
+    const changedFiles = rawStatus ? rawStatus.split('\n').map(l => l.trim()) : [];
+    const hasUncommittedChanges = changedFiles.length > 0;
 
-    let remoteCommit = null;
+    let behindCount = 0;
+    let aheadCount = 0;
+    let remoteLatestCommit = null;
+    let fetchError = null;
+
     try {
-      await execPromise('git fetch origin main', { cwd: ROOT_DIR, timeout: 7000 });
-      const revRes = await execPromise('git rev-list --count HEAD..origin/main', { cwd: ROOT_DIR });
-      const behindCount = parseInt(revRes.stdout.trim(), 10) || 0;
-      remoteCommit = { behindCount };
-    } catch (e) {}
+      await execPromise('git fetch origin main', { cwd: ROOT_DIR, timeout: 8000 });
+      
+      const behindRes = await execPromise('git rev-list --count HEAD..origin/main', { cwd: ROOT_DIR });
+      behindCount = parseInt(behindRes.stdout.trim(), 10) || 0;
+
+      const aheadRes = await execPromise('git rev-list --count origin/main..HEAD', { cwd: ROOT_DIR });
+      aheadCount = parseInt(aheadRes.stdout.trim(), 10) || 0;
+
+      if (behindCount > 0) {
+        const remoteLogRes = await execPromise('git log -1 origin/main --format="%h|%s|%an|%ad" --date=short', { cwd: ROOT_DIR });
+        const [rHash, rMessage, rAuthor, rDate] = (remoteLogRes.stdout || '').trim().split('|');
+        remoteLatestCommit = {
+          hash: rHash || 'origin/main',
+          message: rMessage || '',
+          author: rAuthor || '',
+          date: rDate || ''
+        };
+      }
+    } catch (e) {
+      fetchError = e.message;
+    }
+
+    let comparison = 'UP_TO_DATE';
+    if (behindCount > 0 && (hasUncommittedChanges || aheadCount > 0)) {
+      comparison = 'DIVERGED';
+    } else if (behindCount > 0) {
+      comparison = 'NEED_PULL';
+    } else if (hasUncommittedChanges || aheadCount > 0) {
+      comparison = 'NEED_PUSH';
+    }
 
     res.json({
       success: true,
@@ -441,7 +472,13 @@ app.get('/api/git/status', async (req, res) => {
         date: date || ''
       },
       hasUncommittedChanges,
-      remoteCommit,
+      changedFilesCount: changedFiles.length,
+      changedFiles: changedFiles.slice(0, 10),
+      behindCount,
+      aheadCount,
+      remoteLatestCommit,
+      comparison,
+      fetchError,
       isBusy: isGitOperating
     });
   } catch (err) {
