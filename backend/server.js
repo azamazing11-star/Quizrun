@@ -1544,10 +1544,17 @@ io.on('connection', (socket) => {
 const FRONTEND_DIST = path.join(__dirname, '..', 'frontend', 'dist');
 if (fs.existsSync(FRONTEND_DIST)) {
   console.log(`[Production Static] Serving high-performance bundle from: ${FRONTEND_DIST}`);
-  app.use(express.static(FRONTEND_DIST, { maxAge: '1h' }));
+  app.use(express.static(FRONTEND_DIST, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
   // Express 5 compatible SPA Fallback for all GET routes
   app.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads') && !req.path.startsWith('/socket.io')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       return res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
     }
     next();
