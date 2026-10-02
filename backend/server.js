@@ -557,9 +557,13 @@ app.post('/api/git/pull', async (req, res) => {
   } catch (err) {
     isGitOperating = false;
     console.error('[Git Update] Pull error:', err);
+    let errMsg = `깃허브 업데이트 중 오류가 발생했습니다: ${err.message}`;
+    if (err.message && err.message.includes('spawn EPERM')) {
+      errMsg = '윈도우 보안(백신/권한) 정책에 의해 웹에서의 직접 쉘 실행이 차단되었습니다 (spawn EPERM). AI(Antigravity)에게 "업데이트해줘"라고 말씀해 주시면 터미널에서 즉시 안전하게 최신 버전으로 업데이트해 드립니다!';
+    }
     res.status(500).json({
       success: false,
-      message: `깃허브 업데이트 중 오류가 발생했습니다: ${err.message}`
+      message: errMsg
     });
   }
 });
