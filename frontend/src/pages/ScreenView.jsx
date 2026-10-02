@@ -101,78 +101,6 @@ function ScreenRaceTrack({ groupScores = {}, participants = [], totalScore = 100
     );
 }
 
-// Sub-Monitor Right Cumulative Scoreboard Component
-function CumulativeScoreboardPanel({ scores = [] }) {
-    if (!scores || scores.length === 0) return null;
-
-    return (
-        <div style={{
-            position: 'fixed',
-            top: '80px',
-            right: '0',
-            width: '220px',
-            bottom: '0',
-            background: 'rgba(255, 255, 255, 0.97)',
-            borderLeft: '3px solid #e2e8f0',
-            borderTop: '3px solid #e2e8f0',
-            borderRadius: '28px 0 0 0',
-            padding: '20px 16px',
-            boxShadow: '-8px 0 30px rgba(0,0,0,0.06)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-            zIndex: 50,
-            overflowY: 'auto'
-        }}>
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                paddingBottom: '12px',
-                borderBottom: '2px solid #f1f5f9'
-            }}>
-                <Trophy size={20} color="#f59e0b" />
-                <span style={{ fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>
-                    실시간 누적 점수
-                </span>
-            </div>
-
-            <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                flex: 1,
-                overflowY: 'auto',
-                paddingRight: '2px'
-            }}>
-                {scores.map((item) => (
-                    <div
-                        key={item.num}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            background: '#f8fafc',
-                            border: '2px solid #e2e8f0',
-                            borderRadius: '14px',
-                            padding: '10px 14px',
-                            transition: 'all 0.25s ease'
-                        }}
-                    >
-                        <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#334155' }}>
-                            {item.num}번
-                        </div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#2563eb' }}>
-                            {item.score}점
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
 export default function ScreenView({ socket }) {
     const navigate = useNavigate();
     const { 
@@ -477,6 +405,9 @@ export default function ScreenView({ socket }) {
     const activeParticipants = (participants && participants.length > 0)
         ? participants
         : (contextOnlineParticipants || []);
+    const activeLiveScores = !isOfflineMode
+        ? activeParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true }))
+        : liveScores.map(s => ({ num: s.num, score: s.score || 0, isOnline: false }));
 
     // Direct touch/click on options from sub-monitor
     const handleOptionSelect = (idx) => {
@@ -518,7 +449,7 @@ export default function ScreenView({ socket }) {
     // --- CASE 1: LADDER GAME RUN MIRROR MODE ---
     if (viewMode === 'ladder') {
         return (
-            <div style={{ width: '100vw', minHeight: '100vh', background: '#f8fafc', position: 'relative' }}>
+            <div style={{ width: '100%', minHeight: '100vh', background: '#f8fafc', position: 'relative' }}>
                 <Ladder socket={socket} isMirrorProp={true} />
             </div>
         );
@@ -550,7 +481,7 @@ export default function ScreenView({ socket }) {
     return (
         <div style={{
             minHeight: '100vh',
-            width: '100vw',
+            width: '100%',
             background: 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #fdf4ff 100%)',
             color: '#1e293b',
             display: 'flex',
@@ -644,16 +575,12 @@ export default function ScreenView({ socket }) {
                 </div>
             </header>
 
-            {/* Fixed Right Scoreboard - always mounted when scores exist */}
-            <CumulativeScoreboardPanel scores={liveScores} />
-
             {/* Main Content Stage */}
             <main style={{
                 flex: 1,
                 display: 'flex',
                 gap: '28px',
                 padding: '24px 32px',
-                paddingRight: '240px',
                 width: '100%',
                 boxSizing: 'border-box',
                 alignItems: 'center',

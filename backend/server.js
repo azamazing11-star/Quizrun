@@ -1565,6 +1565,37 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('host:endSession', ({ pin }, callback) => {
+    let targetPins = [];
+    if (pin && rooms[String(pin).trim()]) {
+      targetPins.push(String(pin).trim());
+    } else {
+      for (const [rPin, room] of Object.entries(rooms)) {
+        if (room.hostId === socket.id) {
+          targetPins.push(rPin);
+        }
+      }
+    }
+
+    targetPins.forEach(rPin => {
+      console.log(`[Session End] Host ending session for room ${rPin}. Disconnecting all participants...`);
+      io.to(rPin).emit('room:closed');
+      io.to(rPin).emit('host:participantsUpdated', []);
+      delete rooms[rPin];
+    });
+
+    if (callback) callback({ success: true });
+  });
+
+  socket.on('host:closeRoom', ({ pin }, callback) => {
+    if (pin && rooms[pin]) {
+      io.to(pin).emit('room:closed');
+      io.to(pin).emit('host:participantsUpdated', []);
+      delete rooms[pin];
+    }
+    if (callback) callback({ success: true });
+  });
+
   // --- DISCONNECT ---
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);

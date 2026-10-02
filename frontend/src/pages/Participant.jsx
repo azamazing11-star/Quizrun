@@ -287,9 +287,16 @@ export default function Participant({ socket }) {
 
         socket.on('room:closed', () => {
             setGameState('join');
-            setError('Host ended the game');
+            setHasJoined(false);
+            sessionStorage.removeItem('quizrun_joined');
+            sessionStorage.removeItem('quizrun_pin');
+            setError('진행자가 세션을 종료하여 접속이 해제되었습니다.');
             setPin('');
             setGroupId(null);
+            setMyScore(0);
+            setIsGame(false);
+            setGameId('');
+            playSound('wrong');
         });
 
         socket.on('room:message', (data) => {

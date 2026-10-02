@@ -281,6 +281,16 @@ export function GlobalSessionProvider({ children, socket }) {
         };
     }, [socket, isSubScreen]);
 
+    // Re-join socket room whenever onlinePin changes on subscreen
+    useEffect(() => {
+        if (!socket || !isSubScreen || !onlinePin) return;
+        socket.emit('screen:joinRoom', { pin: onlinePin }, (res) => {
+            if (res && res.success && Array.isArray(res.participants)) {
+                setOnlineParticipants(res.participants);
+            }
+        });
+    }, [onlinePin, socket, isSubScreen]);
+
     // BroadcastChannel synchronization between Main Screen and Sub-Monitor
     useEffect(() => {
         let sessionBc;
@@ -445,9 +455,33 @@ export function GlobalSessionProvider({ children, socket }) {
         setScores(prev => prev.map(item => ({ ...item, score: 0 })));
     };
 
-    const endSession = () => {
+    const endSession = (sock) => {
+        const targetSocket = sock || socket;
+        const currentPin = sessionRef.current.onlinePin;
+
+        if (targetSocket && currentPin) {
+            targetSocket.emit('host:endSession', { pin: currentPin });
+        }
+
+        setOnlineParticipants([]);
         setScores(prev => prev.map(item => ({ ...item, score: 0 })));
         localStorage.removeItem('quizrun_global_session');
+        localStorage.removeItem('quizrun_online_participants');
+
+        // Broadcast to subscreen and other tabs
+        try {
+            const screenBc = new BroadcastChannel('quizrun_screen_sync');
+            screenBc.postMessage({
+                type: 'PARTICIPANTS_UPDATE',
+                payload: { participants: [] }
+            });
+            setTimeout(() => screenBc.close(), 300);
+        } catch (e) {}
+
+        // Create a new fresh online PIN for the next session
+        if (targetSocket && !isSubScreen && sessionRef.current.gameMode === 'online') {
+            createOnlineRoom(targetSocket, true);
+        }
     };
 
     return (

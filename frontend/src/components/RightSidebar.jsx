@@ -75,7 +75,7 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
     );
 
     useEffect(() => {
-        if (isSubScreen || !socket) return;
+        if (!socket) return;
 
         const handleParticipantsUpdate = (participants) => {
             if (Array.isArray(participants)) {
@@ -104,7 +104,7 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
             socket.off('room:stateUpdate', handleStateUpdate);
             socket.off('tunnel:updated', handleTunnelUpdate);
         };
-    }, [isSubScreen, socket]);
+    }, [socket]);
 
     const joinUrl = getParticipantJoinUrl(onlinePin, publicUrl, serverIp);
 
@@ -266,8 +266,17 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
 
     const activeScores = gameMode === 'online' 
         ? onlineParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true })) 
-        : scores.map(s => ({ num: s.num, score: s.score || 0, isOnline: false }));
-    const sortedScores = [...activeScores].sort((a, b) => b.score - a.score);
+        : scores.map(s => ({ num: `${s.num}번`, score: s.score || 0, isOnline: false }));
+
+    const hasAnyScore = isStockGame
+        ? activeScores.some(s => Number(s.score) > 0 && Number(s.score) !== (activeScores[0]?.score || 0))
+        : activeScores.some(s => Number(s.score) > 0);
+
+    const displayScores = hasAnyScore
+        ? [...activeScores].sort((a, b) => Number(b.score) - Number(a.score))
+        : [...activeScores];
+
+    const sortedScores = displayScores;
     const maxScore = sortedScores.length > 0 ? Math.max(...activeScores.map(s => s.score)) : 0;
 
     // 초기 투자금 일괄 지정 UI 컴포넌트 (주식 게임 모드 전용)
@@ -368,73 +377,6 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
             </div>
         );
     };
-
-    if (isSubScreen) {
-        return (
-            <aside style={{
-                width: '240px',
-                minWidth: '240px',
-                height: isStockGame ? '100%' : 'calc(100vh - 30px)',
-                position: isStockGame ? 'relative' : 'sticky',
-                top: isStockGame ? 0 : '15px',
-                marginRight: isStockGame ? 0 : '15px',
-                backgroundColor: 'rgba(255, 255, 255, 0.96)',
-                backdropFilter: 'blur(20px)',
-                borderRadius: '24px',
-                border: '1.5px solid rgba(226, 232, 240, 0.9)',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
-                zIndex: 100,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden'
-            }}>
-                <div style={{
-                    padding: '1.2rem',
-                    borderBottom: '1px solid #f1f5f9',
-                    background: 'linear-gradient(135deg, rgba(248,250,252,0.8) 0%, rgba(241,245,249,0.9) 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px'
-                }}>
-                    <Trophy size={20} color="#f59e0b" />
-                    <span style={{ fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>
-                        실시간 누적 점수판
-                    </span>
-                </div>
-                <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {scores && scores.length > 0 ? (
-                        scores.map((p) => (
-                            <div
-                                key={p.num}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    background: '#f8fafc',
-                                    border: '2px solid #e2e8f0',
-                                    borderRadius: '16px',
-                                    padding: '12px 16px',
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#334155' }}>
-                                    {p.num}번
-                                </span>
-                                <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#2563eb' }}>
-                                    {p.score}점
-                                </span>
-                            </div>
-                        ))
-                    ) : (
-                        <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px 0', fontSize: '0.9rem' }}>
-                            참가자가 없습니다
-                        </div>
-                    )}
-                </div>
-            </aside>
-        );
-    }
 
     return (
         <>
@@ -740,8 +682,10 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
                                     }}>
                                         {sortedScores.map((p, idx) => {
                                             const isEditing = editingNum === p.num;
-                                            const isGold = idx === 0 && p.score > 0;
-                                            const rankBadge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                                            const isGold = hasAnyScore && idx === 0 && p.score > 0;
+                                            const rankBadge = hasAnyScore 
+                                                ? (idx === 0 && p.score > 0 ? '🥇' : idx === 1 && p.score > 0 ? '🥈' : idx === 2 && p.score > 0 ? '🥉' : `#${idx + 1}`) 
+                                                : `${idx + 1}`;
 
                                             return (
                                                 <div
@@ -1363,8 +1307,8 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
                                         cursor: 'pointer'
                                     }}
                                     onClick={() => {
-                                        if (window.confirm("세션을 완전히 종료하시겠습니까? 점수와 데이터가 리셋됩니다.")) {
-                                            endSession();
+                                        if (window.confirm("세션을 완전히 종료하시겠습니까? 모든 참가자의 접속이 해제되고 점수가 초기화됩니다.")) {
+                                            endSession(socket);
                                             setShowWinnerModal(false);
                                         }
                                     }}

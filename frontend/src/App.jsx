@@ -181,7 +181,7 @@ function AppLayout({ socket, isMobileMode, setIsMobileMode }) {
   const isHost = location.pathname.startsWith('/host');
   const isScreen = location.pathname.startsWith('/screen');
   const isMirror = new URLSearchParams(location.search).get('mirror') === 'true';
-  const showSidebar = !isParticipant && !isHost && !isScreen;
+  const showSidebar = !isParticipant && !isHost;
 
   return (
     <>
