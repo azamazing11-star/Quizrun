@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 
 const GlobalSessionContext = createContext();
 
-export function GlobalSessionProvider({ children }) {
+export function GlobalSessionProvider({ children, socket }) {
     const tabIdRef = useRef(Math.random().toString(36).substring(2, 9) + Date.now().toString(36));
 
     const [gameMode, setGameModeState] = useState(() => {
@@ -180,22 +180,31 @@ export function GlobalSessionProvider({ children }) {
             localStorage.setItem('quizrun_online_participants', JSON.stringify(val));
         } catch (e) {}
         broadcastSession({ onlineParticipants: val });
+        try {
+            const screenBc = new BroadcastChannel('quizrun_screen_sync');
+            screenBc.postMessage({
+                type: 'PARTICIPANTS_UPDATE',
+                payload: { participants: val }
+            });
+            setTimeout(() => screenBc.close(), 300);
+        } catch (e) {}
     };
 
     const isCreatingRoomRef = useRef(false);
 
-    const createOnlineRoom = (socket, forceNew = false) => {
-        if (isSubScreen || !socket) return;
+    const createOnlineRoom = (sock, forceNew = false) => {
+        const targetSocket = sock || socket;
+        if (isSubScreen || !targetSocket) return;
         if (isCreatingRoomRef.current) return;
 
         const currentPin = sessionRef.current.onlinePin;
         const requestedPin = forceNew ? undefined : (currentPin || undefined);
 
         isCreatingRoomRef.current = true;
-        socket.emit('host:createRoom', { pin: requestedPin, mode: 'normal' }, (res) => {
+        targetSocket.emit('host:createRoom', { pin: requestedPin, mode: 'normal' }, (res) => {
             isCreatingRoomRef.current = false;
             if (res && res.success) {
-                setOnlinePin(res.pin);
+                if (res.pin) setOnlinePin(res.pin);
                 if (res.ip) setServerIp(res.ip);
                 if (res.publicUrl) setPublicUrl(res.publicUrl);
                 if (res.participants && Array.isArray(res.participants)) {
@@ -204,6 +213,73 @@ export function GlobalSessionProvider({ children }) {
             }
         });
     };
+
+    // Auto-sync room and listen to global socket events
+    useEffect(() => {
+        if (!socket) return;
+
+        const syncRoomWithServer = () => {
+            if (isSubScreen) {
+                if (sessionRef.current.onlinePin) {
+                    socket.emit('screen:joinRoom', { pin: sessionRef.current.onlinePin }, (res) => {
+                        if (res && res.success && Array.isArray(res.participants)) {
+                            setOnlineParticipants(res.participants);
+                        }
+                    });
+                }
+            } else {
+                if (sessionRef.current.gameMode === 'online') {
+                    createOnlineRoom(socket, false);
+                }
+            }
+        };
+
+        if (socket.connected) {
+            syncRoomWithServer();
+        }
+
+        const onConnect = () => {
+            syncRoomWithServer();
+        };
+        socket.on('connect', onConnect);
+
+        const handleParticipantsUpdated = (list) => {
+            if (Array.isArray(list)) {
+                setOnlineParticipants(list);
+            }
+        };
+        socket.on('host:participantsUpdated', handleParticipantsUpdated);
+
+        const handleStateUpdate = (data) => {
+            if (data && Array.isArray(data.participants)) {
+                setOnlineParticipants(data.participants);
+            }
+        };
+        socket.on('room:stateUpdate', handleStateUpdate);
+
+        const handleTunnelUpdate = (data) => {
+            if (data && data.publicUrl !== undefined) {
+                setPublicUrl(data.publicUrl || '');
+            }
+        };
+        socket.on('tunnel:updated', handleTunnelUpdate);
+
+        const handleNetworkUpdate = (data) => {
+            if (data) {
+                if (data.ip) setServerIp(data.ip);
+                if (data.publicUrl !== undefined) setPublicUrl(data.publicUrl || '');
+            }
+        };
+        socket.on('network:updated', handleNetworkUpdate);
+
+        return () => {
+            socket.off('connect', onConnect);
+            socket.off('host:participantsUpdated', handleParticipantsUpdated);
+            socket.off('room:stateUpdate', handleStateUpdate);
+            socket.off('tunnel:updated', handleTunnelUpdate);
+            socket.off('network:updated', handleNetworkUpdate);
+        };
+    }, [socket, isSubScreen]);
 
     // BroadcastChannel synchronization between Main Screen and Sub-Monitor
     useEffect(() => {

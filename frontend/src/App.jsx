@@ -242,7 +242,7 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <GlobalSessionProvider>
+      <GlobalSessionProvider socket={socket}>
         <Router>
           <div className={isMobileMode ? "simulator-container" : "simulator-pc"}>
             <div className={isMobileMode ? "simulator-mobile" : ""}>

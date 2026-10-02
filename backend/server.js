@@ -933,6 +933,37 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Screen/Sub-Monitor join handler
+  socket.on('screen:joinRoom', ({ pin }, callback) => {
+    if (pin) {
+      const cleanPin = String(pin).trim();
+      socket.join(cleanPin);
+      console.log(`[ScreenView] Socket ${socket.id} joined screen room ${cleanPin}`);
+      const room = rooms[cleanPin];
+      if (room) {
+        socket.emit('host:participantsUpdated', room.participants);
+        if (callback) callback({ success: true, participants: room.participants, state: room.state });
+      } else {
+        if (callback) callback({ success: true, participants: [] });
+      }
+    }
+  });
+
+  // Generic room join handler
+  socket.on('room:join', ({ pin }, callback) => {
+    if (pin) {
+      const cleanPin = String(pin).trim();
+      socket.join(cleanPin);
+      const room = rooms[cleanPin];
+      if (room) {
+        socket.emit('host:participantsUpdated', room.participants);
+        if (callback) callback({ success: true, participants: room.participants });
+      } else {
+        if (callback) callback({ success: true, participants: [] });
+      }
+    }
+  });
+
   socket.on('host:updateQuestionPoints', ({ pin, points }) => {
     const room = rooms[pin];
     if (room && room.hostId === socket.id) {
@@ -1564,6 +1595,7 @@ io.on('connection', (socket) => {
               if (idx !== -1 && participant.id === socket.id) {
                 const removed = room.participants.splice(idx, 1)[0];
                 io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+                io.to(pin).emit('host:participantsUpdated', room.participants);
                 console.log(`Participant ${removed.nickname} left room ${pin}`);
               }
             }, timeoutMs),

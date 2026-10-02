@@ -175,7 +175,15 @@ function CumulativeScoreboardPanel({ scores = [] }) {
 
 export default function ScreenView({ socket }) {
     const navigate = useNavigate();
-    const { scores: contextScores, participantCount: contextCount, gameMode: contextGameMode } = useGlobalSession();
+    const { 
+        scores: contextScores, 
+        participantCount: contextCount, 
+        gameMode: contextGameMode,
+        onlinePin: contextPin,
+        serverIp: contextServerIp,
+        publicUrl: contextPublicUrl,
+        onlineParticipants: contextOnlineParticipants
+    } = useGlobalSession();
 
     const [isConnectedToHost, setIsConnectedToHost] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -214,7 +222,7 @@ export default function ScreenView({ socket }) {
 
     const [screenData, setScreenData] = useState({
         gameState: 'waiting',
-        isOffline: true,
+        isOffline: contextGameMode === 'offline',
         isBuzzerMode: false,
         quizTitle: '퀴즈앤런 (Quiz N Run)',
         currentQuestion: '',
@@ -236,10 +244,10 @@ export default function ScreenView({ socket }) {
         buzzedInfo: null,
         judgeResult: null,
         groupScores: {},
-        participants: [],
-        pin: null,
-        serverIp: '',
-        publicUrl: '',
+        participants: contextOnlineParticipants || [],
+        pin: contextPin || null,
+        serverIp: contextServerIp || '',
+        publicUrl: contextPublicUrl || '',
         confetti: false,
         offlineWinnerList: [],
         isMediaMutedOnScreen: false
@@ -462,6 +470,14 @@ export default function ScreenView({ socket }) {
         isMediaMutedOnScreen
     } = screenData;
 
+    const isOfflineMode = (contextGameMode === 'offline') && (isOffline !== false);
+    const activePin = pin || contextPin;
+    const activePublicUrl = publicUrl || contextPublicUrl;
+    const activeServerIp = serverIp || contextServerIp;
+    const activeParticipants = (participants && participants.length > 0)
+        ? participants
+        : (contextOnlineParticipants || []);
+
     // Direct touch/click on options from sub-monitor
     const handleOptionSelect = (idx) => {
         if (showAnswer) return;
@@ -523,9 +539,9 @@ export default function ScreenView({ socket }) {
                 predictionResults={stockGameData.predictionResults}
                 portfolios={stockGameData.portfolios}
                 allOrdersModalOpen={stockGameData.allOrdersModalOpen}
-                pin={stockGameData.pin || pin}
-                serverIp={serverIp}
-                publicUrl={publicUrl}
+                pin={stockGameData.pin || activePin}
+                serverIp={activeServerIp}
+                publicUrl={activePublicUrl}
             />
         );
     }
@@ -726,10 +742,10 @@ export default function ScreenView({ socket }) {
                         </h1>
 
                         <p style={{ fontSize: '1.6rem', color: '#475569', fontWeight: '800', marginBottom: '24px' }}>
-                            {isOffline ? '진행자가 곧 퀴즈 또는 게임을 시작합니다! 🎯' : '아래 코드를 입력하여 퀴즈에 접속해 주세요! 🚀'}
+                            {isOfflineMode ? '진행자가 곧 퀴즈 또는 게임을 시작합니다! 🎯' : '아래 코드를 입력하여 퀴즈에 접속해 주세요! 🚀'}
                         </p>
 
-                        {!isOffline && pin && (
+                        {!isOfflineMode && activePin && (
                             <div style={{
                                 display: 'inline-flex',
                                 justifyContent: 'center',
@@ -741,14 +757,83 @@ export default function ScreenView({ socket }) {
                                 border: '3px solid #cbd5e1'
                             }}>
                                 <div style={{ background: 'white', padding: '12px', borderRadius: '16px', boxShadow: '0 6px 16px rgba(0,0,0,0.06)' }}>
-                                    <QRCode value={getParticipantJoinUrl(pin, publicUrl, serverIp)} size={140} />
+                                    <QRCode value={getParticipantJoinUrl(activePin, activePublicUrl, activeServerIp)} size={140} />
                                 </div>
                                 <div style={{ textAlign: 'left' }}>
                                     <div style={{ fontSize: '1rem', color: '#64748b', fontWeight: '700' }}>접속 PIN 번호</div>
                                     <div style={{ fontSize: '4rem', fontWeight: '900', color: '#4f46e5', letterSpacing: '3px', lineHeight: 1.1 }}>
-                                        {pin}
+                                        {activePin}
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {!isOfflineMode && (
+                            <div style={{ marginTop: '24px', width: '100%', maxWidth: '850px', margin: '24px auto 0' }}>
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '10px',
+                                    marginBottom: '14px',
+                                    fontSize: '1.4rem',
+                                    fontWeight: '900',
+                                    color: activeParticipants.length > 0 ? '#059669' : '#64748b'
+                                }}>
+                                    <Users size={28} color={activeParticipants.length > 0 ? '#10b981' : '#64748b'} />
+                                    <span>
+                                        {activeParticipants.length > 0 
+                                            ? `실시간 접속 완료 (${activeParticipants.length}명)` 
+                                            : '스마트폰으로 QR 코드를 찍고 참여해주세요!'}
+                                    </span>
+                                </div>
+
+                                {activeParticipants.length > 0 && (
+                                    <div style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '10px',
+                                        justifyContent: 'center',
+                                        padding: '16px 20px',
+                                        background: '#f8fafc',
+                                        borderRadius: '20px',
+                                        border: '2px solid #e2e8f0',
+                                        maxHeight: '160px',
+                                        overflowY: 'auto'
+                                    }}>
+                                        {activeParticipants.map((p, idx) => {
+                                            const runner = GROUP_RUNNERS[idx % GROUP_RUNNERS.length];
+                                            const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+                                            return (
+                                                <div
+                                                    key={p.id || idx}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '8px',
+                                                        background: 'white',
+                                                        border: `2px solid ${color}66`,
+                                                        padding: '8px 16px',
+                                                        borderRadius: '16px',
+                                                        boxShadow: '0 4px 10px rgba(0,0,0,0.04)',
+                                                        fontSize: '1.2rem',
+                                                        fontWeight: '900',
+                                                        color: '#1e293b',
+                                                        animation: 'popIn 0.3s ease'
+                                                    }}
+                                                >
+                                                    <span style={{ fontSize: '1.4rem' }}>{runner}</span>
+                                                    <span>{p.nickname}</span>
+                                                    {p.groupId && (
+                                                        <span style={{ fontSize: '0.85rem', background: color, color: 'white', padding: '2px 6px', borderRadius: '8px' }}>
+                                                            {p.groupId}조
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

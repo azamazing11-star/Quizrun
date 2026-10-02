@@ -417,20 +417,7 @@ export default function Home({ socket }) {
 
     const joinUrl = getParticipantJoinUrl(onlinePin, publicUrl, serverIp);
 
-    useEffect(() => {
-        if (isSubScreen || !socket) return;
-        if (gameMode === 'online' && !onlinePin) {
-            if (socket.connected) {
-                createOnlineRoom(socket, false);
-            }
-            const onConnect = () => createOnlineRoom(socket, false);
-            socket.on('connect', onConnect);
 
-            return () => {
-                socket.off('connect', onConnect);
-            };
-        }
-    }, [isSubScreen, socket, gameMode, onlinePin, createOnlineRoom]);
 
     const handleCopyUrl = () => {
         if (!onlinePin) return;
@@ -760,9 +747,39 @@ export default function Home({ socket }) {
                                 </div>
                             )}
 
-                            <div style={{ fontSize: '0.76rem', fontWeight: 'bold', color: onlineParticipants.length > 0 ? '#059669' : '#64748b' }}>
-                                {onlineParticipants.length > 0 ? `🟢 ${onlineParticipants.length}명 입장 대기 중` : '참여자 대기 중...'}
+                            <div style={{ fontSize: '0.8rem', fontWeight: '800', color: onlineParticipants.length > 0 ? '#059669' : '#64748b' }}>
+                                {onlineParticipants.length > 0 ? `🟢 ${onlineParticipants.length}명 입장 완료` : '참여자 대기 중...'}
                             </div>
+
+                            {onlineParticipants.length > 0 && (
+                                <div style={{
+                                    marginTop: '6px',
+                                    display: 'flex',
+                                    flexWrap: 'wrap',
+                                    gap: '4px',
+                                    maxHeight: '68px',
+                                    overflowY: 'auto',
+                                    justifyContent: 'center',
+                                    width: '100%'
+                                }}>
+                                    {onlineParticipants.map((p, idx) => (
+                                        <span
+                                            key={p.id || idx}
+                                            style={{
+                                                fontSize: '0.72rem',
+                                                fontWeight: '800',
+                                                background: '#f1f5f9',
+                                                color: '#334155',
+                                                padding: '2px 8px',
+                                                borderRadius: '10px',
+                                                border: '1px solid #cbd5e1'
+                                            }}
+                                        >
+                                            👤 {p.nickname}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         /* VS Badge */
