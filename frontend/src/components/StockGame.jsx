@@ -1407,305 +1407,127 @@ export function StockGameScreenView({
                 </div>
             </div>
 
-            {/* 2-Column Layout: 섹터 도감 모달 분리로 시세판/차트 영역 대폭 확장 */}
+            {/* 10대 종목 실시간 시세판 (1주당 가격) 단독 전체 표시 - 서브모니터 우측 진행방식&금액관리와 완벽 분리 */}
             <div style={{
                 flex: 1,
-                display: 'grid',
-                gridTemplateColumns: '1fr 380px',
-                gap: '12px',
+                background: 'rgba(15, 23, 42, 0.7)',
+                borderRadius: '16px',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                padding: '14px 18px',
+                display: 'flex',
+                flexDirection: 'column',
                 minHeight: 0,
                 overflow: 'hidden'
             }}>
-                {/* 1) CENTER COLUMN: 당해 연도 10대 종목 실시간 시세판 (한 화면에 10개 모두 표시) */}
-                <div style={{
-                    background: 'rgba(15, 23, 42, 0.7)',
-                    borderRadius: '16px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    padding: '12px 14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <BarChart3 size={18} color="#f43f5e" />
-                            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '900', color: '#f8fafc' }}>
-                                10대 종목 실시간 시세판 (1주당 가격)
-                            </h2>
-                        </div>
-                        {isPubliclyRevealed && (
-                            <span style={{
-                                background: '#10b981',
-                                color: 'white',
-                                padding: '2px 8px',
-                                borderRadius: '12px',
-                                fontSize: '0.75rem',
-                                fontWeight: '800'
-                            }}>
-                                ✓ 실제 기업명 공개 완료
-                            </span>
-                        )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <BarChart3 size={20} color="#f43f5e" />
+                        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '900', color: '#f8fafc' }}>
+                            10대 종목 실시간 시세판 (1주당 가격)
+                        </h2>
                     </div>
-
-                    {/* Stock Cards Grid (2열 x 5행: 100vh에 10개 완벽하게 맞춤) */}
-                    <div style={{
-                        flex: 1,
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(2, 1fr)',
-                        gridTemplateRows: 'repeat(5, 1fr)',
-                        gap: '8px',
-                        minHeight: 0,
-                        overflow: 'hidden'
-                    }}>
-                        {stockList.map((item) => {
-                            const curPrice = item.prices[year] ?? item.prices[2015];
-                            const prevYear = year > 2015 ? year - 1 : 2015;
-                            const prevPrice = item.prices[prevYear] ?? curPrice;
-                            const diff = curPrice - prevPrice;
-                            const pct = prevPrice > 0 ? ((diff / prevPrice) * 100).toFixed(1) : '0.0';
-                            const isUp = diff > 0;
-                            const isDown = diff < 0;
-
-                            const displayName = isPubliclyRevealed
-                                ? `${item.sectorDisplayName || `${item.key} ${item.sector}`} (${item.realName})`
-                                : (item.sectorDisplayName || `${item.key} ${item.sector}`);
-
-                            return (
-                                <div
-                                    key={item.key}
-                                    style={{
-                                        background: 'rgba(30, 41, 59, 0.7)',
-                                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                                        borderRadius: '12px',
-                                        padding: '6px 12px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
-                                    }}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <div style={{
-                                            width: '32px',
-                                            height: '32px',
-                                            borderRadius: '8px',
-                                            background: item.badgeColor || '#3b82f6',
-                                            color: 'white',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            fontSize: '1.05rem',
-                                            fontWeight: '900',
-                                            boxShadow: `0 2px 8px ${item.badgeColor}40`
-                                        }}>
-                                            {item.key}
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: '0.92rem', fontWeight: '800', color: '#f8fafc' }}>
-                                                {displayName}
-                                            </div>
-                                            <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '600' }}>
-                                                {item.sector}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '1.15rem', fontWeight: '900', color: '#ffffff', letterSpacing: '0.3px' }}>
-                                            {curPrice.toLocaleString()}
-                                            <span style={{ fontSize: '0.75rem', marginLeft: '2px', opacity: 0.8 }}>원</span>
-                                        </div>
-                                        {year > 2015 && (
-                                            <div style={{
-                                                fontSize: '0.78rem',
-                                                fontWeight: '800',
-                                                color: isUp ? '#f43f5e' : (isDown ? '#38bdf8' : '#94a3b8'),
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'flex-end',
-                                                gap: '2px'
-                                            }}>
-                                                {isUp && <ArrowUpRight size={13} />}
-                                                {isDown && <ArrowDownRight size={13} />}
-                                                <span>{diff > 0 ? `+${diff.toLocaleString()}` : diff.toLocaleString()}원</span>
-                                                <span>({diff > 0 ? `+${pct}` : pct}%)</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                    {isPubliclyRevealed && (
+                        <span style={{
+                            background: '#10b981',
+                            color: 'white',
+                            padding: '3px 10px',
+                            borderRadius: '10px',
+                            fontSize: '0.8rem',
+                            fontWeight: '800'
+                        }}>
+                            실명 공개됨
+                        </span>
+                    )}
                 </div>
 
-                {/* 3) RIGHT COLUMN: A~J 핵심 뉴스 10선 (헤드라인 중심 + 참여자 등락 예측 투표) */}
+                {/* Stock Cards Grid (2열 x 5행: 10개 종목 화면 전체 와이드 배치) */}
                 <div style={{
-                    background: 'rgba(15, 23, 42, 0.65)',
-                    borderRadius: '16px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    padding: '12px 14px',
-                    display: 'flex',
-                    flexDirection: 'column',
+                    flex: 1,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gridTemplateRows: 'repeat(5, 1fr)',
+                    gap: '10px',
+                    minHeight: 0,
                     overflow: 'hidden'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Newspaper size={17} color="#f59e0b" />
-                            <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '800', color: '#f8fafc' }}>
-                                {year}년 핵심 뉴스 10선 (A~J)
-                            </h3>
-                        </div>
-                        <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: '700' }}>
-                            헤드라인 클릭 시 기사 열람
-                        </span>
-                    </div>
+                    {stockList.map((item) => {
+                        const curPrice = item.prices[year] ?? item.prices[2015];
+                        const prevYear = year > 2015 ? year - 1 : 2015;
+                        const prevPrice = item.prices[prevYear] ?? curPrice;
+                        const diff = curPrice - prevPrice;
+                        const pct = prevPrice > 0 ? ((diff / prevPrice) * 100).toFixed(1) : '0.0';
+                        const isUp = diff > 0;
+                        const isDown = diff < 0;
 
-                    {/* News List (10개 종목별 헤드라인 + 오를지/내릴지 선택 버튼) */}
-                    <div style={{
-                        flex: 1,
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                        paddingRight: '2px'
-                    }}>
-                        {yearNewsList.map((news) => {
-                            const myVote = activePredictions[news.stockKey];
-                            return (
-                                <div
-                                    key={news.id}
-                                    style={{
-                                        background: 'rgba(30, 41, 59, 0.55)',
-                                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        const displayName = isPubliclyRevealed
+                            ? `${item.sectorDisplayName || `${item.key} ${item.sector}`} (${item.realName})`
+                            : (item.sectorDisplayName || `${item.key} ${item.sector}`);
+
+                        return (
+                            <div
+                                key={item.key}
+                                style={{
+                                    background: 'rgba(30, 41, 59, 0.7)',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    borderRadius: '12px',
+                                    padding: '8px 16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{
+                                        width: '36px',
+                                        height: '36px',
                                         borderRadius: '10px',
-                                        padding: '7px 10px',
+                                        background: item.badgeColor || '#3b82f6',
+                                        color: 'white',
                                         display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: '5px'
-                                    }}
-                                >
-                                    {/* Headline row (Clickable to read full news modal) */}
-                                    <div
-                                        onClick={() => {
-                                            if (allowAllNews) {
-                                                setSelectedNews(news);
-                                            } else {
-                                                alert('호스트가 뉴스 열람 권한을 승인하지 않았습니다.');
-                                            }
-                                        }}
-                                        style={{
-                                            cursor: allowAllNews ? 'pointer' : 'not-allowed',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '1.15rem',
+                                        fontWeight: '900',
+                                        boxShadow: `0 2px 8px ${item.badgeColor}40`
+                                    }}>
+                                        {item.key}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '1rem', fontWeight: '800', color: '#f8fafc' }}>
+                                            {displayName}
+                                        </div>
+                                        <div style={{ fontSize: '0.76rem', color: '#94a3b8', fontWeight: '600' }}>
+                                            {item.sector}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#ffffff', letterSpacing: '0.3px' }}>
+                                        {curPrice.toLocaleString()}
+                                        <span style={{ fontSize: '0.8rem', marginLeft: '2px', opacity: 0.8 }}>원</span>
+                                    </div>
+                                    {year > 2015 && (
+                                        <div style={{
+                                            fontSize: '0.82rem',
+                                            fontWeight: '800',
+                                            color: isUp ? '#f43f5e' : (isDown ? '#38bdf8' : '#94a3b8'),
                                             display: 'flex',
                                             alignItems: 'center',
-                                            gap: '6px'
-                                        }}
-                                        title="클릭하여 뉴스 전문 및 분석 열람"
-                                    >
-                                        <span style={{
-                                            background: news.badgeColor || '#3b82f6',
-                                            color: 'white',
-                                            padding: '1px 6px',
-                                            borderRadius: '6px',
-                                            fontSize: '0.75rem',
-                                            fontWeight: '900',
-                                            flexShrink: 0
+                                            justifyContent: 'flex-end',
+                                            gap: '3px'
                                         }}>
-                                            {news.stockKey}
-                                        </span>
-                                        <span style={{
-                                            fontSize: '0.72rem',
-                                            color: '#38bdf8',
-                                            fontWeight: '700',
-                                            flexShrink: 0
-                                        }}>
-                                            [{news.sector}]
-                                        </span>
-                                        <div style={{
-                                            fontSize: '0.8rem',
-                                            fontWeight: '700',
-                                            color: '#f1f5f9',
-                                            whiteSpace: 'nowrap',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            flex: 1
-                                        }}>
-                                            {news.rawHeadline || news.headline}
+                                            {isUp && <ArrowUpRight size={14} />}
+                                            {isDown && <ArrowDownRight size={14} />}
+                                            <span>{diff > 0 ? `+${diff.toLocaleString()}` : diff.toLocaleString()}원</span>
+                                            <span>({diff > 0 ? `+${pct}` : pct}%)</span>
                                         </div>
-                                    </div>
-
-
+                                    )}
                                 </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Prediction Status Bottom Bar */}
-                    <div style={{
-                        marginTop: '8px',
-                        padding: '8px 10px',
-                        borderRadius: '8px',
-                        background: 'rgba(15, 23, 42, 0.8)',
-                        border: '1px solid rgba(255, 255, 255, 0.06)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                    }}>
-                        <div style={{ fontSize: '0.72rem', color: '#cbd5e1', fontWeight: '700' }}>
-                            예측 완료: <strong style={{ color: '#38bdf8' }}>{totalVotedCount}/10개</strong>
-                        </div>
-                        <div style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: '800' }}>
-                            5개 이상 적중 시 100% 특별 힌트 획득!
-                        </div>
-                    </div>
-
-                    {/* Sub-Monitor Only: 얼마를 투자했고, 현재 남은 현금이 얼마인지 요약 */}
-                    <div style={{
-                        marginTop: '10px',
-                        padding: '10px 12px',
-                        background: 'rgba(15, 23, 42, 0.85)',
-                        borderRadius: '12px',
-                        border: '1px solid rgba(56, 189, 248, 0.3)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px'
-                    }}>
-                        <div style={{ fontSize: '0.82rem', fontWeight: '900', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <DollarSign size={15} /> 참여자별 현황 (총 투자 금액 & 현재 남은 현금)
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
-                            {Object.entries(portfolios || {}).map(([key, p]) => {
-                                if (!p) return null;
-                                let stockVal = 0;
-                                stockList.forEach(s => {
-                                    const q = p.holdings?.[s.key] || 0;
-                                    const pr = s.prices ? (s.prices[year] ?? s.prices[2015] ?? 0) : 0;
-                                    stockVal += q * pr;
-                                });
-                                const remainingCash = p.cash || 0;
-                                return (
-                                    <div key={key} style={{
-                                        background: 'rgba(30, 41, 59, 0.7)',
-                                        borderRadius: '8px',
-                                        padding: '6px 10px',
-                                        fontSize: '0.75rem',
-                                        display: 'flex',
-                                        justify: 'space-between',
-                                        alignItems: 'center'
-                                    }}>
-                                        <span style={{ fontWeight: '800', color: '#f8fafc' }}>👤 {key}</span>
-                                        <div style={{ display: 'flex', gap: '12px' }}>
-                                            <span style={{ color: '#f59e0b', fontWeight: '800' }}>
-                                                총 투자 금액: {stockVal.toLocaleString()}원
-                                            </span>
-                                            <span style={{ color: '#10b981', fontWeight: '800' }}>
-                                                남은 현금(예수금): {remainingCash.toLocaleString()}원
-                                            </span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
