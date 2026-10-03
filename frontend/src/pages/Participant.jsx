@@ -29,8 +29,8 @@ export default function Participant({ socket }) {
     const [groupId, setGroupId] = useState(null);
 
     // --- MULTIPLAYER GAME STATES ---
-    const [isGame, setIsGame] = useState(false);
-    const [gameId, setGameId] = useState('');
+    const [isGame, setIsGame] = useState(Boolean(sessionStorage.getItem('quizrun_game_id')));
+    const [gameId, setGameId] = useState(sessionStorage.getItem('quizrun_game_id') || '');
     const [gameTimeLeft, setGameTimeLeft] = useState(15);
 
     useEffect(() => {
@@ -184,13 +184,17 @@ export default function Participant({ socket }) {
             if (data.gameId) {
                 setIsGame(true);
                 setGameId(data.gameId);
+                try {
+                    sessionStorage.setItem('quizrun_game_id', data.gameId);
+                } catch (e) {}
             }
             if (data.isGame) {
                 setIsGame(true);
             }
             let nextState = data.state;
+            const activeGame = data.gameId || gameId || sessionStorage.getItem('quizrun_game_id');
             if (nextState === 'lobby') {
-                nextState = (data.gameId || gameId) ? 'game_active' : 'waiting';
+                nextState = activeGame ? 'game_active' : 'waiting';
             }
             setGameState(prev => {
                 if (!hasJoined && ['join', 'select_join_type', 'select_group'].includes(prev)) {
@@ -296,6 +300,9 @@ export default function Participant({ socket }) {
             setMyScore(0);
             setIsGame(false);
             setGameId('');
+            try {
+                sessionStorage.removeItem('quizrun_game_id');
+            } catch (e) {}
             playSound('wrong');
         });
 
@@ -304,6 +311,9 @@ export default function Participant({ socket }) {
                 if (data.event === 'game:start') {
                     setIsGame(true);
                     setGameId(data.payload.gameId);
+                    try {
+                        sessionStorage.setItem('quizrun_game_id', data.payload.gameId);
+                    } catch (e) {}
                     setGameState('game_active');
                     
                     // Init specific game variables
@@ -931,7 +941,7 @@ export default function Participant({ socket }) {
         );
     }
 
-    if ((isGame || gameId) && (gameState === 'game_active' || gameState === 'playing')) {
+    if (gameId === 'stock_game' || (isGame && gameId === 'stock_game') || ((isGame || gameId) && (gameState === 'game_active' || gameState === 'playing'))) {
         if (gameId === 'stock_game') {
             return (
                 <div style={{ width: '100%', minHeight: '100vh', background: '#090d16', position: 'relative' }}>

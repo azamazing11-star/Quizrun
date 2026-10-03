@@ -1473,6 +1473,10 @@ io.on('connection', (socket) => {
   // --- STOCK GAME DIRECT SOCKET RELAYS ---
   socket.on('stock_game:execute_order', (data) => {
     if (data && data.pin) {
+      const room = rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:execute_order', data);
+      }
       io.to(data.pin).emit('stock_game:execute_order', data);
       io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:execute_order', payload: data });
     }
@@ -1480,6 +1484,10 @@ io.on('connection', (socket) => {
 
   socket.on('stock_game:predict', (data) => {
     if (data && data.pin) {
+      const room = rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:predict', data);
+      }
       io.to(data.pin).emit('stock_game:predict', data);
       io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:predict', payload: data });
     }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useGlobalSession } from '../context/GlobalSessionContext';
 import Confetti from 'react-confetti';
 import { playSound } from '../utils/audio';
+import { formatKoreanMoney } from '../utils/format';
 import { 
     Trophy, 
     Settings, 
@@ -18,16 +19,43 @@ import {
 } from 'lucide-react';
 
 export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGame }) {
-    // Internal state to track stock game mode across windows (e.g. Sub-Monitor)
-    const [isStockGameSync, setIsStockGameSync] = useState(() => {
+    const [isStockGameSynced, setIsStockGameSynced] = useState(() => {
         try {
-            return localStorage.getItem('quizrun_active_game_id') === 'stock_game';
+            return sessionStorage.getItem('quizrun_active_game_mode') === 'stock_game';
         } catch (e) {
             return false;
         }
     });
 
-    const isStockGame = propIsStockGame || isStockGameSync;
+    useEffect(() => {
+        let bc;
+        try {
+            bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.onmessage = (event) => {
+                const { type, payload } = event.data || {};
+                if (type === 'STOCK_GAME_SCREEN_UPDATE' || (type === 'MODE_CHANGE' && payload?.mode === 'stock_game')) {
+                    setIsStockGameSynced(true);
+                    try { sessionStorage.setItem('quizrun_active_game_mode', 'stock_game'); } catch (e) {}
+                } else if (type === 'MODE_CHANGE' && payload?.mode && payload.mode !== 'stock_game') {
+                    setIsStockGameSynced(false);
+                    try { sessionStorage.removeItem('quizrun_active_game_mode'); } catch (e) {}
+                } else if (type === 'STATE_UPDATE' || type === 'HOST_PONG') {
+                    if (payload?.mode === 'stock_game') {
+                        setIsStockGameSynced(true);
+                        try { sessionStorage.setItem('quizrun_active_game_mode', 'stock_game'); } catch (e) {}
+                    } else if (payload?.mode && payload.mode !== 'stock_game') {
+                        setIsStockGameSynced(false);
+                        try { sessionStorage.removeItem('quizrun_active_game_mode'); } catch (e) {}
+                    }
+                }
+            };
+        } catch (e) {}
+        return () => {
+            if (bc) try { bc.close(); } catch (e) {}
+        };
+    }, []);
+
+    const isStockGame = Boolean(propIsStockGame || isStockGameSynced);
 
     const {
         gameMode,
@@ -54,66 +82,8 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     const [tempScoreVal, setTempScoreVal] = useState('');
     const [showWinnerModal, setShowWinnerModal] = useState(false);
     const [confettiActive, setConfettiActive] = useState(false);
-
-    // Real-time synchronization of Stock Game mode for Sub-Monitor
-    useEffect(() => {
-        let screenChannel;
-        let seedChannel;
-        try {
-            screenChannel = new BroadcastChannel('quizrun_screen_sync');
-            screenChannel.onmessage = (e) => {
-                const { type, payload } = e.data || {};
-                if (type === 'STOCK_GAME_SCREEN_UPDATE') {
-                    setIsStockGameSync(true);
-                } else if (type === 'MODE_CHANGE') {
-                    if (payload && payload.mode === 'stock_game') {
-                        setIsStockGameSync(true);
-                    } else if (payload && payload.mode && payload.mode !== 'stock_game') {
-                        setIsStockGameSync(false);
-                    }
-                } else if (type === 'STATE_UPDATE') {
-                    if (payload && payload.mode === 'stock_game') {
-                        setIsStockGameSync(true);
-                    } else if (payload && payload.mode && payload.mode !== 'stock_game') {
-                        setIsStockGameSync(false);
-                    }
-                }
-            };
-
-            seedChannel = new BroadcastChannel('quizrun_stock_seed_sync');
-            seedChannel.onmessage = () => {
-                setIsStockGameSync(true);
-            };
-        } catch (e) {}
-
-        const handleStockSync = () => {
-            setIsStockGameSync(true);
-        };
-
-        if (socket) {
-            socket.on('stock_game:state_sync', handleStockSync);
-        }
-
-        const intervalId = setInterval(() => {
-            try {
-                const activeGame = localStorage.getItem('quizrun_active_game_id');
-                if (activeGame === 'stock_game') {
-                    setIsStockGameSync(true);
-                } else if (activeGame && activeGame !== 'stock_game') {
-                    setIsStockGameSync(false);
-                }
-            } catch (e) {}
-        }, 1000);
-
-        return () => {
-            if (screenChannel) screenChannel.close();
-            if (seedChannel) seedChannel.close();
-            if (socket) {
-                socket.off('stock_game:state_sync', handleStockSync);
-            }
-            clearInterval(intervalId);
-        };
-    }, [socket]);
+    const [bulkAmount, setBulkAmount] = useState(1000000);
+    const [percentInputs, setPercentInputs] = useState({});
 
     const handleResetAllScores = () => {
         if (window.confirm("모든 참가자의 점수를 0점으로 초기화하시겠습니까?")) {
@@ -173,11 +143,11 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
         setTempScoreVal(String(currentScore));
     };
 
-    // 주식 게임 모드 진입 시 오프라인 참여자 기본 투자금(1억원) 자동 초기화 (전원 0원인 경우)
+    // 주식 게임 모드 진입 시 오프라인 참여자 기본 투자금(100만원) 자동 초기화 (전원 0원인 경우)
     useEffect(() => {
         if (isStockGame) {
             if (gameMode === 'offline' && scores.length > 0 && scores.every(s => !s.score || s.score === 0)) {
-                scores.forEach(s => setExactScore(s.num, 100000000));
+                scores.forEach(s => setExactScore(s.num, 1000000));
             }
         }
     }, [isStockGame, gameMode]);
@@ -205,11 +175,12 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                         return p;
                     }));
                 } else {
-                    setExactScore(num, finalVal);
+                    const numVal = typeof num === 'string' ? parseInt(num.replace(/[^0-9]/g, ''), 10) : num;
+                    setExactScore(numVal, finalVal);
                     if (isStockGame) {
                         try {
                             const bc = new BroadcastChannel('quizrun_stock_seed_sync');
-                            bc.postMessage({ type: 'SINGLE_SET_SEED', id: num, amount: finalVal });
+                            bc.postMessage({ type: 'SINGLE_SET_SEED', id: numVal, amount: finalVal });
                             setTimeout(() => bc.close(), 300);
                         } catch (e) {}
                     }
@@ -239,20 +210,86 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                 return p;
             }));
         } else {
-            adjustScore(num, delta);
+            const numVal = typeof num === 'string' ? parseInt(num.replace(/[^0-9]/g, ''), 10) : num;
+            adjustScore(numVal, delta);
             if (isStockGame) {
-                const target = scores.find(s => s.num === num);
+                const target = scores.find(s => s.num === numVal);
                 const nextScore = Math.max(0, (target ? target.score : 0) + delta);
                 try {
                     const bc = new BroadcastChannel('quizrun_stock_seed_sync');
-                    bc.postMessage({ type: 'SINGLE_SET_SEED', id: num, amount: nextScore });
+                    bc.postMessage({ type: 'SINGLE_SET_SEED', id: numVal, amount: nextScore });
                     setTimeout(() => bc.close(), 300);
                 } catch (e) {}
             }
         }
     };
 
+    // % 가산/차감 적용 핸들러
+    const handleApplyPercent = (key, currentScore) => {
+        const rawInput = percentInputs[key];
+        const rate = parseFloat(rawInput);
+        if (isNaN(rate)) {
+            setPercentInputs(prev => ({ ...prev, [key]: '0' }));
+            return;
+        }
 
+        const baseScore = Number(currentScore) > 0 ? Number(currentScore) : 1000000;
+        const nextScore = Math.max(0, Math.round(baseScore * (1 + rate / 100)));
+
+        if (gameMode === 'online') {
+            if (socket && onlinePin) {
+                socket.emit('host:adjustScore', { pin: onlinePin, nickname: key, exactScore: nextScore });
+            }
+            setOnlineParticipants(prev => prev.map(p => {
+                if (p.nickname === key) {
+                    if (isStockGame) {
+                        try {
+                            const bc = new BroadcastChannel('quizrun_stock_seed_sync');
+                            bc.postMessage({ type: 'SINGLE_SET_SEED', id: p.id || key, amount: nextScore });
+                            setTimeout(() => bc.close(), 300);
+                        } catch (e) {}
+                    }
+                    return { ...p, score: nextScore };
+                }
+                return p;
+            }));
+        } else {
+            const numVal = typeof key === 'string' ? parseInt(key.replace(/[^0-9]/g, ''), 10) : key;
+            setExactScore(numVal, nextScore);
+            if (isStockGame) {
+                try {
+                    const bc = new BroadcastChannel('quizrun_stock_seed_sync');
+                    bc.postMessage({ type: 'SINGLE_SET_SEED', id: numVal, amount: nextScore });
+                    setTimeout(() => bc.close(), 300);
+                } catch (e) {}
+            }
+        }
+
+        // 적용 후 빈 칸(입력창)을 '0'으로 초기화
+        setPercentInputs(prev => ({ ...prev, [key]: '0' }));
+    };
+
+    // 초기 투자금 일괄 적용 핸들러
+    const handleApplyBulkAmount = (customAmt) => {
+        const amt = customAmt !== undefined ? customAmt : (Number(bulkAmount) || 1000000);
+        if (gameMode === 'online') {
+            if (socket && onlinePin) {
+                onlineParticipants.forEach(p => {
+                    socket.emit('host:adjustScore', { pin: onlinePin, nickname: p.nickname, exactScore: amt });
+                });
+            }
+            setOnlineParticipants(prev => prev.map(p => ({ ...p, score: amt })));
+        } else {
+            scores.forEach(s => setExactScore(s.num, amt));
+        }
+        if (isStockGame) {
+            try {
+                const bc = new BroadcastChannel('quizrun_stock_seed_sync');
+                bc.postMessage({ type: 'BULK_SET_SEED', amount: amt });
+                setTimeout(() => bc.close(), 300);
+            } catch (e) {}
+        }
+    };
 
     const handleOpenWinnerModal = () => {
         playSound('fanfare');
@@ -261,7 +298,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     };
 
     const handleResetScoresOnly = () => {
-        const resetVal = isStockGame ? 100000000 : 0;
+        const resetVal = isStockGame ? 1000000 : 0;
         if (gameMode === 'online') {
             if (socket && onlinePin) {
                 if (isStockGame) {
@@ -291,8 +328,17 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     };
 
     const activeScores = gameMode === 'online' 
-        ? onlineParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true })) 
-        : scores.map(s => ({ num: `${s.num}번`, score: s.score || 0, isOnline: false }));
+        ? onlineParticipants.map(p => ({ 
+            num: p.nickname, 
+            score: (isStockGame && (!p.score || p.score === 0)) ? 1000000 : (p.score || 0), 
+            isOnline: true 
+          })) 
+        : scores.map(s => ({ 
+            num: `${s.num}번`, 
+            rawNum: s.num,
+            score: (isStockGame && (!s.score || s.score === 0)) ? 1000000 : (s.score || 0), 
+            isOnline: false 
+          }));
 
     const hasAnyScore = isStockGame
         ? activeScores.some(s => Number(s.score) > 0 && Number(s.score) !== (activeScores[0]?.score || 0))
@@ -404,7 +450,101 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                 </div>
 
                 {/* Body Content */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', minHeight: 0 }}>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', minHeight: 0 }}>
+                    {/* Stock Game Bulk Investment Toolbar */}
+                    {isStockGame && (
+                        <div style={{
+                            padding: '10px 12px',
+                            background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+                            borderRadius: '14px',
+                            border: '1.5px solid #86efac',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.78rem', fontWeight: '900', color: '#166534', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <TrendingUp size={13} /> 초기 투자금 일괄 적용
+                                </span>
+                                <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#15803d' }}>
+                                    현재: {formatKoreanMoney(bulkAmount)}
+                                </span>
+                            </div>
+                            
+                            {/* Preset Buttons */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+                                {[
+                                    { label: '100만', value: 1000000 },
+                                    { label: '500만', value: 5000000 },
+                                    { label: '1천만', value: 10000000 },
+                                    { label: '1억', value: 100000000 }
+                                ].map(item => (
+                                    <button
+                                        key={item.value}
+                                        type="button"
+                                        onClick={() => {
+                                            setBulkAmount(item.value);
+                                            handleApplyBulkAmount(item.value);
+                                        }}
+                                        style={{
+                                            padding: '4px 2px',
+                                            fontSize: '0.72rem',
+                                            fontWeight: '800',
+                                            borderRadius: '8px',
+                                            border: bulkAmount === item.value ? '1.5px solid #16a34a' : '1px solid #bbf7d0',
+                                            background: bulkAmount === item.value ? '#16a34a' : 'white',
+                                            color: bulkAmount === item.value ? 'white' : '#166534',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.1s ease'
+                                        }}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Custom Input & Apply Button */}
+                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                <input
+                                    type="number"
+                                    value={bulkAmount}
+                                    onChange={(e) => setBulkAmount(Number(e.target.value) || 0)}
+                                    placeholder="금액(원)"
+                                    style={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        padding: '4px 8px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #86efac',
+                                        fontSize: '0.78rem',
+                                        fontWeight: '800',
+                                        background: 'white',
+                                        color: '#166534',
+                                        textAlign: 'right'
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => handleApplyBulkAmount(bulkAmount)}
+                                    style={{
+                                        padding: '4px 10px',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        background: '#16a34a',
+                                        color: 'white',
+                                        fontSize: '0.76rem',
+                                        fontWeight: '900',
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                        boxShadow: '0 2px 4px rgba(22,163,74,0.2)'
+                                    }}
+                                >
+                                    전체 적용
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Online Mode Content */}
                     {gameMode === 'online' ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: 0 }}>
@@ -481,7 +621,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                     </div>
 
                                                     {/* Score / Amount & Direct Host Controls */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         {isEditing ? (
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                                                                 <input
@@ -514,7 +654,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                                 onClick={() => handleStartInlineEdit(p.num, p.score)}
                                                                 title="클릭하여 금액 직접 수정"
                                                                 style={{
-                                                                    fontSize: isStockGame ? '0.82rem' : '0.92rem',
+                                                                    fontSize: isStockGame ? '0.8rem' : '0.92rem',
                                                                     fontWeight: '900',
                                                                     color: isGold ? '#b45309' : (isStockGame ? '#059669' : 'var(--primary)'),
                                                                     cursor: 'pointer',
@@ -524,48 +664,96 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                                     display: 'flex',
                                                                     alignItems: 'center',
                                                                     gap: '2px',
-                                                                    maxWidth: isStockGame ? '105px' : 'auto',
+                                                                    maxWidth: isStockGame ? '100px' : 'auto',
                                                                     overflow: 'hidden',
                                                                     textOverflow: 'ellipsis',
                                                                     whiteSpace: 'nowrap'
                                                                 }}
                                                             >
-                                                                {isStockGame ? `${Number(p.score || 0).toLocaleString()}원` : `${p.score}점`} <Edit3 size={10} style={{ opacity: 0.4, flexShrink: 0 }} />
+                                                                {isStockGame ? formatKoreanMoney(p.score) : `${p.score}점`} <Edit3 size={10} style={{ opacity: 0.4, flexShrink: 0 }} />
                                                             </span>
                                                         )}
 
-                                                        <div style={{ display: 'flex', gap: '2px' }}>
-                                                            <button
-                                                                onClick={() => handleDeltaScore(p.num, isStockGame ? -10000000 : -10)}
-                                                                title={isStockGame ? "1,000만원 차감" : "10점 감점"}
-                                                                style={{
-                                                                    width: isStockGame ? '28px' : '24px',
-                                                                    height: '24px',
-                                                                    borderRadius: '7px',
-                                                                    border: 'none',
-                                                                    background: '#fef2f2',
-                                                                    color: '#ef4444',
-                                                                    fontWeight: '800',
-                                                                    fontSize: isStockGame ? '0.72rem' : '0.85rem',
-                                                                    cursor: 'pointer'
-                                                                }}
-                                                            >{isStockGame ? '-1천' : '−'}</button>
-                                                            <button
-                                                                onClick={() => handleDeltaScore(p.num, isStockGame ? 10000000 : 10)}
-                                                                title={isStockGame ? "1,000만원 가산" : "10점 가산"}
-                                                                style={{
-                                                                    width: isStockGame ? '28px' : '24px',
-                                                                    height: '24px',
-                                                                    borderRadius: '7px',
-                                                                    border: 'none',
-                                                                    background: '#f0fdf4',
-                                                                    color: '#16a34a',
-                                                                    fontWeight: '800',
-                                                                    fontSize: isStockGame ? '0.72rem' : '0.85rem',
-                                                                    cursor: 'pointer'
-                                                                }}
-                                                            >{isStockGame ? '+1천' : '+'}</button>
-                                                        </div>
+                                                        {isStockGame ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    value={percentInputs[p.num] !== undefined ? percentInputs[p.num] : '0'}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        setPercentInputs(prev => ({ ...prev, [p.num]: val }));
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') handleApplyPercent(p.num, p.score);
+                                                                    }}
+                                                                    placeholder="0"
+                                                                    style={{
+                                                                        width: '38px',
+                                                                        padding: '2px 3px',
+                                                                        borderRadius: '6px',
+                                                                        border: '1.5px solid #cbd5e1',
+                                                                        fontSize: '0.76rem',
+                                                                        fontWeight: '800',
+                                                                        textAlign: 'right',
+                                                                        background: 'white',
+                                                                        color: 'var(--text)'
+                                                                    }}
+                                                                />
+                                                                <span style={{ fontSize: '0.72rem', fontWeight: '900', color: '#64748b' }}>%</span>
+                                                                <button
+                                                                    onClick={() => handleApplyPercent(p.num, p.score)}
+                                                                    title="입력한 %만큼 금액 가산/반영"
+                                                                    style={{
+                                                                        padding: '2px 6px',
+                                                                        height: '24px',
+                                                                        borderRadius: '6px',
+                                                                        border: 'none',
+                                                                        background: '#10b981',
+                                                                        color: 'white',
+                                                                        fontWeight: '800',
+                                                                        fontSize: '0.72rem',
+                                                                        cursor: 'pointer',
+                                                                        whiteSpace: 'nowrap',
+                                                                        boxShadow: '0 1px 3px rgba(16,185,129,0.3)'
+                                                                    }}
+                                                                >
+                                                                    적용
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', gap: '2px' }}>
+                                                                <button
+                                                                    onClick={() => handleDeltaScore(p.num, -10)}
+                                                                    title="10점 감점"
+                                                                    style={{
+                                                                        width: '24px',
+                                                                        height: '24px',
+                                                                        borderRadius: '7px',
+                                                                        border: 'none',
+                                                                        background: '#fef2f2',
+                                                                        color: '#ef4444',
+                                                                        fontWeight: '800',
+                                                                        fontSize: '0.85rem',
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                >−</button>
+                                                                <button
+                                                                    onClick={() => handleDeltaScore(p.num, 10)}
+                                                                    title="10점 가산"
+                                                                    style={{
+                                                                        width: '24px',
+                                                                        height: '24px',
+                                                                        borderRadius: '7px',
+                                                                        border: 'none',
+                                                                        background: '#f0fdf4',
+                                                                        color: '#16a34a',
+                                                                        fontWeight: '800',
+                                                                        fontSize: '0.85rem',
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                >+</button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -663,7 +851,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                     </span>
 
                                                     {/* Score / Amount & Controls */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                         {isEditing ? (
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                                 <input
@@ -696,7 +884,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                                 onClick={() => handleStartInlineEdit(p.num, p.score)}
                                                                 title="클릭하여 금액 직접 수정"
                                                                 style={{
-                                                                    fontSize: isStockGame ? '0.82rem' : '0.95rem',
+                                                                    fontSize: isStockGame ? '0.8rem' : '0.95rem',
                                                                     fontWeight: '900',
                                                                     color: isStockGame ? '#059669' : 'var(--primary)',
                                                                     cursor: 'pointer',
@@ -706,49 +894,97 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                                     display: 'flex',
                                                                     alignItems: 'center',
                                                                     gap: '3px',
-                                                                    maxWidth: isStockGame ? '105px' : 'auto',
+                                                                    maxWidth: isStockGame ? '100px' : 'auto',
                                                                     overflow: 'hidden',
                                                                     textOverflow: 'ellipsis',
                                                                     whiteSpace: 'nowrap'
                                                                 }}
                                                             >
-                                                                {isStockGame ? `${Number(p.score || 0).toLocaleString()}원` : `${p.score}점`} <Edit3 size={11} style={{ opacity: 0.5, flexShrink: 0 }} />
+                                                                {isStockGame ? formatKoreanMoney(p.score) : `${p.score}점`} <Edit3 size={11} style={{ opacity: 0.5, flexShrink: 0 }} />
                                                             </span>
                                                         )}
 
-                                                        {/* +/- Buttons */}
-                                                        <div style={{ display: 'flex', gap: '3px' }}>
-                                                            <button
-                                                                onClick={() => handleDeltaScore(p.num, isStockGame ? -10000000 : -10)}
-                                                                title={isStockGame ? "1,000만원 차감" : "10점 감점"}
-                                                                style={{
-                                                                    width: isStockGame ? '28px' : '26px',
-                                                                    height: '26px',
-                                                                    borderRadius: '8px',
-                                                                    border: 'none',
-                                                                    background: '#fef2f2',
-                                                                    color: '#ef4444',
-                                                                    fontWeight: '800',
-                                                                    fontSize: isStockGame ? '0.72rem' : '0.9rem',
-                                                                    cursor: 'pointer'
-                                                                }}
-                                                            >{isStockGame ? '-1천' : '−'}</button>
-                                                            <button
-                                                                onClick={() => handleDeltaScore(p.num, isStockGame ? 10000000 : 10)}
-                                                                title={isStockGame ? "1,000만원 가산" : "10점 가산"}
-                                                                style={{
-                                                                    width: isStockGame ? '28px' : '26px',
-                                                                    height: '26px',
-                                                                    borderRadius: '8px',
-                                                                    border: 'none',
-                                                                    background: '#f0fdf4',
-                                                                    color: '#16a34a',
-                                                                    fontWeight: '800',
-                                                                    fontSize: isStockGame ? '0.72rem' : '0.9rem',
-                                                                    cursor: 'pointer'
-                                                                }}
-                                                            >{isStockGame ? '+1천' : '+'}</button>
-                                                        </div>
+                                                        {/* +/- Buttons or % Input */}
+                                                        {isStockGame ? (
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    value={percentInputs[p.num] !== undefined ? percentInputs[p.num] : '0'}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        setPercentInputs(prev => ({ ...prev, [p.num]: val }));
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') handleApplyPercent(p.num, p.score);
+                                                                    }}
+                                                                    placeholder="0"
+                                                                    style={{
+                                                                        width: '38px',
+                                                                        padding: '2px 3px',
+                                                                        borderRadius: '6px',
+                                                                        border: '1.5px solid #cbd5e1',
+                                                                        fontSize: '0.76rem',
+                                                                        fontWeight: '800',
+                                                                        textAlign: 'right',
+                                                                        background: 'white',
+                                                                        color: 'var(--text)'
+                                                                    }}
+                                                                />
+                                                                <span style={{ fontSize: '0.72rem', fontWeight: '900', color: '#64748b' }}>%</span>
+                                                                <button
+                                                                    onClick={() => handleApplyPercent(p.num, p.score)}
+                                                                    title="입력한 %만큼 금액 가산/반영"
+                                                                    style={{
+                                                                        padding: '2px 6px',
+                                                                        height: '24px',
+                                                                        borderRadius: '6px',
+                                                                        border: 'none',
+                                                                        background: '#10b981',
+                                                                        color: 'white',
+                                                                        fontWeight: '800',
+                                                                        fontSize: '0.72rem',
+                                                                        cursor: 'pointer',
+                                                                        whiteSpace: 'nowrap',
+                                                                        boxShadow: '0 1px 3px rgba(16,185,129,0.3)'
+                                                                    }}
+                                                                >
+                                                                    적용
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', gap: '3px' }}>
+                                                                <button
+                                                                    onClick={() => handleDeltaScore(p.num, -10)}
+                                                                    title="10점 감점"
+                                                                    style={{
+                                                                        width: '26px',
+                                                                        height: '26px',
+                                                                        borderRadius: '8px',
+                                                                        border: 'none',
+                                                                        background: '#fef2f2',
+                                                                        color: '#ef4444',
+                                                                        fontWeight: '800',
+                                                                        fontSize: '0.9rem',
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                >−</button>
+                                                                <button
+                                                                    onClick={() => handleDeltaScore(p.num, 10)}
+                                                                    title="10점 가산"
+                                                                    style={{
+                                                                        width: '26px',
+                                                                        height: '26px',
+                                                                        borderRadius: '8px',
+                                                                        border: 'none',
+                                                                        background: '#f0fdf4',
+                                                                        color: '#16a34a',
+                                                                        fontWeight: '800',
+                                                                        fontSize: '0.9rem',
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                >+</button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -886,7 +1122,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             {gameMode === 'online' ? sortedScores[1].num : `${sortedScores[1].num}번`}
                                         </span>
                                         <span style={{ fontSize: isStockGame ? '0.95rem' : '1.1rem', fontWeight: '900', color: isStockGame ? '#059669' : 'var(--primary)', marginTop: '4px' }}>
-                                            {isStockGame ? `${Number(sortedScores[1].score).toLocaleString()}원` : `${sortedScores[1].score}점`}
+                                            {isStockGame ? formatKoreanMoney(sortedScores[1].score) : `${sortedScores[1].score}점`}
                                         </span>
                                         <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#64748b' }}>2위</span>
                                     </div>
@@ -911,7 +1147,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             {gameMode === 'online' ? sortedScores[0].num : `${sortedScores[0].num}번`}
                                         </span>
                                         <span style={{ fontSize: isStockGame ? '1.15rem' : '1.4rem', fontWeight: '900', color: '#b45309', marginTop: '4px' }}>
-                                            {isStockGame ? `${Number(sortedScores[0].score).toLocaleString()}원` : `${sortedScores[0].score}점`}
+                                            {isStockGame ? formatKoreanMoney(sortedScores[0].score) : `${sortedScores[0].score}점`}
                                         </span>
                                         <span style={{ fontSize: '0.78rem', fontWeight: '900', color: '#d97706', background: 'white', padding: '2px 8px', borderRadius: '10px', marginTop: '4px' }}>
                                             {isStockGame ? '🥇 1위 (최고 투자왕)' : '🥇 1위 (챔피언)'}
@@ -936,7 +1172,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             {gameMode === 'online' ? sortedScores[2].num : `${sortedScores[2].num}번`}
                                         </span>
                                         <span style={{ fontSize: isStockGame ? '0.92rem' : '1.05rem', fontWeight: '900', color: '#c2410c', marginTop: '4px' }}>
-                                            {isStockGame ? `${Number(sortedScores[2].score).toLocaleString()}원` : `${sortedScores[2].score}점`}
+                                            {isStockGame ? formatKoreanMoney(sortedScores[2].score) : `${sortedScores[2].score}점`}
                                         </span>
                                         <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#ea580c' }}>3위</span>
                                     </div>
@@ -977,7 +1213,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             {gameMode === 'online' ? p.num : `${p.num}번`}
                                         </span>
                                         <span style={{ fontSize: isStockGame ? '1.1rem' : '1.25rem', fontWeight: '900', color: isStockGame && !isWinner ? '#059669' : 'inherit' }}>
-                                            {isStockGame ? `${Number(p.score).toLocaleString()}원` : `${p.score}점`}
+                                            {isStockGame ? formatKoreanMoney(p.score) : `${p.score}점`}
                                         </span>
                                     </div>
                                 );
