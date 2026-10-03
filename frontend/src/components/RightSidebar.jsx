@@ -140,6 +140,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     const isSubScreen = Boolean(
         typeof window !== 'undefined' && (
             window.location.search.includes('subscreen=true') ||
+            window.location.pathname.startsWith('/screen') ||
             window.name === 'QuizrunSubScreenWindow' ||
             sessionStorage.getItem('is_subscreen') === 'true'
         )
@@ -455,19 +456,23 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
             <aside style={{
                 width: '320px',
                 minWidth: '320px',
-                height: isStockGame ? '100%' : 'calc(100vh - 30px)',
-                position: isStockGame ? 'relative' : 'sticky',
-                top: isStockGame ? 0 : '15px',
-                marginRight: isStockGame ? 0 : '15px',
-                backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                height: (isStockGame || isSubScreen) ? '100vh' : 'calc(100vh - 30px)',
+                position: (isStockGame || isSubScreen) ? 'relative' : 'sticky',
+                top: (isStockGame || isSubScreen) ? 0 : '15px',
+                marginRight: (isStockGame || isSubScreen) ? 0 : '15px',
+                backgroundColor: 'rgba(255, 255, 255, 0.98)',
                 backdropFilter: 'blur(20px)',
-                borderRadius: '24px',
-                border: '1.5px solid rgba(226, 232, 240, 0.9)',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(14, 165, 233, 0.05)',
+                borderRadius: (isStockGame || isSubScreen) ? '0' : '24px',
+                borderLeft: '1.5px solid rgba(226, 232, 240, 0.9)',
+                borderTop: (isStockGame || isSubScreen) ? 'none' : '1.5px solid rgba(226, 232, 240, 0.9)',
+                borderBottom: (isStockGame || isSubScreen) ? 'none' : '1.5px solid rgba(226, 232, 240, 0.9)',
+                borderRight: (isStockGame || isSubScreen) ? 'none' : '1.5px solid rgba(226, 232, 240, 0.9)',
+                boxShadow: (isStockGame || isSubScreen) ? '-4px 0 25px rgba(0, 0, 0, 0.08)' : '0 10px 30px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(14, 165, 233, 0.05)',
                 zIndex: 100,
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                boxSizing: 'border-box'
             }}>
                 {/* Header */}
                 <div style={{

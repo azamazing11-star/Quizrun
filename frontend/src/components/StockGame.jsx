@@ -1272,7 +1272,7 @@ export function StockGameScreenView({
 
     return (
         <div style={{
-            width: '100vw',
+            width: '100%',
             height: '100vh',
             maxHeight: '100vh',
             background: 'linear-gradient(135deg, #090d16 0%, #0f172a 100%)',

@@ -186,8 +186,21 @@ function AppLayout({ socket, isMobileMode, setIsMobileMode }) {
   return (
     <>
       <ScrollToTop />
-      <div style={{ display: 'flex', width: '100%', minHeight: '100vh', alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
+      <div style={{
+        display: 'flex',
+        width: '100%',
+        minHeight: '100vh',
+        height: (isScreen || isSubScreen) ? '100vh' : 'auto',
+        alignItems: (isScreen || isSubScreen) ? 'stretch' : 'flex-start',
+        overflow: (isScreen || isSubScreen) ? 'hidden' : 'visible'
+      }}>
+        <div style={{
+          flex: 1,
+          minWidth: 0,
+          width: '100%',
+          height: (isScreen || isSubScreen) ? '100vh' : 'auto',
+          overflow: (isScreen || isSubScreen) ? 'hidden' : 'visible'
+        }}>
           <Routes>
             <Route path="/" element={<Home socket={socket} />} />
             <Route path="/create" element={<Create socket={socket} />} />
