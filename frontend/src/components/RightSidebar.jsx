@@ -25,7 +25,18 @@ import {
 } from 'lucide-react';
 import GitSyncModal from './GitSyncModal';
 
-export default function RightSidebar({ socket, isStockGame = false, onExitToLobby, onEndGame }) {
+export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGame }) {
+    // Internal state to track stock game mode across windows (e.g. Sub-Monitor)
+    const [isStockGameSync, setIsStockGameSync] = useState(() => {
+        try {
+            return localStorage.getItem('quizrun_active_game_id') === 'stock_game';
+        } catch (e) {
+            return false;
+        }
+    });
+
+    const isStockGame = propIsStockGame || isStockGameSync;
+
     const {
         gameMode,
         setGameMode,
@@ -55,6 +66,66 @@ export default function RightSidebar({ socket, isStockGame = false, onExitToLobb
     const [showMiniQr, setShowMiniQr] = useState(false);
     const [showGitModal, setShowGitModal] = useState(false);
     const [bulkAmount, setBulkAmount] = useState(100000000);
+
+    // Real-time synchronization of Stock Game mode for Sub-Monitor
+    useEffect(() => {
+        let screenChannel;
+        let seedChannel;
+        try {
+            screenChannel = new BroadcastChannel('quizrun_screen_sync');
+            screenChannel.onmessage = (e) => {
+                const { type, payload } = e.data || {};
+                if (type === 'STOCK_GAME_SCREEN_UPDATE') {
+                    setIsStockGameSync(true);
+                } else if (type === 'MODE_CHANGE') {
+                    if (payload && payload.mode === 'stock_game') {
+                        setIsStockGameSync(true);
+                    } else if (payload && payload.mode && payload.mode !== 'stock_game') {
+                        setIsStockGameSync(false);
+                    }
+                } else if (type === 'STATE_UPDATE') {
+                    if (payload && payload.mode === 'stock_game') {
+                        setIsStockGameSync(true);
+                    } else if (payload && payload.mode && payload.mode !== 'stock_game') {
+                        setIsStockGameSync(false);
+                    }
+                }
+            };
+
+            seedChannel = new BroadcastChannel('quizrun_stock_seed_sync');
+            seedChannel.onmessage = () => {
+                setIsStockGameSync(true);
+            };
+        } catch (e) {}
+
+        const handleStockSync = () => {
+            setIsStockGameSync(true);
+        };
+
+        if (socket) {
+            socket.on('stock_game:state_sync', handleStockSync);
+        }
+
+        const intervalId = setInterval(() => {
+            try {
+                const activeGame = localStorage.getItem('quizrun_active_game_id');
+                if (activeGame === 'stock_game') {
+                    setIsStockGameSync(true);
+                } else if (activeGame && activeGame !== 'stock_game') {
+                    setIsStockGameSync(false);
+                }
+            } catch (e) {}
+        }, 1000);
+
+        return () => {
+            if (screenChannel) screenChannel.close();
+            if (seedChannel) seedChannel.close();
+            if (socket) {
+                socket.off('stock_game:state_sync', handleStockSync);
+            }
+            clearInterval(intervalId);
+        };
+    }, [socket]);
 
     const handleResetAllScores = () => {
         if (window.confirm("모든 참가자의 점수를 0점으로 초기화하시겠습니까?")) {

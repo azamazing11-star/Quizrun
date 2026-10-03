@@ -630,6 +630,19 @@ export default function Host({ socket }) {
         };
     }, [gameState, gameId]);
 
+    useEffect(() => {
+        if (gameId === 'stock_game') {
+            try {
+                localStorage.setItem('quizrun_active_game_id', 'stock_game');
+            } catch (e) {}
+            return () => {
+                try {
+                    localStorage.removeItem('quizrun_active_game_id');
+                } catch (e) {}
+            };
+        }
+    }, [gameId]);
+
     const createRoom = (mode = 'normal') => {
         const customQuiz = location.state?.customQuiz;
         const targetPin = location.state?.pin || onlinePin || pin;
@@ -1355,6 +1368,10 @@ export default function Host({ socket }) {
     const handleExitToLobby = () => {
         try {
             sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
         } catch (e) {}
         navigate('/');
     };

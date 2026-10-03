@@ -574,6 +574,226 @@ export function StockNewsModal({ newsItem, currentYear, onClose, hasVipHint = fa
 }
 
 // =============================================================================
+// 2-0. 공통: 14대 시장 섹터 도감 전체 열람 모달 (Sector Directory Modal)
+// =============================================================================
+export function SectorDirectoryModal({ onClose, allStocks = [], isPubliclyRevealed = false }) {
+    const [activeSector, setActiveSector] = useState(null);
+
+    return (
+        <div 
+            onClick={onClose}
+            style={{
+                position: 'fixed',
+                inset: 0,
+                backgroundColor: 'rgba(15, 23, 42, 0.82)',
+                backdropFilter: 'blur(10px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 3100,
+                padding: '20px',
+                boxSizing: 'border-box'
+            }}
+        >
+            <div 
+                onClick={(e) => e.stopPropagation()}
+                className="animate-pop-in"
+                style={{
+                    background: '#0f172a',
+                    borderRadius: '24px',
+                    maxWidth: '1080px',
+                    width: '100%',
+                    maxHeight: '90vh',
+                    boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.6)',
+                    border: '1.5px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
+                }}
+            >
+                {/* Header */}
+                <div style={{
+                    padding: '20px 24px',
+                    borderBottom: '1px solid #1e293b',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(30, 41, 59, 0.5)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '12px',
+                            background: 'rgba(56, 189, 248, 0.15)',
+                            color: '#38bdf8',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.5rem',
+                            border: '1px solid rgba(56, 189, 248, 0.3)'
+                        }}>
+                            <Building2 size={22} color="#38bdf8" />
+                        </div>
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <h2 style={{ fontSize: '1.3rem', fontWeight: '900', color: '#f8fafc', margin: 0 }}>
+                                    시장 섹터 도감 (14대 산업군)
+                                </h2>
+                                <span style={{ fontSize: '0.74rem', background: '#38bdf8', color: '#0f172a', padding: '2px 8px', borderRadius: '10px', fontWeight: '800' }}>
+                                    100대 기업 풀
+                                </span>
+                            </div>
+                            <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
+                                각 섹터 카드를 클릭하면 상세 특성, 매크로 민감도 및 포함 기업을 열람할 수 있습니다.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: '#1e293b',
+                            border: '1px solid #334155',
+                            borderRadius: '12px',
+                            width: '38px',
+                            height: '38px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: '1.2rem',
+                            color: '#cbd5e1',
+                            transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#334155'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b'; }}
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                {/* Content: 14 Sectors Grid */}
+                <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))',
+                        gap: '12px'
+                    }}>
+                        {MARKET_SECTORS_DIRECTORY.map((s) => (
+                            <div
+                                key={s.id}
+                                onClick={() => setActiveSector(s)}
+                                style={{
+                                    background: '#1e293b',
+                                    border: '1.5px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: '14px',
+                                    padding: '14px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '8px'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = s.color;
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.background = '#273549';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.background = '#1e293b';
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '1.25rem' }}>{s.icon}</span>
+                                        <span style={{ fontSize: '0.98rem', fontWeight: '800', color: '#f1f5f9' }}>
+                                            {s.name}
+                                        </span>
+                                    </div>
+                                    <span style={{
+                                        fontSize: '0.72rem',
+                                        color: s.color,
+                                        fontWeight: '800',
+                                        background: `${s.color}15`,
+                                        padding: '3px 8px',
+                                        borderRadius: '8px',
+                                        border: `1px solid ${s.color}35`
+                                    }}>
+                                        도감 상세 →
+                                    </span>
+                                </div>
+
+                                <p style={{ margin: 0, fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.45' }}>
+                                    {s.description}
+                                </p>
+
+                                <div style={{
+                                    background: 'rgba(15, 23, 42, 0.65)',
+                                    borderRadius: '8px',
+                                    padding: '8px 10px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                    fontSize: '0.74rem'
+                                }}>
+                                    <div style={{ color: '#38bdf8', fontWeight: '700' }}>
+                                        ⚡ 민감도: <span style={{ color: '#e2e8f0', fontWeight: 'normal' }}>{s.keySensitivity}</span>
+                                    </div>
+                                    <div style={{ color: '#a78bfa', fontWeight: '700' }}>
+                                        🌐 매크로: <span style={{ color: '#94a3b8', fontWeight: 'normal' }}>{s.macroCharacteristics}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{
+                    padding: '14px 24px',
+                    borderTop: '1px solid #1e293b',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(15, 23, 42, 0.6)'
+                }}>
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                        * 각 섹터 카드를 클릭하면 소속 기업 목록과 심층 투자 분석 가이드가 열립니다.
+                    </span>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: '#334155',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 20px',
+                            borderRadius: '10px',
+                            fontSize: '0.85rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        닫기
+                    </button>
+                </div>
+            </div>
+
+            {/* Nested Detail Modal if a sector card was clicked */}
+            {activeSector && (
+                <SectorDetailModal
+                    sector={activeSector}
+                    onClose={() => setActiveSector(null)}
+                    allStocks={allStocks}
+                    isPubliclyRevealed={isPubliclyRevealed}
+                />
+            )}
+        </div>
+    );
+}
+
+// =============================================================================
 // 2. 공통: 14대 시장 섹터 도감 상세 모달 (Sector Detail Modal)
 // =============================================================================
 export function SectorDetailModal({ sector, onClose, allStocks = [], isPubliclyRevealed = false }) {
@@ -1002,6 +1222,7 @@ export function StockGameScreenView({
     const [screenVotes, setScreenVotes] = useState({});
     const [rewardModalOpen, setRewardModalOpen] = useState(false);
     const [chosenHintStock, setChosenHintStock] = useState(null);
+    const [showSectorDirectoryModal, setShowSectorDirectoryModal] = useState(false);
 
     // 통합 예측 상태 (서브모니터 자체 클릭 or 외부 predictions)
     const activePredictions = useMemo(() => {
@@ -1139,6 +1360,29 @@ export function StockGameScreenView({
                         </div>
                     )}
 
+                    {/* 시장 섹터 도감 버튼 */}
+                    <button
+                        onClick={() => setShowSectorDirectoryModal(true)}
+                        style={{
+                            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                            border: '1px solid rgba(56, 189, 248, 0.4)',
+                            borderRadius: '10px',
+                            padding: '6px 12px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '0.82rem',
+                            fontWeight: 'bold',
+                            color: '#ffffff',
+                            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)',
+                            transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <Building2 size={14} />
+                        <span>시장 섹터 도감</span>
+                    </button>
+
                     {toggleFullscreen && (
                         <button
                             onClick={toggleFullscreen}
@@ -1163,82 +1407,16 @@ export function StockGameScreenView({
                 </div>
             </div>
 
-            {/* 3-Column Layout: 한눈에 전체가 들어오는 비율 */}
+            {/* 2-Column Layout: 섹터 도감 모달 분리로 시세판/차트 영역 대폭 확장 */}
             <div style={{
                 flex: 1,
                 display: 'grid',
-                gridTemplateColumns: '260px 1fr 380px',
+                gridTemplateColumns: '1fr 380px',
                 gap: '12px',
                 minHeight: 0,
                 overflow: 'hidden'
             }}>
-                {/* 1) LEFT COLUMN: 14대 시장 섹터 도감 (헤드라인 중심 컴팩트 뷰) */}
-                <div style={{
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    borderRadius: '16px',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    padding: '12px 14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Building2 size={16} color="#38bdf8" />
-                            <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '800', color: '#f8fafc' }}>
-                                시장 섹터 도감 (14대)
-                            </h3>
-                        </div>
-                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>클릭 시 상세 열람</span>
-                    </div>
-
-                    <div style={{
-                        flex: 1,
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        paddingRight: '2px'
-                    }}>
-                        {MARKET_SECTORS_DIRECTORY.map((s) => (
-                            <div
-                                key={s.id}
-                                onClick={() => setSelectedSector(s)}
-                                style={{
-                                    background: 'rgba(30, 41, 59, 0.5)',
-                                    border: '1px solid rgba(255, 255, 255, 0.06)',
-                                    borderRadius: '8px',
-                                    padding: '6px 10px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.18s ease',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = 'rgba(51, 65, 85, 0.8)';
-                                    e.currentTarget.style.borderColor = s.color;
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = 'rgba(30, 41, 59, 0.5)';
-                                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
-                                }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '1rem' }}>{s.icon}</span>
-                                    <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#f1f5f9' }}>
-                                        {s.name}
-                                    </span>
-                                </div>
-                                <span style={{ fontSize: '0.7rem', color: s.color, fontWeight: '700' }}>
-                                    상세 →
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* 2) CENTER COLUMN: 당해 연도 10대 종목 실시간 시세판 (한 화면에 10개 모두 표시) */}
+                {/* 1) CENTER COLUMN: 당해 연도 10대 종목 실시간 시세판 (한 화면에 10개 모두 표시) */}
                 <div style={{
                     background: 'rgba(15, 23, 42, 0.7)',
                     borderRadius: '16px',
@@ -1551,6 +1729,14 @@ export function StockGameScreenView({
                 />
             )}
 
+            {showSectorDirectoryModal && (
+                <SectorDirectoryModal
+                    onClose={() => setShowSectorDirectoryModal(false)}
+                    allStocks={stockList}
+                    isPubliclyRevealed={isPubliclyRevealed}
+                />
+            )}
+
             <AllOrdersResultModal
                 isOpen={allOrdersModalOpen}
                 onClose={() => {}}
@@ -1858,9 +2044,28 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     // 모달 관리
     const [selectedNews, setSelectedNews] = useState(null);
     const [selectedSector, setSelectedSector] = useState(null);
+    const [showSectorDirectoryModal, setShowSectorDirectoryModal] = useState(false);
     const [allOrdersModalOpen, setAllOrdersModalOpen] = useState(false);
     const [showHostQrModal, setShowHostQrModal] = useState(false);
     const [activeTab, setActiveTab] = useState('decision'); // 'decision' (주문표) | 'matrix' (전체 현황표)
+
+    // 메인/서브 모니터 주식게임 동기화 상태 유지
+    useEffect(() => {
+        try {
+            localStorage.setItem('quizrun_active_game_id', 'stock_game');
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'stock_game' } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+        return () => {
+            try {
+                localStorage.removeItem('quizrun_active_game_id');
+                const bc = new BroadcastChannel('quizrun_screen_sync');
+                bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+                setTimeout(() => bc.close(), 300);
+            } catch (e) {}
+        };
+    }, []);
     
     // 권한 관리 (전체 토글 및 조별 개별 토글)
     const [allowAllNews, setAllowAllNews] = useState(true);
@@ -2706,84 +2911,44 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         <Sparkles size={14} />
                         <span>전체 기업명 공개: {isPubliclyRevealed ? '공개됨' : '비공개'}</span>
                     </button>
+
+                    {/* 시장 섹터 도감 버튼 */}
+                    <button
+                        onClick={() => setShowSectorDirectoryModal(true)}
+                        style={{
+                            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                            color: 'white',
+                            border: '1px solid rgba(56, 189, 248, 0.4)',
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            fontWeight: '800',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)',
+                            transition: 'all 0.15s ease'
+                        }}
+                        title="14대 시장 섹터 도감을 팝업으로 열람합니다."
+                    >
+                        <Building2 size={16} />
+                        <span>시장 섹터 도감</span>
+                    </button>
                 </div>
             </div>
 
-            {/* 3-Column Financial Terminal Layout */}
+            {/* 2-Column Financial Terminal Layout: 섹터 도감 모달 분리로 시세판/차트 영역 대폭 확장 */}
             <div style={{
                 flex: 1,
                 display: 'grid',
-                gridTemplateColumns: '270px 1fr 340px',
+                gridTemplateColumns: '1fr 340px',
                 gap: '16px',
                 padding: '16px',
                 minHeight: 0,
                 boxSizing: 'border-box'
             }}>
-                {/* 1) LEFT: 14대 시장 섹터 도감 (Market Sectors Reference) */}
-                <div style={{
-                    background: '#0f172a',
-                    borderRadius: '18px',
-                    border: '1px solid #1e293b',
-                    padding: '16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                        <Building2 size={20} color="#38bdf8" />
-                        <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '900', color: '#f8fafc' }}>
-                            시장 섹터 도감 (14대)
-                        </h3>
-                    </div>
-                    <p style={{ margin: '0 0 10px 0', fontSize: '0.78rem', color: '#94a3b8', lineHeight: '1.4' }}>
-                        100대 기업 섹터별 특성 및 민감도 분석 가이드
-                    </p>
-
-                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
-                        {MARKET_SECTORS_DIRECTORY.map((s) => (
-                            <div
-                                key={s.id}
-                                onClick={() => setSelectedSector(s)}
-                                style={{
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                                    borderRadius: '10px',
-                                    padding: '8px 10px',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s ease',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '3px'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = s.color;
-                                    e.currentTarget.style.background = '#334155';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
-                                    e.currentTarget.style.background = '#1e293b';
-                                }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <span style={{ fontSize: '1rem' }}>{s.icon}</span>
-                                        <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#f1f5f9' }}>
-                                            {s.name}
-                                        </span>
-                                    </div>
-                                    <span style={{ fontSize: '0.7rem', color: s.color, fontWeight: '700' }}>
-                                        도감 열기
-                                    </span>
-                                </div>
-                                <div style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {s.keySensitivity}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* 2) CENTER: 10개 종목 시세판 & 주문 / 포트폴리오 관리 */}
+                {/* 1) CENTER: 10개 종목 시세판 & 주문 / 포트폴리오 관리 */}
                 <div style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -3366,6 +3531,14 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     sector={selectedSector}
                     onClose={() => setSelectedSector(null)}
                     allStocks={KOREA_TOP_100_STOCKS}
+                    isPubliclyRevealed={isPubliclyRevealed}
+                />
+            )}
+
+            {showSectorDirectoryModal && (
+                <SectorDirectoryModal
+                    onClose={() => setShowSectorDirectoryModal(false)}
+                    allStocks={stockList}
                     isPubliclyRevealed={isPubliclyRevealed}
                 />
             )}
