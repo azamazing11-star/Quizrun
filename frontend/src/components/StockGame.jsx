@@ -1353,7 +1353,10 @@ export function StockGameScreenView({
     predictions = {},
     predictionResults = null,
     portfolios = {},
+    teamList = null,
     allOrdersModalOpen = false,
+    tradingProgressModalOpen = false,
+    completedTrades = {},
     pin = null,
     serverIp = '',
     publicUrl = ''
@@ -1431,14 +1434,18 @@ export function StockGameScreenView({
     const [chosenHintStock, setChosenHintStock] = useState(null);
     const [showSectorDirectoryModal, setShowSectorDirectoryModal] = useState(false);
     const [isModalDismissed, setIsModalDismissed] = useState(false);
+    const [isProgressDismissed, setIsProgressDismissed] = useState(false);
 
     useEffect(() => {
-        if (allOrdersModalOpen) {
-            setIsModalDismissed(false);
-        }
+        setIsModalDismissed(false);
     }, [allOrdersModalOpen]);
 
+    useEffect(() => {
+        setIsProgressDismissed(false);
+    }, [tradingProgressModalOpen]);
+
     const isAllOrdersOpen = Boolean(allOrdersModalOpen) && !isModalDismissed;
+    const isProgressOpen = Boolean(tradingProgressModalOpen) && !isProgressDismissed;
 
     // 통합 예측 상태 (서브모니터 자체 클릭 or 외부 predictions)
     const activePredictions = useMemo(() => {
@@ -1953,13 +1960,22 @@ export function StockGameScreenView({
                 />
             )}
 
+            <TradingProgressModal
+                isOpen={isProgressOpen}
+                onClose={() => setIsProgressDismissed(true)}
+                currentYear={year}
+                teamList={teamList && teamList.length > 0 ? teamList : Object.entries(portfolios || {}).map(([id, p]) => ({ id, name: p?.nickname || `${id}조` }))}
+                portfolios={portfolios}
+                completedTrades={completedTrades}
+            />
+
             <AllOrdersResultModal
                 isOpen={isAllOrdersOpen}
                 onClose={() => setIsModalDismissed(true)}
                 currentYear={year}
                 portfolios={portfolios}
                 stockList={stockList}
-                teamList={Object.entries(portfolios || {}).map(([id, p]) => ({ id, name: p?.nickname || `${id}조` }))}
+                teamList={teamList && teamList.length > 0 ? teamList : Object.entries(portfolios || {}).map(([id, p]) => ({ id, name: p?.nickname || `${id}조` }))}
             />
 
             <SpecialHintRewardModal
@@ -2066,6 +2082,239 @@ export function StockGameScreenView({
 
 
 // =============================================================================
+// 모달 컴포넌트: 참여자별 매매 진행 현황 모달 (TradingProgressModal)
+// =============================================================================
+export function TradingProgressModal({ isOpen, onClose, currentYear, teamList, portfolios, completedTrades = {}, onSelectTeam = null }) {
+    if (!isOpen) return null;
+
+    const baseTeams = (teamList && teamList.length > 0)
+        ? teamList
+        : Object.keys(portfolios || {}).map(id => ({ id, name: `${id}조` }));
+
+    // 참여자 목록 중복 제거
+    const uniqueTeams = [];
+    const seenKeys = new Set();
+    baseTeams.forEach(t => {
+        const key = String(t.id || t.name);
+        if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueTeams.push(t);
+        }
+    });
+
+    const isTeamCompleted = (team) => {
+        const kId = String(team.id || '');
+        const kName = String(team.name || '');
+        return Boolean(completedTrades[kId] || completedTrades[kName] || (team.groupId && completedTrades[String(team.groupId)]));
+    };
+
+    const completedCount = uniqueTeams.filter(t => isTeamCompleted(t)).length;
+    const totalCount = uniqueTeams.length || 1;
+    const progressPct = Math.round((completedCount / totalCount) * 100);
+
+    return (
+        <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+        }}>
+            <div style={{
+                background: '#0f172a',
+                border: '2px solid #10b981',
+                borderRadius: '22px',
+                padding: '24px 28px',
+                maxWidth: '680px',
+                width: '100%',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+                color: '#f8fafc',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                fontFamily: "'Pretendard', sans-serif"
+            }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <CheckCircle size={26} color="#10b981" />
+                        <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: '900', color: '#ffffff' }}>
+                            📋 {currentYear}년 참여자별 매매 진행 현황
+                        </h2>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '10px', padding: '6px 14px', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                        ✕ 닫기
+                    </button>
+                </div>
+
+                {/* Progress Summary Card */}
+                <div style={{
+                    background: '#1e293b',
+                    borderRadius: '14px',
+                    padding: '14px 18px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                        <span style={{ fontSize: '0.92rem', color: '#cbd5e1', fontWeight: '700' }}>
+                            매매 체결 완료 진행도: <strong style={{ color: '#34d399', fontSize: '1.05rem' }}>{completedCount}</strong> / {totalCount}팀 ({progressPct}%)
+                        </span>
+                        <span style={{ fontSize: '0.8rem', color: completedCount === totalCount ? '#34d399' : '#94a3b8', fontWeight: 'bold' }}>
+                            {completedCount === totalCount ? '🎉 모든 참여자 매매 완료!' : '⏳ 나머지 참여자 매매 진행 중'}
+                        </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div style={{ width: '100%', height: '8px', background: '#334155', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{
+                            width: `${progressPct}%`,
+                            height: '100%',
+                            background: progressPct === 100 ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #38bdf8, #3b82f6)',
+                            borderRadius: '4px',
+                            transition: 'width 0.4s ease'
+                        }} />
+                    </div>
+                </div>
+
+                {/* Team Status List */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: uniqueTeams.length > 4 ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr',
+                    gap: '10px'
+                }}>
+                    {uniqueTeams.map((team, idx) => {
+                        const completed = isTeamCompleted(team);
+                        const teamKey = String(team.id || team.name);
+
+                        return (
+                            <div
+                                key={teamKey}
+                                style={{
+                                    background: completed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                                    border: completed ? '1.5px solid rgba(16, 185, 129, 0.4)' : '1px solid #334155',
+                                    borderRadius: '12px',
+                                    padding: '12px 16px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: '10px'
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{
+                                        width: '26px',
+                                        height: '26px',
+                                        borderRadius: '50%',
+                                        background: completed ? '#10b981' : '#475569',
+                                        color: '#ffffff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.8rem',
+                                        fontWeight: '900'
+                                    }}>
+                                        {idx + 1}
+                                    </span>
+                                    <span style={{ fontSize: '1.02rem', fontWeight: '800', color: completed ? '#ffffff' : '#cbd5e1' }}>
+                                        {team.name}
+                                    </span>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {completed ? (
+                                        <span style={{
+                                            background: '#10b981',
+                                            color: '#0f172a',
+                                            padding: '4px 12px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.82rem',
+                                            fontWeight: '900',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            boxShadow: '0 0 10px rgba(16, 185, 129, 0.3)'
+                                        }}>
+                                            ✓ 매매 완료
+                                        </span>
+                                    ) : (
+                                        <span style={{
+                                            background: '#334155',
+                                            color: '#94a3b8',
+                                            padding: '4px 12px',
+                                            borderRadius: '8px',
+                                            fontSize: '0.82rem',
+                                            fontWeight: '700',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}>
+                                            ⏳ 매매 대기
+                                        </span>
+                                    )}
+
+                                    {onSelectTeam && !completed && (
+                                        <button
+                                            onClick={() => {
+                                                onSelectTeam(team.id);
+                                                onClose();
+                                            }}
+                                            style={{
+                                                background: 'rgba(56, 189, 248, 0.15)',
+                                                border: '1px solid #38bdf8',
+                                                color: '#38bdf8',
+                                                borderRadius: '6px',
+                                                padding: '3px 8px',
+                                                fontSize: '0.74rem',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer'
+                                            }}
+                                            title="해당 조 주문 입력으로 이동"
+                                        >
+                                            주문입력
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Footer */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '10px 28px',
+                            fontSize: '0.95rem',
+                            fontWeight: '900',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                        }}
+                    >
+                        ✓ 확인 (닫기)
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// =============================================================================
 // 모달 컴포넌트: 모든 주문 체결 확정 및 자산 정산 결과 보고서 (AllOrdersResultModal)
 // =============================================================================
 export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios, stockList, teamList }) {
@@ -2075,8 +2324,19 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
         ? teamList
         : Object.keys(portfolios || {}).map(id => ({ id, name: `${id}조` }));
 
+    // 참여자 목록 중복 제거 (id/name 기준 고유 식별)
+    const uniqueTeams = [];
+    const seenTeamKeys = new Set();
+    baseTeams.forEach(t => {
+        const key = String(t.id || t.name);
+        if (!seenTeamKeys.has(key)) {
+            seenTeamKeys.add(key);
+            uniqueTeams.push(t);
+        }
+    });
+
     // 전체 참여자 자산 데이터 집계 및 정산 계산
-    const processedTeams = baseTeams.map((team) => {
+    const processedTeams = uniqueTeams.map((team) => {
         const p = getTeamPortfolio(team, portfolios);
         let stockVal = 0;
         const holdingsDetails = [];
@@ -2091,7 +2351,7 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
         });
         const cashVal = p.cash !== undefined ? p.cash : 1000000;
         const totalAssetVal = cashVal + stockVal;
-        const seedMoney = p.seedMoney || 1000000;
+        const seedMoney = (p.seedMoney && p.seedMoney > 0) ? p.seedMoney : (team.initialSeed || 1000000);
         const returnRate = seedMoney > 0 ? (((totalAssetVal - seedMoney) / seedMoney) * 100).toFixed(1) : '0.0';
 
         return {
@@ -2111,10 +2371,10 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
     const sortedTeams = [...processedTeams].sort((a, b) => b.totalAssetVal - a.totalAssetVal);
 
     const getRankBadge = (rankIdx) => {
-        if (rankIdx === 0) return { label: '🥇 1위 (최고 수익)', bg: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#1e293b' };
+        if (rankIdx === 0) return { label: '🥇 1위', bg: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#1e293b' };
         if (rankIdx === 1) return { label: '🥈 2위', bg: 'linear-gradient(135deg, #94a3b8, #64748b)', color: '#0f172a' };
         if (rankIdx === 2) return { label: '🥉 3위', bg: 'linear-gradient(135deg, #b45309, #78350f)', color: '#fef3c7' };
-        return { label: `#${rankIdx + 1}위`, bg: '#334155', color: '#cbd5e1' };
+        return { label: `${rankIdx + 1}위`, bg: '#334155', color: '#cbd5e1' };
     };
 
     return (
@@ -2132,24 +2392,24 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
             <div style={{
                 background: '#0f172a',
                 border: '2px solid #38bdf8',
-                borderRadius: '24px',
-                padding: '28px',
-                maxWidth: '860px',
+                borderRadius: '20px',
+                padding: '24px 28px',
+                maxWidth: '740px',
                 width: '100%',
-                maxHeight: '88vh',
+                maxHeight: '90vh',
                 overflowY: 'auto',
                 boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
                 color: '#f8fafc',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '18px',
+                gap: '16px',
                 fontFamily: "'Pretendard', sans-serif"
             }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <Trophy size={26} color="#f59e0b" />
-                        <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '900', color: '#ffffff' }}>
-                            🏆 {currentYear}년 모든 참여자 주문 체결 및 투자 정산 결과 (실시간 순위)
+                        <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: '900', color: '#ffffff' }}>
+                            🏆 {currentYear}년 모든 참여자 투자 정산 결과 (실시간 순위)
                         </h2>
                     </div>
                     <button
@@ -2160,101 +2420,90 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
                     </button>
                 </div>
 
-                <div style={{ fontSize: '0.88rem', color: '#94a3b8', background: '#1e293b', padding: '10px 14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                    <span>💡 <strong>금융 정산 보고서:</strong> 각 참여자의 체결 결과가 반영되어 <strong>[예수금]</strong>과 <strong>[보유 주식 가치]</strong>로 확정 집계되었습니다.</span>
+                <div style={{ fontSize: '0.85rem', color: '#94a3b8', background: '#1e293b', padding: '8px 14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <span>💡 <strong>투자 정산 집계:</strong> 체결 후 확정된 총 자산 가치 및 초기 투자금 대비 누적 수익률입니다.</span>
                     <span style={{ color: '#38bdf8', fontWeight: '800' }}>총 {sortedTeams.length}개 팀/참여자 집계 완료</span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    {sortedTeams.map((item, idx) => {
-                        const { team, targetKey, stockVal, holdingsDetails, cashVal, totalAssetVal, returnRate } = item;
-                        const rankBadge = getRankBadge(idx);
-                        const retNum = Number(returnRate);
+                <div style={{
+                    border: '1px solid #334155',
+                    borderRadius: '14px',
+                    overflow: 'hidden',
+                    background: '#131e32'
+                }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead>
+                            <tr style={{ background: '#1e293b', borderBottom: '2px solid #334155', color: '#94a3b8', fontSize: '0.86rem', fontWeight: '800' }}>
+                                <th style={{ padding: '12px 14px', textAlign: 'center', width: '90px' }}>순위</th>
+                                <th style={{ padding: '12px 16px' }}>참여자 / 조명</th>
+                                <th style={{ padding: '12px 16px', textAlign: 'right', width: '180px' }}>총 자산 가치</th>
+                                <th style={{ padding: '12px 18px', textAlign: 'right', width: '140px' }}>누적 수익률</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedTeams.map((item, idx) => {
+                                const { team, targetKey, totalAssetVal, returnRate } = item;
+                                const rankBadge = getRankBadge(idx);
+                                const retNum = Number(returnRate);
 
-                        return (
-                            <div key={targetKey} style={{
-                                background: idx === 0 ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, #1e293b 100%)' : '#1e293b',
-                                border: idx === 0 ? '2px solid #f59e0b' : '1px solid #334155',
-                                borderRadius: '16px',
-                                padding: '18px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '12px',
-                                boxShadow: idx === 0 ? '0 4px 20px rgba(245, 158, 11, 0.2)' : 'none'
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <span style={{
-                                            background: rankBadge.bg,
-                                            color: rankBadge.color,
-                                            padding: '4px 12px',
-                                            borderRadius: '10px',
-                                            fontSize: '0.9rem',
-                                            fontWeight: '900'
-                                        }}>
-                                            {rankBadge.label}
-                                        </span>
-                                        <span style={{ fontSize: '1.2rem', fontWeight: '900', color: '#f8fafc' }}>
-                                            {team.name}
-                                        </span>
-                                    </div>
-                                    <div style={{
-                                        fontSize: '0.95rem',
-                                        fontWeight: '900',
-                                        color: retNum >= 0 ? '#f43f5e' : '#38bdf8',
-                                        background: 'rgba(0,0,0,0.3)',
-                                        padding: '4px 14px',
-                                        borderRadius: '8px',
-                                        border: retNum >= 0 ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid rgba(56, 189, 248, 0.3)'
+                                const rowBg = idx === 0
+                                    ? 'linear-gradient(90deg, rgba(245, 158, 11, 0.16) 0%, rgba(245, 158, 11, 0.04) 100%)'
+                                    : (idx % 2 === 1 ? 'rgba(255, 255, 255, 0.02)' : 'transparent');
+
+                                return (
+                                    <tr key={targetKey} style={{
+                                        background: rowBg,
+                                        borderBottom: idx === sortedTeams.length - 1 ? 'none' : '1px solid #1e293b',
+                                        transition: 'background 0.2s'
                                     }}>
-                                        누적 수익률: {retNum >= 0 ? `+${returnRate}%` : `${returnRate}%`}
-                                    </div>
-                                </div>
-
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', background: '#0f172a', padding: '14px', borderRadius: '12px' }}>
-                                    <div>
-                                        <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '2px' }}>💰 총 자산 가치</div>
-                                        <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#ffffff' }}>
-                                            {formatKoreanMoney(totalAssetVal)}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '2px' }}>💵 보유 예수금 (현금)</div>
-                                        <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#10b981' }}>
-                                            {formatKoreanMoney(cashVal)}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '2px' }}>📈 주식 평가금액</div>
-                                        <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#f59e0b' }}>
-                                            {formatKoreanMoney(stockVal)}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div style={{ fontSize: '0.82rem', color: '#cbd5e1', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                                    <div>
-                                        <strong style={{ color: '#f8fafc', marginRight: '6px' }}>보유 주식 포트폴리오:</strong>
-                                        {holdingsDetails.length > 0 ? (
-                                            <span style={{ color: '#93c5fd' }}>
-                                                {holdingsDetails.map(h => `[${h.key}] ${h.sector} ${h.qty}주 (${h.evalAmt.toLocaleString()}원)`).join(' · ')}
+                                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                            <span style={{
+                                                background: rankBadge.bg,
+                                                color: rankBadge.color,
+                                                padding: '3px 10px',
+                                                borderRadius: '8px',
+                                                fontSize: '0.82rem',
+                                                fontWeight: '900',
+                                                display: 'inline-block'
+                                            }}>
+                                                {rankBadge.label}
                                             </span>
-                                        ) : (
-                                            <span style={{ color: '#64748b' }}>보유 주식 없음 (100% 예수금 보유 중)</span>
-                                        )}
-                                    </div>
-                                    {holdingsDetails.length > 0 && (
-                                        <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>
-                                            총 {holdingsDetails.reduce((acc, h) => acc + h.qty, 0)}주 보유
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
+                                        </td>
+                                        <td style={{ padding: '10px 16px' }}>
+                                            <span style={{
+                                                fontSize: '1rem',
+                                                fontWeight: '800',
+                                                color: idx === 0 ? '#fbbf24' : '#f8fafc'
+                                            }}>
+                                                {team.name}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '10px 16px', textAlign: 'right' }}>
+                                            <span style={{
+                                                fontSize: '1.05rem',
+                                                fontWeight: '900',
+                                                color: idx === 0 ? '#fbbf24' : '#ffffff'
+                                            }}>
+                                                {formatKoreanMoney(totalAssetVal)}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '10px 18px', textAlign: 'right' }}>
+                                            <span style={{
+                                                fontSize: '1.02rem',
+                                                fontWeight: '900',
+                                                color: retNum > 0 ? '#f43f5e' : (retNum < 0 ? '#38bdf8' : '#94a3b8')
+                                            }}>
+                                                {retNum > 0 ? `+${returnRate}%` : `${returnRate}%`}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
                     <button
                         onClick={onClose}
                         style={{
@@ -2262,8 +2511,8 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
                             color: 'white',
                             border: 'none',
                             borderRadius: '12px',
-                            padding: '12px 32px',
-                            fontSize: '1rem',
+                            padding: '10px 28px',
+                            fontSize: '0.95rem',
                             fontWeight: '900',
                             cursor: 'pointer',
                             boxShadow: '0 4px 14px rgba(59, 130, 246, 0.4)'
@@ -2315,6 +2564,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     const [selectedSector, setSelectedSector] = useState(null);
     const [showSectorDirectoryModal, setShowSectorDirectoryModal] = useState(false);
     const [allOrdersModalOpen, setAllOrdersModalOpen] = useState(false);
+    const [tradingProgressModalOpen, setTradingProgressModalOpen] = useState(false);
+    const [completedTrades, setCompletedTrades] = useState({}); // { [teamId]: true }
     const [showHostQrModal, setShowHostQrModal] = useState(false);
     const [activeTab, setActiveTab] = useState('decision'); // 'decision' (주문표) | 'matrix' (전체 현황표)
 
@@ -2355,6 +2606,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     const [orderInputs, setOrderInputs] = useState({
         A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0
     });
+    // 각 행별 직접 텍스트 수량 입력 상태: { [stockKey]: string }
+    const [rowInputValues, setRowInputValues] = useState({});
 
     // 참여자 리스트 생성 (온라인: liveParticipants, 오프라인: contextScores 기반 동적 인원수)
     const teamList = useMemo(() => {
@@ -2465,6 +2718,9 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         predictions,
         predictionResults,
         allOrdersModalOpen,
+        tradingProgressModalOpen,
+        completedTrades,
+        teamList,
         pin
     });
 
@@ -2479,6 +2735,9 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         predictions,
         predictionResults,
         allOrdersModalOpen,
+        tradingProgressModalOpen,
+        completedTrades,
+        teamList,
         pin
     };
 
@@ -2494,6 +2753,9 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         if (overrides.predictions !== undefined) cur.predictions = overrides.predictions;
         if (overrides.predictionResults !== undefined) cur.predictionResults = overrides.predictionResults;
         if (overrides.allOrdersModalOpen !== undefined) cur.allOrdersModalOpen = overrides.allOrdersModalOpen;
+        if (overrides.tradingProgressModalOpen !== undefined) cur.tradingProgressModalOpen = overrides.tradingProgressModalOpen;
+        if (overrides.completedTrades !== undefined) cur.completedTrades = overrides.completedTrades;
+        if (overrides.teamList !== undefined) cur.teamList = overrides.teamList;
 
         const payload = {
             pin: cur.pin || pin,
@@ -2506,7 +2768,10 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             allowAllVipHint: cur.allowAllVipHint,
             predictions: cur.predictions,
             predictionResults: cur.predictionResults,
-            allOrdersModalOpen: cur.allOrdersModalOpen
+            allOrdersModalOpen: cur.allOrdersModalOpen,
+            tradingProgressModalOpen: cur.tradingProgressModalOpen,
+            completedTrades: cur.completedTrades || {},
+            teamList: cur.teamList || teamList
         };
 
         try {
@@ -2840,15 +3105,26 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             setPredictionResults({});
             setHostVipHints({});
             setParticipantActivities({});
+            setOrderInputs({ A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 });
+            setRowInputValues({});
+            setCompletedTrades({});
+            setTradingProgressModalOpen(false);
+            setAllOrdersModalOpen(false);
             
             const resetPortfolios = {};
-            teamList.forEach(t => {
+            teamList.forEach((t, idx) => {
+                const seed = t.initialSeed && t.initialSeed > 0 ? t.initialSeed : 1000000;
                 resetPortfolios[t.id] = {
-                    seedMoney: t.initialSeed,
-                    cash: t.initialSeed,
+                    teamId: t.id,
+                    nickname: t.name,
+                    seedMoney: seed,
+                    cash: seed,
                     holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
-                    history: { 2015: { asset: t.initialSeed, rank: 1, returnRate: 0 } }
+                    history: { 2015: { asset: seed, rank: 1, returnRate: 0 } }
                 };
+                if (setExactScore) {
+                    setExactScore(Number(t.id) || (idx + 1), seed);
+                }
             });
             setPortfolios(resetPortfolios);
             try {
@@ -2860,8 +3136,12 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 stocks: newStocks,
                 isPubliclyRevealed: false,
                 portfolios: resetPortfolios,
+                teamList: teamList,
                 predictions: {},
-                predictionResults: {}
+                predictionResults: {},
+                completedTrades: {},
+                tradingProgressModalOpen: false,
+                allOrdersModalOpen: false
             });
         }
     };
@@ -2871,7 +3151,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         if (currentYear >= 2025) {
             playSound('fanfare');
             setIsPubliclyRevealed(true);
-            broadcastStockState({ isPubliclyRevealed: true });
+            broadcastStockState({ isPubliclyRevealed: true, teamList });
             alert('🎉 2025년 최종 게임이 종료되었습니다! 모든 기업의 실제 명칭이 공개되었습니다.');
             return;
         }
@@ -2909,55 +3189,71 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         setPredictions({});
         setHostVipHints({});
         setParticipantActivities({});
+        setOrderInputs({ A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 });
+        setRowInputValues({});
+        setCompletedTrades({});
+        setTradingProgressModalOpen(false);
+        setAllOrdersModalOpen(false);
 
-        // 연도 결산 및 포트폴리오 자산 가치 평가 (모든 보유 주식 유지 및 가치 재평가)
-        let updatedPortfolios = {};
-        setPortfolios(prev => {
-            const updated = { ...prev };
-            Object.keys(updated).forEach(key => {
-                const p = updated[key];
-                if (!p || !p.holdings) return;
+        // 연도 결산 및 포트폴리오 자산 가치 즉시 동기화 계산 (모든 보유 주식 유지 및 가치 재평가)
+        const nextPortfolios = { ...portfolios };
+        teamList.forEach((team, idx) => {
+            const key = team.id;
+            const p = getTeamPortfolio(team, nextPortfolios);
 
-                let stockVal = 0;
-                stockList.forEach(s => {
-                    const qty = p.holdings[s.key] || 0;
-                    const price = s.prices[nextYear] ?? s.prices[2015];
-                    stockVal += qty * price;
-                });
-
-                const totalAsset = (p.cash || 0) + stockVal;
-                const retRate = (p.seedMoney && p.seedMoney > 0) ? (((totalAsset - p.seedMoney) / p.seedMoney) * 100).toFixed(1) : 0;
-
-                const targetTeam = teamList.find(t => t.id === key);
-                if (targetTeam && socket && pin) {
-                    socket.emit('host:adjustScore', { pin, nickname: targetTeam.name, exactScore: Math.round(totalAsset) });
-                } else if (setExactScore) {
-                    const numKey = Number(key) || key;
-                    setExactScore(numKey, Math.round(totalAsset));
-                }
-
-                updated[key] = {
-                    ...p,
-                    history: {
-                        ...(p.history || {}),
-                        [nextYear]: {
-                            asset: totalAsset,
-                            stockValue: stockVal,
-                            cash: p.cash || 0,
-                            returnRate: Number(retRate)
-                        }
-                    }
-                };
+            let stockVal = 0;
+            stockList.forEach(s => {
+                const qty = p.holdings?.[s.key] || 0;
+                const price = s.prices ? (s.prices[nextYear] ?? s.prices[2015] ?? 0) : 0;
+                stockVal += qty * price;
             });
-            updatedPortfolios = updated;
-            return updated;
+
+            const totalAsset = (p.cash !== undefined ? p.cash : 1000000) + stockVal;
+            const seed = (p.seedMoney && p.seedMoney > 0) ? p.seedMoney : (team.initialSeed || 1000000);
+            const retRate = seed > 0 ? (((totalAsset - seed) / seed) * 100).toFixed(1) : '0.0';
+
+            // 1) 우측 사이드바 및 로컬 점수판 즉시 업데이트 (오프라인/온라인 공통)
+            if (setExactScore) {
+                const numKey = Number(team.id) || (idx + 1);
+                setExactScore(numKey, Math.round(totalAsset));
+            }
+
+            // 2) 온라인 모바일 룸 참여자 점수 동기화
+            if (socket && pin) {
+                socket.emit('host:adjustScore', { pin, nickname: team.name, exactScore: Math.round(totalAsset) });
+            }
+
+            const updatedP = {
+                ...p,
+                teamId: team.id,
+                nickname: team.name,
+                seedMoney: seed,
+                history: {
+                    ...(p.history || {}),
+                    [nextYear]: {
+                        asset: totalAsset,
+                        stockValue: stockVal,
+                        cash: p.cash !== undefined ? p.cash : 1000000,
+                        returnRate: Number(retRate)
+                    }
+                }
+            };
+
+            nextPortfolios[key] = updatedP;
+            if (team.name) nextPortfolios[team.name] = updatedP;
         });
+
+        setPortfolios(nextPortfolios);
 
         broadcastStockState({ 
             year: nextYear,
-            portfolios: updatedPortfolios,
+            portfolios: nextPortfolios,
+            teamList: teamList,
             predictions: {},
-            predictionResults: nextPredResults
+            predictionResults: nextPredResults,
+            completedTrades: {},
+            tradingProgressModalOpen: false,
+            allOrdersModalOpen: false
         });
 
         if (qualifiedTeamNames.length > 0) {
@@ -2972,8 +3268,24 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         if (currentYear <= 2015) return;
         const prev = currentYear - 1;
         setCurrentYear(prev);
-        broadcastStockState({ year: prev });
+        setCompletedTrades({});
+        setRowInputValues({});
+        setTradingProgressModalOpen(false);
+        setAllOrdersModalOpen(false);
+        broadcastStockState({
+            year: prev,
+            teamList,
+            completedTrades: {},
+            tradingProgressModalOpen: false,
+            allOrdersModalOpen: false
+        });
     };
+
+    // 선택 조 변경 시 수량 입력 폼 리셋
+    useEffect(() => {
+        setOrderInputs({ A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 });
+        setRowInputValues({});
+    }, [selectedTeamId]);
 
     // 주문 수량 입력 변경
     const handleQtyChange = (stockKey, val) => {
@@ -2984,6 +3296,61 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         }));
     };
 
+    // 행별 직접 텍스트 수량 입력 변경
+    const handleRowInputChange = (stockKey, val) => {
+        setRowInputValues(prev => ({ ...prev, [stockKey]: val }));
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
+            const sign = (orderInputs[stockKey] < 0) ? -1 : 1;
+            setOrderInputs(prev => ({ ...prev, [stockKey]: sign * Math.abs(num) }));
+        } else {
+            setOrderInputs(prev => ({ ...prev, [stockKey]: 0 }));
+        }
+    };
+
+    // [+ 매수] 버튼 클릭 (토글: 이미 매수 상태면 해제되어 0으로 리셋)
+    const handleBuyClick = (stockKey) => {
+        const curOrder = orderInputs[stockKey] || 0;
+        if (curOrder > 0) {
+            handleClearQty(stockKey);
+            return;
+        }
+        const raw = rowInputValues[stockKey] !== undefined ? rowInputValues[stockKey] : (orderInputs[stockKey] !== 0 ? String(Math.abs(orderInputs[stockKey])) : '');
+        const val = parseInt(raw, 10);
+        if (val > 0) {
+            setOrderInputs(prev => ({ ...prev, [stockKey]: Math.abs(val) }));
+            setRowInputValues(prev => ({ ...prev, [stockKey]: String(Math.abs(val)) }));
+        } else {
+            alert('매수할 수량을 입력해주세요.');
+        }
+    };
+
+    // [- 매도] 버튼 클릭 (토글: 이미 매도 상태면 해제되어 0으로 리셋)
+    const handleSellClick = (stockKey, currentQty) => {
+        const curOrder = orderInputs[stockKey] || 0;
+        if (curOrder < 0) {
+            handleClearQty(stockKey);
+            return;
+        }
+        const raw = rowInputValues[stockKey] !== undefined ? rowInputValues[stockKey] : (orderInputs[stockKey] !== 0 ? String(Math.abs(orderInputs[stockKey])) : '');
+        const val = parseInt(raw, 10);
+        if (val > 0) {
+            if (currentQty > 0 && val > currentQty) {
+                alert(`[${stockKey}] 현재 보유 수량(${currentQty}주)을 초과하여 매도할 수 없습니다.`);
+            }
+            setOrderInputs(prev => ({ ...prev, [stockKey]: -Math.abs(val) }));
+            setRowInputValues(prev => ({ ...prev, [stockKey]: String(Math.abs(val)) }));
+        } else {
+            alert('매도할 수량을 입력해주세요.');
+        }
+    };
+
+    // [✕ 취소] 버튼 클릭
+    const handleClearQty = (stockKey) => {
+        setOrderInputs(prev => ({ ...prev, [stockKey]: 0 }));
+        setRowInputValues(prev => ({ ...prev, [stockKey]: '' }));
+    };
+
     // 매수 / 매도 주문 체결 실행
     const handleExecuteOrder = () => {
         const currentTeamObj = teamList.find(t => t.id === selectedTeamId) || teamList[0] || { id: selectedTeamId, name: `${selectedTeamId}조` };
@@ -2992,6 +3359,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         if (!currentP) return;
 
         const hasInputs = Object.values(orderInputs).some(qty => qty !== 0);
+        let nextP = { ...portfolios };
 
         if (hasInputs) {
             let totalCost = 0;
@@ -2999,7 +3367,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
 
             for (const [key, qty] of Object.entries(orderInputs)) {
                 if (qty === 0) continue;
-                const price = activeStocks[key]?.prices[currentYear] ?? activeStocks[key]?.prices[2015];
+                const price = activeStocks[key]?.prices[currentYear] ?? activeStocks[key]?.prices[2015] ?? 0;
 
                 if (qty > 0) {
                     totalCost += qty * price;
@@ -3008,7 +3376,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     const sellQty = Math.abs(qty);
                     const currentQty = newHoldings[key] || 0;
                     if (sellQty > currentQty) {
-                        alert(`[${activeStocks[key]?.sector}] 보유 수량(${currentQty}주)보다 많이 매도할 수 없습니다.`);
+                        alert(`[${activeStocks[key]?.sector || key}] 보유 수량(${currentQty}주)보다 많이 매도할 수 없습니다.`);
                         return;
                     }
                     totalCost -= sellQty * price;
@@ -3016,56 +3384,136 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 }
             }
 
-            if (currentP.cash < totalCost) {
-                alert(`예수금이 부족합니다! (필요 현금: ${totalCost.toLocaleString()}원 / 보유 현금: ${currentP.cash.toLocaleString()}원)`);
+            if ((currentP.cash || 0) < totalCost) {
+                alert(`예수금이 부족합니다! (필요 현금: ${totalCost.toLocaleString()}원 / 보유 현금: ${(currentP.cash || 0).toLocaleString()}원)`);
                 return;
             }
 
-            const newCash = currentP.cash - totalCost;
+            const newCash = (currentP.cash || 0) - totalCost;
             playSound('submit');
 
-            setPortfolios(prev => {
-                const updated = {
-                    ...currentP,
-                    cash: newCash,
-                    holdings: newHoldings
-                };
-                const nextP = { ...prev };
-                if (teamId) nextP[teamId] = updated;
-                if (currentTeamObj.name) nextP[currentTeamObj.name] = updated;
-                if (currentTeamObj.groupId) nextP[String(currentTeamObj.groupId)] = updated;
-                if (selectedTeamId) nextP[selectedTeamId] = updated;
-                broadcastStockState({ portfolios: nextP });
-                return nextP;
-            });
+            const updatedPortfolio = {
+                ...currentP,
+                teamId: teamId,
+                nickname: currentTeamObj.name,
+                cash: newCash,
+                holdings: newHoldings
+            };
 
+            nextP[teamId] = updatedPortfolio;
+            if (currentTeamObj.name) nextP[currentTeamObj.name] = updatedPortfolio;
+
+            setPortfolios(nextP);
             setOrderInputs({ A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 });
+            setRowInputValues({});
         }
 
-        setAllOrdersModalOpen(true);
-        broadcastStockState({ allOrdersModalOpen: true });
+        // 해당 팀 매매 완료 상태 기록
+        const nextCompleted = {
+            ...completedTrades,
+            [String(teamId)]: true,
+            ...(currentTeamObj.name ? { [String(currentTeamObj.name)]: true } : {})
+        };
+        setCompletedTrades(nextCompleted);
+
+        // 참여자별 매매 진행 현황 모달 표시 (정산 결과 모달은 오픈하지 않음)
+        setTradingProgressModalOpen(true);
+        setAllOrdersModalOpen(false);
+
+        broadcastStockState({
+            portfolios: nextP,
+            completedTrades: nextCompleted,
+            tradingProgressModalOpen: true,
+            allOrdersModalOpen: false,
+            teamList
+        });
+    };
+
+    const handleCloseTradingProgressModal = () => {
+        setTradingProgressModalOpen(false);
+        broadcastStockState({ tradingProgressModalOpen: false, teamList });
     };
 
     const handleCloseAllOrdersModal = () => {
         setAllOrdersModalOpen(false);
-        broadcastStockState({ allOrdersModalOpen: false });
+        broadcastStockState({ allOrdersModalOpen: false, teamList });
     };
 
-    const currentTeam = teamList.find(t => t.id === selectedTeamId) || teamList[0] || { id: '1', name: '1조' };
+    const currentTeam = teamList.find(t => t.id === selectedTeamId) || teamList[0] || { id: '1', name: '1번', initialSeed: 1000000 };
     const currentTeamPortfolio = getTeamPortfolio(currentTeam, portfolios);
 
-    // 현재 선택된 팀의 총 주식 평가금액 계산
+    // 현재 선택된 팀의 총 주식 평가금액 계산 (체결 전)
     const currentTeamStockValue = useMemo(() => {
         let total = 0;
         stockList.forEach(s => {
-            const qty = currentTeamPortfolio.holdings[s.key] || 0;
-            const price = s.prices[currentYear] ?? s.prices[2015];
+            const qty = currentTeamPortfolio.holdings?.[s.key] || 0;
+            const price = s.prices ? (s.prices[currentYear] ?? s.prices[2015] ?? 0) : 0;
             total += qty * price;
         });
         return total;
     }, [currentTeamPortfolio.holdings, currentYear, stockList]);
 
-    const currentTeamTotalAsset = currentTeamPortfolio.cash + currentTeamStockValue;
+    const currentTeamTotalAsset = (currentTeamPortfolio.cash !== undefined ? currentTeamPortfolio.cash : 1000000) + currentTeamStockValue;
+
+    // 주문 수량 입력에 따른 실시간 시뮬레이션 계산 (체결 후 예상 예수금, 주식 평가액, 총 자산)
+    const {
+        totalOrderCost,
+        simulatedCash,
+        simulatedStockValue,
+        simulatedTotalAsset,
+        isOverBudget,
+        isOverShares,
+        hasPendingOrders
+    } = useMemo(() => {
+        let cost = 0;
+        let overBudget = false;
+        let overShares = false;
+
+        stockList.forEach(s => {
+            const price = s.prices ? (s.prices[currentYear] ?? s.prices[2015] ?? 0) : 0;
+            const orderQty = orderInputs[s.key] || 0;
+            const curQty = currentTeamPortfolio.holdings?.[s.key] || 0;
+
+            if (orderQty > 0) {
+                cost += orderQty * price;
+            } else if (orderQty < 0) {
+                const sellQty = Math.abs(orderQty);
+                cost -= sellQty * price;
+                if (sellQty > curQty) {
+                    overShares = true;
+                }
+            }
+        });
+
+        const curCash = currentTeamPortfolio.cash !== undefined ? currentTeamPortfolio.cash : 1000000;
+        const simCash = curCash - cost;
+        if (simCash < 0) {
+            overBudget = true;
+        }
+
+        let simStockVal = 0;
+        stockList.forEach(s => {
+            const price = s.prices ? (s.prices[currentYear] ?? s.prices[2015] ?? 0) : 0;
+            const curQty = currentTeamPortfolio.holdings?.[s.key] || 0;
+            const orderQty = orderInputs[s.key] || 0;
+            const finalQty = Math.max(0, curQty + orderQty);
+            simStockVal += finalQty * price;
+        });
+
+        const simTotAsset = simCash + simStockVal;
+        const pending = Object.values(orderInputs).some(q => q !== 0);
+
+        return {
+            totalOrderCost: cost,
+            simulatedCash: simCash,
+            simulatedStockValue: simStockVal,
+            simulatedTotalAsset: simTotAsset,
+            isOverBudget: overBudget,
+            isOverShares: overShares,
+            hasPendingOrders: pending
+        };
+    }, [orderInputs, currentTeamPortfolio, currentYear, stockList]);
+
     const yearNewsList = useMemo(() => generateStockNewsForYear(currentYear, activeStocks), [currentYear, activeStocks]);
 
     return (
@@ -3142,7 +3590,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                             onClick={() => {
                                 const nextState = !allOrdersModalOpen;
                                 setAllOrdersModalOpen(nextState);
-                                broadcastStockState({ allOrdersModalOpen: nextState });
+                                broadcastStockState({ allOrdersModalOpen: nextState, teamList });
                             }}
                             style={{
                                 background: allOrdersModalOpen ? '#059669' : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
@@ -3476,7 +3924,10 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                     <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: '700' }}>대상 조 선택:</span>
                                     <select
                                         value={selectedTeamId}
-                                        onChange={(e) => setSelectedTeamId(e.target.value)}
+                                        onChange={(e) => {
+                                            setSelectedTeamId(e.target.value);
+                                            setOrderInputs({ A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 });
+                                        }}
                                         style={{
                                             background: '#1e293b',
                                             color: '#f8fafc',
@@ -3499,14 +3950,15 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         {/* Tab 1: Order Decision Console */}
                         {activeTab === 'decision' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                                {/* Current Team Status Banner */}
+                                {/* Current Team Status & Dynamic Calculation Banner */}
                                 <div style={{
                                     background: '#1e293b',
                                     borderRadius: '14px',
                                     padding: '14px 18px',
                                     display: 'flex',
                                     flexDirection: 'column',
-                                    gap: '12px'
+                                    gap: '12px',
+                                    border: isOverBudget || isOverShares ? '1.5px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.08)'
                                 }}>
                                     <div style={{
                                         display: 'flex',
@@ -3520,33 +3972,81 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                                 {currentTeam.name} 재무 현황
                                             </div>
                                             <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                                                초기 투자금: {formatKoreanMoney(currentTeamPortfolio.seedMoney)}
+                                                초기 투자금: {formatKoreanMoney(currentTeamPortfolio.seedMoney || currentTeam.initialSeed || 1000000)}
                                             </div>
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: '20px' }}>
+                                        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
                                             <div>
-                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>보유 현금(예수금)</div>
-                                                <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#10b981' }}>
-                                                    {formatKoreanMoney(currentTeamPortfolio.cash)}
+                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '2px' }}>
+                                                    보유 현금(예수금)
+                                                </div>
+                                                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: simulatedCash < 0 ? '#ef4444' : '#10b981' }}>
+                                                    {formatKoreanMoney(simulatedCash)}
                                                 </div>
                                             </div>
                                             <div>
-                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>주식 평가액</div>
-                                                <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#f59e0b' }}>
-                                                    {formatKoreanMoney(currentTeamStockValue)}
+                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '2px' }}>
+                                                    주식 평가액
+                                                </div>
+                                                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#f59e0b' }}>
+                                                    {formatKoreanMoney(simulatedStockValue)}
                                                 </div>
                                             </div>
                                             <div>
-                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>총 자산 가치</div>
-                                                <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#ffffff' }}>
-                                                    {formatKoreanMoney(currentTeamTotalAsset)}
+                                                <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '2px' }}>
+                                                    총 자산 가치
+                                                </div>
+                                                <div style={{ fontSize: '1.25rem', fontWeight: '900', color: simulatedCash < 0 ? '#ef4444' : '#ffffff' }}>
+                                                    {formatKoreanMoney(simulatedTotalAsset)}
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* 🔥 실시간 보유 주식 목록 태그 바 (핸드폰 매수 즉시 실시간 연동 표시) */}
+                                    {/* ⚠️ 보유 현금 부족 경고 배너 */}
+                                    {isOverBudget && (
+                                        <div style={{
+                                            background: 'linear-gradient(90deg, rgba(220, 38, 38, 0.25) 0%, rgba(185, 28, 28, 0.15) 100%)',
+                                            border: '1.5px solid #ef4444',
+                                            borderRadius: '10px',
+                                            padding: '10px 16px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                            color: '#fca5a5',
+                                            fontWeight: '800',
+                                            fontSize: '0.88rem'
+                                        }}>
+                                            <AlertCircle size={20} color="#ef4444" />
+                                            <span>
+                                                ⚠️ <strong>보유 예수금 부족 경고:</strong> 총 매수 필요 금액({formatKoreanMoney(totalOrderCost)})이 보유 현금({formatKoreanMoney(currentTeamPortfolio.cash !== undefined ? currentTeamPortfolio.cash : 1000000)})을 <strong>{formatKoreanMoney(Math.abs(simulatedCash))}</strong> 초과했습니다! 수량을 줄여주세요.
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* ⚠️ 보유 수량 초과 매도 경고 배너 */}
+                                    {isOverShares && (
+                                        <div style={{
+                                            background: 'linear-gradient(90deg, rgba(220, 38, 38, 0.25) 0%, rgba(185, 28, 28, 0.15) 100%)',
+                                            border: '1.5px solid #ef4444',
+                                            borderRadius: '10px',
+                                            padding: '10px 16px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                            color: '#fca5a5',
+                                            fontWeight: '800',
+                                            fontSize: '0.88rem'
+                                        }}>
+                                            <AlertCircle size={20} color="#ef4444" />
+                                            <span>
+                                                ⚠️ <strong>보유 수량 초과 매도 경고:</strong> 현재 보유하고 있는 주식 수량을 초과하여 매도할 수 없습니다.
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* 🔥 실시간 보유 주식 목록 태그 바 */}
                                     {(() => {
                                         const ownedItems = stockList.filter(s => (currentTeamPortfolio.holdings?.[s.key] || 0) > 0);
                                         const totalShares = ownedItems.reduce((acc, s) => acc + (currentTeamPortfolio.holdings?.[s.key] || 0), 0);
@@ -3564,12 +4064,12 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                             }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                                     <span style={{ color: '#38bdf8', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                        📦 [{currentTeam.name}] 실시간 보유 주식:
+                                                        📦 [{currentTeam.name}] 현재 보유 주식:
                                                     </span>
                                                     {ownedItems.length > 0 ? (
                                                         ownedItems.map(s => {
                                                             const qty = currentTeamPortfolio.holdings[s.key];
-                                                            const price = s.prices[currentYear] ?? s.prices[2015] ?? 0;
+                                                            const price = s.prices ? (s.prices[currentYear] ?? s.prices[2015] ?? 0) : 0;
                                                             const val = qty * price;
                                                             return (
                                                                 <span
@@ -3605,29 +4105,34 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                     })()}
                                 </div>
 
-                                {/* Order Inputs Table */}
+                                {/* Order Inputs Table (표 1: 퍼센트 자동 계산 버튼 탑재) */}
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
                                         <thead>
                                             <tr style={{ background: '#1e293b', color: '#94a3b8', borderBottom: '1px solid #334155' }}>
-                                                <th style={{ padding: '8px 12px', textAlign: 'left' }}>종목</th>
-                                                <th style={{ padding: '8px 12px', textAlign: 'right' }}>1주당 가격</th>
-                                                <th style={{ padding: '8px 12px', textAlign: 'right' }}>현재 보유</th>
-                                                <th style={{ padding: '8px 12px', textAlign: 'center' }}>주문 수량 (+매수/-매도)</th>
-                                                <th style={{ padding: '8px 12px', textAlign: 'right' }}>예상 금액</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'left' }}>종목</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right' }}>1주당 가격</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right' }}>현재 보유</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'center', minWidth: '240px' }}>주문 수량 (+매수 / -매도)</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right' }}>예상 체결 금액</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {stockList.map(s => {
-                                                const price = s.prices[currentYear] ?? s.prices[2015];
-                                                const currentQty = currentTeamPortfolio.holdings[s.key] || 0;
+                                                const price = s.prices ? (s.prices[currentYear] ?? s.prices[2015] ?? 0) : 0;
+                                                const currentQty = currentTeamPortfolio.holdings?.[s.key] || 0;
                                                 const orderQty = orderInputs[s.key] || 0;
                                                 const estimatedCost = orderQty * price;
+                                                const isRowOverShares = orderQty < 0 && Math.abs(orderQty) > currentQty;
+                                                const curAvailableCash = currentTeamPortfolio.cash !== undefined ? currentTeamPortfolio.cash : 1000000;
 
                                                 return (
-                                                    <tr key={s.key} style={{ borderBottom: '1px solid #1e293b' }}>
+                                                    <tr key={s.key} style={{
+                                                        borderBottom: '1px solid #1e293b',
+                                                        background: orderQty !== 0 ? 'rgba(56, 189, 248, 0.04)' : 'transparent'
+                                                    }}>
                                                         <td style={{ padding: '10px 12px', fontWeight: '800' }}>
-                                                            <span style={{ color: s.badgeColor, marginRight: '6px' }}>[{s.key}]</span>
+                                                            <span style={{ color: s.badgeColor || '#38bdf8', marginRight: '6px' }}>[{s.key}]</span>
                                                             {s.sector} {isPubliclyRevealed || hostPeekNames ? `(${s.realName})` : ''}
                                                         </td>
                                                         <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>
@@ -3642,55 +4147,204 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                                                     padding: '3px 10px',
                                                                     borderRadius: '8px',
                                                                     fontWeight: '900',
-                                                                    fontSize: '0.92rem',
+                                                                    fontSize: '0.88rem',
                                                                     display: 'inline-block',
                                                                     boxShadow: '0 0 10px rgba(16, 185, 129, 0.2)'
                                                                 }}>
-                                                                    🔥 {currentQty.toLocaleString()}주 보유
+                                                                    🔥 {currentQty.toLocaleString()}주
                                                                 </span>
                                                             ) : (
                                                                 <span style={{ color: '#64748b', fontWeight: '700' }}>0주</span>
                                                             )}
                                                         </td>
                                                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                                                                <button
-                                                                    onClick={() => handleQtyChange(s.key, orderQty - 100)}
-                                                                    style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer' }}
-                                                                >
-                                                                    -100
-                                                                </button>
-                                                                <input
-                                                                    type="number"
-                                                                    value={orderInputs[s.key] || ''}
-                                                                    placeholder="0"
-                                                                    onChange={(e) => handleQtyChange(s.key, e.target.value)}
-                                                                    style={{
-                                                                        width: '90px',
-                                                                        background: '#0b1120',
-                                                                        color: '#ffffff',
-                                                                        border: '1px solid #475569',
-                                                                        borderRadius: '8px',
-                                                                        padding: '6px',
-                                                                        textAlign: 'center',
-                                                                        fontWeight: 'bold'
-                                                                    }}
-                                                                />
-                                                                <button
-                                                                    onClick={() => handleQtyChange(s.key, orderQty + 100)}
-                                                                    style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer' }}
-                                                                >
-                                                                    +100
-                                                                </button>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                                                {/* 수량 직접 입력 및 매수 / 매도 버튼 */}
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        value={rowInputValues[s.key] !== undefined ? rowInputValues[s.key] : (orderQty !== 0 ? Math.abs(orderQty) : '')}
+                                                                        placeholder="수량"
+                                                                        onChange={(e) => handleRowInputChange(s.key, e.target.value)}
+                                                                        style={{
+                                                                            width: '75px',
+                                                                            background: isRowOverShares ? 'rgba(239, 68, 68, 0.3)' : '#0b1120',
+                                                                            color: orderQty > 0 ? '#f87171' : (orderQty < 0 ? '#60a5fa' : '#ffffff'),
+                                                                            border: isRowOverShares ? '1.5px solid #ef4444' : (orderQty !== 0 ? (orderQty > 0 ? '1.5px solid #ef4444' : '1.5px solid #3b82f6') : '1px solid #475569'),
+                                                                            borderRadius: '8px',
+                                                                            padding: '5px 6px',
+                                                                            textAlign: 'center',
+                                                                            fontWeight: '900',
+                                                                            fontSize: '0.92rem'
+                                                                        }}
+                                                                    />
+                                                                    <button
+                                                                        onClick={() => handleBuyClick(s.key)}
+                                                                        style={{
+                                                                            background: orderQty > 0 ? '#ef4444' : 'rgba(239, 68, 68, 0.2)',
+                                                                            color: orderQty > 0 ? '#ffffff' : '#fca5a5',
+                                                                            border: '1px solid #ef4444',
+                                                                            borderRadius: '6px',
+                                                                            padding: '5px 8px',
+                                                                            fontSize: '0.78rem',
+                                                                            fontWeight: '900',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s'
+                                                                        }}
+                                                                        title="입력한 수량을 [매수]로 지정"
+                                                                    >
+                                                                        +매수
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleSellClick(s.key, currentQty)}
+                                                                        style={{
+                                                                            background: orderQty < 0 ? '#3b82f6' : 'rgba(59, 130, 246, 0.2)',
+                                                                            color: orderQty < 0 ? '#ffffff' : '#93c5fd',
+                                                                            border: '1px solid #3b82f6',
+                                                                            borderRadius: '6px',
+                                                                            padding: '5px 8px',
+                                                                            fontSize: '0.78rem',
+                                                                            fontWeight: '900',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s'
+                                                                        }}
+                                                                        title="입력한 수량을 [매도]로 지정"
+                                                                    >
+                                                                        -매도
+                                                                    </button>
+                                                                    {orderQty !== 0 && (
+                                                                        <button
+                                                                            onClick={() => handleClearQty(s.key)}
+                                                                            style={{
+                                                                                background: '#334155',
+                                                                                color: '#94a3b8',
+                                                                                border: 'none',
+                                                                                borderRadius: '6px',
+                                                                                padding: '5px 7px',
+                                                                                fontSize: '0.74rem',
+                                                                                fontWeight: 'bold',
+                                                                                cursor: 'pointer'
+                                                                            }}
+                                                                            title="수량 0으로 초기화"
+                                                                        >
+                                                                            ✕0
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* 매수/매도 퍼센트 자동 계산 버튼 그룹 */}
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                                    <span style={{ fontSize: '0.7rem', color: '#f87171', fontWeight: '800' }}>매수:</span>
+                                                                    {[10, 25, 50, 100].map(pct => {
+                                                                        const buyShares = price > 0 ? Math.floor((curAvailableCash * (pct / 100)) / price) : 0;
+                                                                        const isSelected = orderQty === buyShares && buyShares > 0;
+                                                                        return (
+                                                                            <button
+                                                                                key={pct}
+                                                                                onClick={() => {
+                                                                                    if (isSelected) {
+                                                                                        handleClearQty(s.key);
+                                                                                    } else if (buyShares > 0) {
+                                                                                        handleQtyChange(s.key, buyShares);
+                                                                                        setRowInputValues(prev => ({ ...prev, [s.key]: String(buyShares) }));
+                                                                                    }
+                                                                                }}
+                                                                                style={{
+                                                                                    background: isSelected ? '#ef4444' : 'rgba(239, 68, 68, 0.15)',
+                                                                                    color: isSelected ? '#ffffff' : '#fca5a5',
+                                                                                    border: isSelected ? '1px solid #f87171' : '1px solid rgba(239, 68, 68, 0.35)',
+                                                                                    borderRadius: '4px',
+                                                                                    padding: '2px 5px',
+                                                                                    fontSize: '0.72rem',
+                                                                                    fontWeight: '800',
+                                                                                    cursor: 'pointer'
+                                                                                }}
+                                                                                title={`예수금 ${pct}% (${formatKoreanMoney(curAvailableCash * (pct / 100))}) ➔ ${buyShares.toLocaleString()}주 매수`}
+                                                                            >
+                                                                                {pct}%
+                                                                            </button>
+                                                                        );
+                                                                    })}
+
+                                                                    {currentQty > 0 && (
+                                                                        <>
+                                                                            <span style={{ fontSize: '0.7rem', color: '#60a5fa', fontWeight: '800', marginLeft: '2px' }}>매도:</span>
+                                                                            {(() => {
+                                                                                const sellShares50 = Math.floor(currentQty * 0.5);
+                                                                                const is50Selected = orderQty === -sellShares50 && sellShares50 > 0;
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => {
+                                                                                            if (is50Selected) {
+                                                                                                handleClearQty(s.key);
+                                                                                            } else if (sellShares50 > 0) {
+                                                                                                handleQtyChange(s.key, -sellShares50);
+                                                                                                setRowInputValues(prev => ({ ...prev, [s.key]: String(sellShares50) }));
+                                                                                            }
+                                                                                        }}
+                                                                                        style={{
+                                                                                            background: is50Selected ? '#3b82f6' : 'rgba(59, 130, 246, 0.15)',
+                                                                                            color: is50Selected ? '#ffffff' : '#93c5fd',
+                                                                                            border: is50Selected ? '1px solid #60a5fa' : '1px solid rgba(59, 130, 246, 0.35)',
+                                                                                            borderRadius: '4px',
+                                                                                            padding: '2px 5px',
+                                                                                            fontSize: '0.72rem',
+                                                                                            fontWeight: '800',
+                                                                                            cursor: 'pointer'
+                                                                                        }}
+                                                                                        title={`보유 50% (${sellShares50}주) 매도`}
+                                                                                    >
+                                                                                        50%
+                                                                                    </button>
+                                                                                );
+                                                                            })()}
+                                                                            {(() => {
+                                                                                const isAllSelected = orderQty === -currentQty && currentQty > 0;
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => {
+                                                                                            if (isAllSelected) {
+                                                                                                handleClearQty(s.key);
+                                                                                            } else if (currentQty > 0) {
+                                                                                                handleQtyChange(s.key, -currentQty);
+                                                                                                setRowInputValues(prev => ({ ...prev, [s.key]: String(currentQty) }));
+                                                                                            }
+                                                                                        }}
+                                                                                        style={{
+                                                                                            background: isAllSelected ? '#3b82f6' : 'rgba(59, 130, 246, 0.15)',
+                                                                                            color: isAllSelected ? '#ffffff' : '#93c5fd',
+                                                                                            border: isAllSelected ? '1px solid #60a5fa' : '1px solid rgba(59, 130, 246, 0.35)',
+                                                                                            borderRadius: '4px',
+                                                                                            padding: '2px 5px',
+                                                                                            fontSize: '0.72rem',
+                                                                                            fontWeight: '800',
+                                                                                            cursor: 'pointer'
+                                                                                        }}
+                                                                                        title={`보유 ${currentQty}주 전량 매도`}
+                                                                                    >
+                                                                                        전량
+                                                                                    </button>
+                                                                                );
+                                                                            })()}
+                                                                        </>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </td>
                                                         <td style={{
                                                             padding: '10px 12px',
                                                             textAlign: 'right',
                                                             fontWeight: '800',
-                                                            color: estimatedCost > 0 ? '#f43f5e' : (estimatedCost < 0 ? '#38bdf8' : '#94a3b8')
+                                                            color: isRowOverShares ? '#ef4444' : (estimatedCost > 0 ? '#f43f5e' : (estimatedCost < 0 ? '#38bdf8' : '#94a3b8'))
                                                         }}>
-                                                            {estimatedCost > 0 ? `-${estimatedCost.toLocaleString()}원 (매수)` : (estimatedCost < 0 ? `+${Math.abs(estimatedCost).toLocaleString()}원 (매도)` : '0원')}
+                                                            {isRowOverShares ? (
+                                                                <span style={{ color: '#ef4444', fontWeight: '900' }}>⚠️ {currentQty}주 초과</span>
+                                                            ) : (
+                                                                estimatedCost > 0
+                                                                    ? `-${estimatedCost.toLocaleString()}원 (매수 ${orderQty}주)`
+                                                                    : (estimatedCost < 0 ? `+${Math.abs(estimatedCost).toLocaleString()}원 (매도 ${Math.abs(orderQty)}주)` : '0원')
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 );
@@ -3708,23 +4362,26 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                     gap: '10px'
                                 }}>
                                     <div style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
-                                        💡 <strong>실시간 연동 안내:</strong> 유저가 핸드폰에서 매수/매도 주문을 체결하면 <strong>[현재 보유]</strong> 및 상단 <strong>[재무 현황]</strong>에 즉시 자동 반영됩니다.
+                                        💡 <strong>오프라인 조별 주문 안내:</strong> 상단 대상 조를 선택하고 수량 입력(+매수/-매도 버튼) 또는 % 버튼을 클릭한 뒤 <strong>[주문 체결 확정]</strong>을 누르면 실시간 반영됩니다.
                                     </div>
                                     <button
                                         onClick={handleExecuteOrder}
+                                        disabled={isOverBudget || isOverShares}
                                         style={{
-                                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                                            color: 'white',
+                                            background: (isOverBudget || isOverShares)
+                                                ? '#475569'
+                                                : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                            color: (isOverBudget || isOverShares) ? '#94a3b8' : 'white',
                                             border: 'none',
                                             borderRadius: '12px',
                                             padding: '12px 32px',
                                             fontSize: '1.05rem',
                                             fontWeight: '900',
-                                            cursor: 'pointer',
-                                            boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)'
+                                            cursor: (isOverBudget || isOverShares) ? 'not-allowed' : 'pointer',
+                                            boxShadow: (isOverBudget || isOverShares) ? 'none' : '0 4px 15px rgba(16, 185, 129, 0.4)'
                                         }}
                                     >
-                                        ✓ 모든 주문 체결 확정
+                                        {isOverBudget ? '⚠️ 예수금 부족 (수량 수정 필요)' : (isOverShares ? '⚠️ 보유 수량 초과 매도' : `✓ ${currentTeam.name} 주문 체결 확정`)}
                                     </button>
                                 </div>
                             </div>
@@ -3751,12 +4408,14 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                                 let sVal = 0;
                                                 stockList.forEach(s => {
                                                     const q = p.holdings?.[s.key] || 0;
-                                                    const pr = s.prices[currentYear] ?? s.prices[2015];
+                                                    const pr = s.prices ? (s.prices[currentYear] ?? s.prices[2015] ?? 0) : 0;
                                                     sVal += q * pr;
                                                 });
-                                                const tot = (p.cash !== undefined ? p.cash : 1000000) + sVal;
-                                                const ret = (p.seedMoney && p.seedMoney > 0) ? (((tot - p.seedMoney) / p.seedMoney) * 100).toFixed(1) : 0;
-                                                return { team, p, sVal, tot, ret: Number(ret) };
+                                                const cashVal = p.cash !== undefined ? p.cash : 1000000;
+                                                const tot = cashVal + sVal;
+                                                const seed = (p.seedMoney && p.seedMoney > 0) ? p.seedMoney : (team.initialSeed || 1000000);
+                                                const ret = seed > 0 ? (((tot - seed) / seed) * 100).toFixed(1) : '0.0';
+                                                return { team, p, sVal, tot, ret: Number(ret), retStr: ret, cashVal };
                                             }).sort((a, b) => b.tot - a.tot);
 
                                             return matrixList.map((item, idx) => (
@@ -3768,7 +4427,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                                         {item.team.name}
                                                     </td>
                                                     <td style={{ padding: '10px 12px', textAlign: 'right', color: '#10b981' }}>
-                                                        {formatKoreanMoney(item.p.cash !== undefined ? item.p.cash : 1000000)}
+                                                        {formatKoreanMoney(item.cashVal)}
                                                     </td>
                                                     <td style={{ padding: '10px 12px', textAlign: 'right', color: '#38bdf8' }}>
                                                         {formatKoreanMoney(item.sVal)}
@@ -3782,7 +4441,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                                         fontWeight: '900',
                                                         color: item.ret > 0 ? '#f43f5e' : (item.ret < 0 ? '#38bdf8' : '#94a3b8')
                                                     }}>
-                                                        {item.ret > 0 ? `+${item.ret}%` : `${item.ret}%`}
+                                                        {item.ret > 0 ? `+${item.retStr}%` : `${item.retStr}%`}
                                                     </td>
                                                     <td style={{ padding: '10px 12px', textAlign: 'left' }}>
                                                         {(() => {
@@ -4040,9 +4699,21 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 />
             )}
 
+            <TradingProgressModal
+                isOpen={tradingProgressModalOpen}
+                onClose={handleCloseTradingProgressModal}
+                currentYear={currentYear}
+                teamList={teamList}
+                portfolios={portfolios}
+                completedTrades={completedTrades}
+                onSelectTeam={(teamId) => {
+                    setSelectedTeamId(teamId);
+                }}
+            />
+
             <AllOrdersResultModal
                 isOpen={allOrdersModalOpen}
-                onClose={() => setAllOrdersModalOpen(false)}
+                onClose={handleCloseAllOrdersModal}
                 currentYear={currentYear}
                 portfolios={portfolios}
                 stockList={stockList}
@@ -4376,7 +5047,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         emitActivity('READ_NEWS', key);
     };
 
-    // 퍼센트 버튼 클릭 핸들러 (50% 누르면 가진 금액/보유수량에서 살 수 있는/팔 수 있는 수량 자동 계산)
+    // 퍼센트 버튼 클릭 핸들러 (토글: 이미 해당 퍼센트 수량이면 0으로 해제)
     const handleSetPercentage = (pct, stockItem) => {
         if (!stockItem) return;
         const price = stockItem.prices ? (stockItem.prices[gameState.year] ?? stockItem.prices[2015] ?? 0) : 0;
@@ -4386,11 +5057,19 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
             const availableCash = myPortfolio.cash || 0;
             const targetCash = availableCash * (pct / 100);
             const calcQty = Math.floor(targetCash / price);
-            setTradeQty(calcQty);
+            if (tradeQty === calcQty && calcQty > 0) {
+                setTradeQty(0);
+            } else {
+                setTradeQty(calcQty);
+            }
         } else {
             const currentHoldings = myPortfolio.holdings?.[stockItem.key] || 0;
             const calcQty = Math.floor(currentHoldings * (pct / 100));
-            setTradeQty(calcQty);
+            if (tradeQty === calcQty && calcQty > 0) {
+                setTradeQty(0);
+            } else {
+                setTradeQty(calcQty);
+            }
         }
     };
 
@@ -5115,24 +5794,39 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             </span>
                                             {/* Percentage buttons: 10%, 25%, 50%, 75%, 100% */}
                                             <div style={{ display: 'flex', gap: '3px' }}>
-                                                {[10, 25, 50, 75, 100].map(pctVal => (
-                                                    <button
-                                                        key={pctVal}
-                                                        onClick={() => handleSetPercentage(pctVal, s)}
-                                                        style={{
-                                                            background: tradeType === 'BUY' ? '#7f1d1d' : '#1e3a8a',
-                                                            color: '#f8fafc',
-                                                            border: '1px solid rgba(255,255,255,0.2)',
-                                                            borderRadius: '6px',
-                                                            padding: '3px 6px',
-                                                            fontSize: '0.72rem',
-                                                            fontWeight: '800',
-                                                            cursor: 'pointer'
-                                                        }}
-                                                    >
-                                                        {pctVal}%
-                                                    </button>
-                                                ))}
+                                                {[10, 25, 50, 75, 100].map(pctVal => {
+                                                    let isSelected = false;
+                                                    if (price > 0) {
+                                                        if (tradeType === 'BUY') {
+                                                            const targetCash = availableCash * (pctVal / 100);
+                                                            const calcQty = Math.floor(targetCash / price);
+                                                            isSelected = numQty === calcQty && calcQty > 0;
+                                                        } else {
+                                                            const calcQty = Math.floor(myHoldingsQty * (pctVal / 100));
+                                                            isSelected = numQty === calcQty && calcQty > 0;
+                                                        }
+                                                    }
+                                                    return (
+                                                        <button
+                                                            key={pctVal}
+                                                            onClick={() => handleSetPercentage(pctVal, s)}
+                                                            style={{
+                                                                background: isSelected
+                                                                    ? (tradeType === 'BUY' ? '#ef4444' : '#3b82f6')
+                                                                    : (tradeType === 'BUY' ? '#7f1d1d' : '#1e3a8a'),
+                                                                color: '#f8fafc',
+                                                                border: isSelected ? '1.5px solid #ffffff' : '1px solid rgba(255,255,255,0.2)',
+                                                                borderRadius: '6px',
+                                                                padding: '3px 6px',
+                                                                fontSize: '0.72rem',
+                                                                fontWeight: '800',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            {pctVal}%
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
 

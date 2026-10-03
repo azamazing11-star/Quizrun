@@ -469,7 +469,10 @@ export default function ScreenView({ socket }) {
                 predictions={stockGameData.predictions}
                 predictionResults={stockGameData.predictionResults}
                 portfolios={stockGameData.portfolios}
+                teamList={stockGameData.teamList}
                 allOrdersModalOpen={stockGameData.allOrdersModalOpen}
+                tradingProgressModalOpen={stockGameData.tradingProgressModalOpen}
+                completedTrades={stockGameData.completedTrades}
                 pin={stockGameData.pin || activePin}
                 serverIp={activeServerIp}
                 publicUrl={activePublicUrl}
