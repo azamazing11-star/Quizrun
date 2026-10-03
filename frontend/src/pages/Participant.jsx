@@ -43,7 +43,7 @@ export default function Participant({ socket }) {
         if (p && savedNickname && socketConnected && !hasJoined && !hasAttemptedAutoJoin.current) {
             hasAttemptedAutoJoin.current = true;
             setAutoReconnecting(true);
-            socket.emit('participant:joinRoom', { pin: p, nickname: savedNickname }, (res) => {
+            socket.emit('participant:joinRoom', { pin: String(p).trim(), nickname: savedNickname }, (res) => {
                 setAutoReconnecting(false);
                 if (res.success) {
                     setHasJoined(true);
@@ -149,7 +149,7 @@ export default function Participant({ socket }) {
             const currentNick = nicknameRef.current || localStorage.getItem('quizrun_nickname');
             if (currentPin && currentNick && (hasJoinedRef.current || sessionStorage.getItem('quizrun_joined') === 'true')) {
                 console.log('[Auto-Rejoin] Socket reconnected, re-joining room:', currentPin, currentNick);
-                socket.emit('participant:joinRoom', { pin: currentPin, nickname: currentNick }, (res) => {
+                socket.emit('participant:joinRoom', { pin: String(currentPin).trim(), nickname: currentNick }, (res) => {
                     if (res && res.success) {
                         setHasJoined(true);
                         if (res.myScore !== undefined) setMyScore(res.myScore);
@@ -448,8 +448,8 @@ export default function Participant({ socket }) {
             return;
         }
 
-        setError(null);
-        socket.emit('participant:joinRoom', { pin, nickname }, (res) => {
+        const cleanPin = String(pin).trim();
+        socket.emit('participant:joinRoom', { pin: cleanPin, nickname }, (res) => {
             if (res.success) {
                 setHasJoined(true);
                 localStorage.setItem('quizrun_nickname', nickname);

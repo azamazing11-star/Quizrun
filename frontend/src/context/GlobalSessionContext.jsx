@@ -56,6 +56,10 @@ export function GlobalSessionProvider({ children, socket }) {
     });
 
     const [onlinePin, setOnlinePinState] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const urlPin = new URLSearchParams(window.location.search).get('pin');
+            if (urlPin) return urlPin.trim();
+        }
         return localStorage.getItem('quizrun_online_pin') || '';
     });
     const [serverIp, setServerIpState] = useState(() => {
@@ -97,6 +101,19 @@ export function GlobalSessionProvider({ children, socket }) {
         onlineParticipants
     });
 
+    const sessionBcRef = useRef(null);
+
+    useEffect(() => {
+        try {
+            const bc = new BroadcastChannel('quizrun_session_sync');
+            sessionBcRef.current = bc;
+            return () => {
+                bc.close();
+                sessionBcRef.current = null;
+            };
+        } catch (e) {}
+    }, []);
+
     useEffect(() => {
         sessionRef.current = {
             gameMode,
@@ -112,13 +129,21 @@ export function GlobalSessionProvider({ children, socket }) {
     const broadcastSession = (partialPayload = {}) => {
         sessionRef.current = { ...sessionRef.current, ...partialPayload };
         try {
-            const bc = new BroadcastChannel('quizrun_session_sync');
-            bc.postMessage({
-                senderId: tabIdRef.current,
-                type: 'SESSION_UPDATE',
-                payload: partialPayload
-            });
-            setTimeout(() => bc.close(), 300);
+            if (sessionBcRef.current) {
+                sessionBcRef.current.postMessage({
+                    senderId: tabIdRef.current,
+                    type: 'SESSION_UPDATE',
+                    payload: partialPayload
+                });
+            } else {
+                const bc = new BroadcastChannel('quizrun_session_sync');
+                bc.postMessage({
+                    senderId: tabIdRef.current,
+                    type: 'SESSION_UPDATE',
+                    payload: partialPayload
+                });
+                setTimeout(() => bc.close(), 300);
+            }
         } catch (e) {}
     };
 
@@ -281,14 +306,44 @@ export function GlobalSessionProvider({ children, socket }) {
         };
     }, [socket, isSubScreen]);
 
-    // Re-join socket room whenever onlinePin changes on subscreen
+    // Listen to quizrun_screen_sync for PARTICIPANTS_UPDATE across tabs/windows
+    useEffect(() => {
+        let screenBc;
+        try {
+            screenBc = new BroadcastChannel('quizrun_screen_sync');
+            screenBc.onmessage = (e) => {
+                const { type, payload } = e.data || {};
+                if (type === 'PARTICIPANTS_UPDATE' || type === 'HOST_PARTICIPANTS_UPDATED') {
+                    const list = Array.isArray(payload?.participants) ? payload.participants : (Array.isArray(payload) ? payload : null);
+                    if (list) {
+                        setOnlineParticipantsState(list);
+                        sessionRef.current.onlineParticipants = list;
+                    }
+                }
+            };
+        } catch (e) {}
+        return () => {
+            if (screenBc) screenBc.close();
+        };
+    }, []);
+
+    // Re-join socket room whenever onlinePin changes on subscreen and periodically keep in sync
     useEffect(() => {
         if (!socket || !isSubScreen || !onlinePin) return;
-        socket.emit('screen:joinRoom', { pin: onlinePin }, (res) => {
-            if (res && res.success && Array.isArray(res.participants)) {
-                setOnlineParticipants(res.participants);
-            }
-        });
+        const cleanPin = String(onlinePin).trim();
+        const syncSubScreenRoom = () => {
+            if (!socket.connected) return;
+            socket.emit('screen:joinRoom', { pin: cleanPin }, (res) => {
+                if (res && res.success && Array.isArray(res.participants)) {
+                    setOnlineParticipantsState(res.participants);
+                    sessionRef.current.onlineParticipants = res.participants;
+                }
+            });
+        };
+
+        syncSubScreenRoom();
+        const interval = setInterval(syncSubScreenRoom, 2000);
+        return () => clearInterval(interval);
     }, [onlinePin, socket, isSubScreen]);
 
     // BroadcastChannel synchronization between Main Screen and Sub-Monitor
@@ -339,7 +394,7 @@ export function GlobalSessionProvider({ children, socket }) {
                 }
             };
 
-            sessionBc.addEventListener('message', handleMsg);
+            sessionBc.onmessage = handleMsg;
 
             // If SubScreen mounts, proactively ask the Main Screen for the active session
             if (isSubScreen) {
@@ -347,7 +402,6 @@ export function GlobalSessionProvider({ children, socket }) {
             }
 
             return () => {
-                sessionBc.removeEventListener('message', handleMsg);
                 sessionBc.close();
             };
         } catch (err) {
@@ -408,6 +462,7 @@ export function GlobalSessionProvider({ children, socket }) {
                     const parsed = JSON.parse(e.newValue);
                     if (JSON.stringify(parsed) !== JSON.stringify(sessionRef.current.onlineParticipants)) {
                         setOnlineParticipantsState(parsed);
+                        sessionRef.current.onlineParticipants = parsed;
                     }
                 } catch (err) {}
             }

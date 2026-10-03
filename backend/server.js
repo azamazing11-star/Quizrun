@@ -1184,11 +1184,13 @@ io.on('connection', (socket) => {
     room.buzzedGroupId = null;
     room.buzzedParticipantId = null;
 
-    // Broadcast updated participants to host
-    io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+    // Broadcast updated participants to host and screen
+    const cleanPin = String(pin || '').trim();
+    if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+    io.to(cleanPin).emit('host:participantsUpdated', room.participants);
 
     // Broadcast judge result to all in the room
-    io.to(pin).emit('room:buzzerJudge', {
+    io.to(cleanPin).emit('room:buzzerJudge', {
       isCorrect,
       groupId: buzzedGroupId,
       participantId: buzzedParticipantId,
@@ -1200,11 +1202,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('participant:joinRoom', ({ pin, nickname }, callback) => {
-    let room = rooms[pin];
+    const cleanPin = String(pin || '').trim();
+    let room = rooms[cleanPin] || rooms[pin];
     if (!room) {
       // Auto-fallback: if pin is a valid 6-digit string, auto-initialize the room so participants are not blocked
-      if (pin && /^\d{6}$/.test(String(pin).trim())) {
-        const cleanPin = String(pin).trim();
+      if (cleanPin && /^\d{6}$/.test(cleanPin)) {
         rooms[cleanPin] = {
           hostId: null,
           quiz: MOCK_QUIZZES['general'],
@@ -1234,10 +1236,10 @@ io.on('connection', (socket) => {
         delete existingP.disconnectTimer;
       }
       existingP.id = socket.id;
-      socket.join(pin);
-      io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-      io.to(pin).emit('host:participantsUpdated', room.participants);
-      io.to(pin).emit('stock_game:participant_joined', { participants: room.participants, participant: existingP });
+      socket.join(cleanPin);
+      if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+      io.to(cleanPin).emit('host:participantsUpdated', room.participants);
+      io.to(cleanPin).emit('stock_game:participant_joined', { participants: room.participants, participant: existingP });
       const currentQ = room.quiz?.questions?.[room.currentQuestionIndex];
       if (callback) callback({ 
         success: true, 
@@ -1285,11 +1287,11 @@ io.on('connection', (socket) => {
     };
 
     room.participants.push(newParticipant);
-    socket.join(pin);
+    socket.join(cleanPin);
 
-    io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-    io.to(pin).emit('host:participantsUpdated', room.participants);
-    io.to(pin).emit('stock_game:participant_joined', { participants: room.participants, participant: newParticipant });
+    if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+    io.to(cleanPin).emit('host:participantsUpdated', room.participants);
+    io.to(cleanPin).emit('stock_game:participant_joined', { participants: room.participants, participant: newParticipant });
     if (callback) callback({ 
       success: true, 
       roomState: room.state === 'lobby' ? 'waiting' : room.state, 
@@ -1343,13 +1345,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('participant:selectGroup', ({ pin, groupId }) => {
-    const room = rooms[pin];
+    const cleanPin = String(pin || '').trim();
+    const room = rooms[cleanPin] || rooms[pin];
     if (room) {
       const p = room.participants.find(p => p.id === socket.id);
       if (p) {
         p.groupId = groupId;
-        io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-        io.to(pin).emit('host:participantsUpdated', room.participants);
+        if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+        io.to(cleanPin).emit('host:participantsUpdated', room.participants);
       }
     }
   });
@@ -1629,9 +1632,10 @@ io.on('connection', (socket) => {
               const idx = room.participants.findIndex(p => p === participant);
               if (idx !== -1 && participant.id === socket.id) {
                 const removed = room.participants.splice(idx, 1)[0];
-                io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-                io.to(pin).emit('host:participantsUpdated', room.participants);
-                console.log(`Participant ${removed.nickname} left room ${pin}`);
+                const cleanPin = String(pin || '').trim();
+                if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+                io.to(cleanPin).emit('host:participantsUpdated', room.participants);
+                console.log(`Participant ${removed.nickname} left room ${cleanPin}`);
               }
             }, timeoutMs),
             writable: true,

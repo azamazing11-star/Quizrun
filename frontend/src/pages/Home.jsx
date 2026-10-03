@@ -453,7 +453,8 @@ export default function Home({ socket }) {
                 {!isSubScreen && (
                     <button
                         onClick={() => {
-                            window.open('/?subscreen=true', 'QuizrunSubScreenWindow', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
+                            const pinParam = onlinePin ? `&pin=${encodeURIComponent(onlinePin)}` : '';
+                            window.open(`/?subscreen=true${pinParam}`, 'QuizrunSubScreenWindow', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
                         }}
                         style={{
                             position: 'absolute',

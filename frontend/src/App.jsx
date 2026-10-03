@@ -18,7 +18,7 @@ import RightSidebar from './components/RightSidebar';
 import ScrollToTop from './utils/ScrollToTop';
 
 const socket = io({
-  transports: ['websocket', 'polling'],
+  transports: ['polling', 'websocket'],
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 500,
