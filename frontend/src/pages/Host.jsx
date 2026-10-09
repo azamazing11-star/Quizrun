@@ -10,7 +10,6 @@ import { getChosung } from '../utils/chosung';
 import MediaViewer from '../components/MediaViewer';
 import { 
     YutnoriGame, 
-    CardMatchGame, 
     RpsGame, 
     WhackMoleGame, 
     OmokGame, 
@@ -21,11 +20,14 @@ import {
     PokerGame, 
     GoStopGame, 
     OthelloGame, 
-    TetrisGame, 
     BrickBreakerGame,
     MemoryGame,
     PassBombGame
 } from './Participant';
+import CardMatchGame from '../components/CardMatchGame';
+import CardThemeBar from '../components/CardThemeBar';
+import TetrisGame from '../components/TetrisGame';
+import MultiplayerLiveSpectator from '../components/MultiplayerLiveSpectator';
 import StockGame from '../components/StockGame';
 import RightSidebar from '../components/RightSidebar';
 
@@ -227,6 +229,29 @@ export default function Host({ socket }) {
     const [orderType, setOrderType] = useState('sequential'); // 'sequential' | 'random'
     const [showBackConfirmModal, setShowBackConfirmModal] = useState(false);
 
+    // Live Player Streams for 1st, 2nd, 3rd place spectating
+    const [playerStreams, setPlayerStreams] = useState({});
+    const [cardMatchThemeId, setCardMatchThemeId] = useState('flag');
+
+    // Listen to live player stream events
+    useEffect(() => {
+        if (!socket) return;
+        const handleRoomMsg = (msg) => {
+            const { event, payload } = msg || {};
+            if (event === 'game:player_stream' && payload && payload.nickname) {
+                setPlayerStreams(prev => ({
+                    ...prev,
+                    [payload.nickname]: {
+                        ...payload,
+                        lastUpdated: Date.now()
+                    }
+                }));
+            }
+        };
+        socket.on('room:message', handleRoomMsg);
+        return () => socket.off('room:message', handleRoomMsg);
+    }, [socket]);
+
     // --- DUAL SCREEN & PRESENTER VIEW STATES ---
     const screenChannelRef = useRef(null);
     const [isScreenConnected, setIsScreenConnected] = useState(false);
@@ -283,7 +308,10 @@ export default function Host({ socket }) {
             ? (overrides.offlineShowAnswer !== undefined ? overrides.offlineShowAnswer : offlineShowAnswer)
             : (overrides.showAnswer !== undefined ? overrides.showAnswer : showAnswer);
         return {
-            mode: overrides.mode || (gameId === 'stock_game' ? 'stock_game' : 'quizrun'),
+            mode: overrides.mode || (gameId === 'stock_game' ? 'stock_game' : (isGame ? 'multiplayer_game' : 'quizrun')),
+            isGame,
+            gameId,
+            playerStreams,
             scores: offlineScores,
             gameState: overrides.gameState || gameState,
             isOffline,
@@ -1506,25 +1534,50 @@ export default function Host({ socket }) {
                             height: '100%'
                         }}>
                             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
-                                <div style={{ width: '100%', height: gameId === 'stock_game' ? '100%' : 'auto', maxWidth: (gameId === 'card_match' || gameId === 'stock_game') ? '100%' : '480px' }}>
-                                    {gameId === 'yutnori' && <YutnoriGame />}
-                                    {gameId === 'card_match' && <CardMatchGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
-                                    {gameId === 'rock_paper_scissors' && <RpsGame />}
-                                    {gameId === 'whack_mole' && <WhackMoleGame />}
-                                    {gameId === 'omok' && <OmokGame />}
-                                    {gameId === 'minesweeper' && <MinesweeperGame />}
-                                    {gameId === 'stock_game' && <StockGame socket={socket} pin={location.state?.pin || pin} isHost={true} participants={participants} />}
-                                    {gameId === 'speed_numbers' && <SpeedNumbersGame />}
-                                    {gameId === 'janggi' && <JanggiGame />}
-                                    {gameId === 'chess' && <ChessGame />}
-                                    {gameId === 'card_poker' && <PokerGame />}
-                                    {gameId === 'gostop' && <GoStopGame />}
-                                    {gameId === 'othello' && <OthelloGame />}
-                                    {gameId === 'tetris' && <TetrisGame />}
-                                    {gameId === 'brick_breaker' && <BrickBreakerGame />}
-                                    {gameId === 'memory_game' && <MemoryGame />}
-                                    {gameId === 'pass_bomb' && <PassBombGame />}
-                                </div>
+                                {/* Online Mode with Participants: Show 1st, 2nd, 3rd Place Live Spectating */}
+                                {!isOffline && participants.length > 0 && gameId !== 'stock_game' ? (
+                                    <div style={{ width: '100%', height: '100%', minHeight: '520px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        {gameId === 'card_match' && (
+                                            <div style={{ width: '100%', marginBottom: '4px' }}>
+                                                <CardThemeBar
+                                                    socket={socket}
+                                                    pin={location.state?.pin || pin}
+                                                    activeThemeId={cardMatchThemeId}
+                                                    onSelectTheme={(tId) => setCardMatchThemeId(tId)}
+                                                />
+                                            </div>
+                                        )}
+                                        <MultiplayerLiveSpectator 
+                                            gameId={gameId} 
+                                            participants={participants} 
+                                            playerStreams={playerStreams} 
+                                            activeTheme={cardMatchThemeId}
+                                            isHost={true} 
+                                            onEndGame={endGeneralMultiplayerGame} 
+                                        />
+                                    </div>
+                                ) : (
+                                    /* Offline Mode or Host Solo: Host Directly Plays & Controls */
+                                    <div style={{ width: '100%', height: gameId === 'stock_game' ? '100%' : 'auto', maxWidth: (gameId === 'card_match' || gameId === 'stock_game') ? '100%' : '480px' }}>
+                                        {gameId === 'yutnori' && <YutnoriGame />}
+                                        {gameId === 'card_match' && <CardMatchGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
+                                        {gameId === 'rock_paper_scissors' && <RpsGame />}
+                                        {gameId === 'whack_mole' && <WhackMoleGame />}
+                                        {gameId === 'omok' && <OmokGame />}
+                                        {gameId === 'minesweeper' && <MinesweeperGame />}
+                                        {gameId === 'stock_game' && <StockGame socket={socket} pin={location.state?.pin || pin} isHost={true} participants={participants} />}
+                                        {gameId === 'speed_numbers' && <SpeedNumbersGame />}
+                                        {gameId === 'janggi' && <JanggiGame />}
+                                        {gameId === 'chess' && <ChessGame />}
+                                        {gameId === 'card_poker' && <PokerGame />}
+                                        {gameId === 'gostop' && <GoStopGame />}
+                                        {gameId === 'othello' && <OthelloGame />}
+                                        {gameId === 'tetris' && <TetrisGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
+                                        {gameId === 'brick_breaker' && <BrickBreakerGame />}
+                                        {gameId === 'memory_game' && <MemoryGame />}
+                                        {gameId === 'pass_bomb' && <PassBombGame />}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

@@ -6,6 +6,10 @@ import { getChosung } from '../utils/chosung';
 import Confetti from 'react-confetti';
 import MediaViewer from '../components/MediaViewer';
 import StockGame from '../components/StockGame';
+import CardMatchGame from '../components/CardMatchGame';
+import TetrisGame from '../components/TetrisGame';
+
+export { CardMatchGame, TetrisGame };
 
 export default function Participant({ socket }) {
     const location = useLocation();
@@ -901,7 +905,7 @@ export default function Participant({ socket }) {
                         </h2>
 
                         {gameId === 'yutnori' && <YutnoriGame />}
-                        {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} />}
+                        {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} />}
                         {gameId === 'rock_paper_scissors' && <RpsGame />}
                         {gameId === 'whack_mole' && <WhackMoleGame />}
                         {gameId === 'omok' && <OmokGame />}
@@ -913,7 +917,7 @@ export default function Participant({ socket }) {
                         {(gameId === 'card_game' || gameId === 'card_poker') && <PokerGame />}
                         {gameId === 'gostop' && <GoStopGame />}
                         {gameId === 'othello' && <OthelloGame />}
-                        {gameId === 'tetris' && <TetrisGame />}
+                        {gameId === 'tetris' && <TetrisGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} />}
                         {gameId === 'brick_breaker' && <BrickBreakerGame />}
                         {['memory_game', 'pass_bomb', 'ladder'].includes(gameId) && (
                             <div style={{ padding: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
@@ -1868,182 +1872,7 @@ export function YutnoriGame() {
     );
 }
 
-export function CardMatchGame({ socket, pin, isHost = false }) {
-    const ALL_FLAGS = [
-        '네덜란드.jpg', '대한민국.jpg', '덴마크.jpg', '독일.jpg', '러시아.jpg',
-        '미국.jpg', '브라질.jpg', '스웨덴.jpg', '스위스.jpg', '스페인.jpg',
-        '아르헨티나.jpg', '영국.jpg', '우루과이.jpg', '이탈리아.jpg', '인도.jpg',
-        '중국.jpg', '캐나다.jpg', '파푸아뉴기니.jpg', '프랑스.jpg', '호주.jpg'
-    ];
-
-    const [cards, setCards] = useState([]);
-    const [flipped, setFlipped] = useState([]);
-    const [matched, setMatched] = useState([]);
-    const [moves, setMoves] = useState(0);
-    const [pickedFlags, setPickedFlags] = useState([]);
-    useEffect(() => {
-        initGame();
-    }, []);
-
-    const initGame = () => {
-        // Pick 10 random flags from the 20 available flags
-        const shuffledFlags = [...ALL_FLAGS].sort(() => Math.random() - 0.5);
-        const picked = shuffledFlags.slice(0, 10);
-        setPickedFlags(picked);
-        
-        const cardList = [...picked, ...picked]
-            .map((flag, idx) => ({ id: idx, flag, isFlipped: false }))
-            .sort(() => Math.random() - 0.5);
-        setCards(cardList);
-        setFlipped([]);
-        setMatched([]);
-        setMoves(0);
-    };
-    
-    const notifyScore = (score, finished) => {
-        if (socket && pin) {
-            socket.emit('room:message', {
-                pin,
-                event: 'game:mini_progress',
-                payload: {
-                    score,
-                    finished
-                }
-            });
-        }
-    };
-    
-    const handleCardClick = (idx) => {
-        if (flipped.length === 2 || flipped.includes(idx) || matched.includes(idx)) return;
-        
-        // Play flip sound
-        playSound('submit');
-        
-        const newFlipped = [...flipped, idx];
-        setFlipped(newFlipped);
-        
-        if (newFlipped.length === 2) {
-            setMoves(prev => prev + 1);
-            const [first, second] = newFlipped;
-            if (cards[first].flag === cards[second].flag) {
-                const nextMatched = [...matched, first, second];
-                setMatched(nextMatched);
-                setFlipped([]);
-                
-                const finished = nextMatched.length === 20; // 10 pairs = 20 cards
-                if (finished) {
-                    playSound('fanfare');
-                } else {
-                    playSound('correct');
-                }
-                notifyScore(finished ? 100 : 10, finished);
-            } else {
-                playSound('wrong');
-                setTimeout(() => setFlipped([]), 1000);
-            }
-        }
-    };
-    
-    const resetGame = () => {
-        initGame();
-    };
-    
-    const isFinished = matched.length === 20;
-    
-    // Grid columns layout: 5 columns on desktop/Host, 4 columns on mobile
-    const columnsCount = isHost ? 5 : 4;
-    const cardFontSize = isHost ? '3rem' : '2rem';
-    
-    return (
-        <div style={{ padding: '0.5rem', width: '100%', maxWidth: isHost ? '780px' : '100%', margin: isHost ? '0 auto' : '0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.2rem', fontSize: isHost ? '1.2rem' : '0.9rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>
-                <span>시도 횟수: <strong style={{ color: 'var(--primary)' }}>{moves}회</strong></span>
-                <span>매칭 진행률: <strong style={{ color: 'var(--primary)' }}>{matched.length / 2} / 10</strong></span>
-            </div>
-            
-            <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: `repeat(${columnsCount}, 1fr)`, 
-                gap: isHost ? '15px' : '8px', 
-                width: '100%',
-                maxWidth: isHost ? '780px' : '100%',
-                margin: isHost ? '0 auto 2rem auto' : '0 0 1.5rem 0'
-            }}>
-                {cards.map((c, idx) => {
-                    const isOpen = flipped.includes(idx) || matched.includes(idx);
-                    const countryName = c.flag.replace('.jpg', '');
-                    return (
-                        <div 
-                            key={c.id}
-                            onClick={() => handleCardClick(idx)}
-                            style={{
-                                aspectRatio: '3/2',
-                                height: 'auto',
-                                position: 'relative',
-                                borderRadius: '12px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: 'pointer',
-                                transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                transform: isOpen ? 'rotateY(180deg)' : 'none',
-                                boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
-                                overflow: 'hidden',
-                                background: isOpen ? 'white' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                                border: isOpen ? '2px solid #e2e8f0' : '2px solid #2563eb'
-                            }}
-                        >
-                            {isOpen ? (
-                                <div style={{ 
-                                    width: '100%', 
-                                    height: '100%', 
-                                    display: 'flex', 
-                                    flexDirection: 'column', 
-                                    transform: 'rotateY(180deg)' // Correct the card flip mirror effect
-                                }}>
-                                    <img 
-                                        src={`/flag/${c.flag}`} 
-                                        alt={countryName} 
-                                        style={{ 
-                                            width: '100%', 
-                                            height: '100%', 
-                                            objectFit: 'cover' 
-                                        }} 
-                                    />
-                                    <div style={{
-                                        position: 'absolute',
-                                        bottom: 0,
-                                        left: 0,
-                                        right: 0,
-                                        background: 'rgba(0,0,0,0.6)',
-                                        color: 'white',
-                                        textAlign: 'center',
-                                        fontSize: isHost ? '0.85rem' : '0.65rem',
-                                        padding: '2px 0',
-                                        fontWeight: 'bold'
-                                    }}>
-                                        {countryName}
-                                    </div>
-                                </div>
-                            ) : (
-                                <span style={{ color: 'white', fontSize: cardFontSize, fontWeight: 'bold' }}>❓</span>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-            
-            {isFinished ? (
-                <div style={{ background: '#ecfdf5', border: '2px solid #10b981', borderRadius: '16px', padding: '1.2rem', marginBottom: '1rem', textAlign: 'center' }}>
-                    <h3 style={{ color: '#10b981', margin: 0, fontSize: isHost ? '1.5rem' : '1.1rem' }}>🎉 모두 매칭했습니다! 참 잘했어요!</h3>
-                    <button onClick={resetGame} className="glass-button" style={{ marginTop: '12px', padding: '8px 20px', fontSize: isHost ? '1.1rem' : '0.9rem' }}>다시 하기</button>
-                </div>
-            ) : (
-                <button onClick={resetGame} className="glass-button" style={{ width: '100%', padding: isHost ? '12px' : '8px', fontSize: isHost ? '1.1rem' : '0.9rem' }}>게임 초기화</button>
-            )}
-        </div>
-    );
-}
+// CardMatchGame is imported from ../components/CardMatchGame
 
 export function RpsGame() {
     const [choice, setChoice] = useState(null);
@@ -2880,63 +2709,7 @@ export function OthelloGame() {
     );
 }
 
-export function TetrisGame() {
-    const [score, setScore] = useState(0);
-    const [grid, setGrid] = useState(Array(48).fill(null)); // 6x8 grid
-    
-    const spawnBlock = () => {
-        const nextGrid = Array(48).fill(null);
-        // Put some random blocks at the bottom
-        for (let i = 30; i < 48; i++) {
-            if (Math.random() < 0.6) {
-                nextGrid[i] = '🟪';
-            }
-        }
-        // Active block
-        nextGrid[2] = '🟦';
-        nextGrid[3] = '🟦';
-        setGrid(nextGrid);
-    };
-    
-    useEffect(() => {
-        spawnBlock();
-    }, []);
-    
-    const handleMove = () => {
-        setScore(prev => prev + 100);
-        spawnBlock();
-    };
-    
-    return (
-        <div style={{ padding: '0.5rem' }}>
-            <p style={{ margin: '0 0 10px 0', fontSize: '1rem', fontWeight: 'bold' }}>점수: <span style={{ color: '#9333ea' }}>{score}점</span></p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '3px', background: '#1e293b', padding: '6px', borderRadius: '12px', border: '3px solid #0f172a', width: '200px', margin: '0 auto 1rem auto' }}>
-                {grid.map((cell, idx) => (
-                    <div
-                        key={idx}
-                        style={{
-                            height: '30px',
-                            background: cell ? 'transparent' : '#0f172a',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '1.2rem'
-                        }}
-                    >
-                        {cell}
-                    </div>
-                ))}
-            </div>
-            
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                <button onClick={handleMove} className="glass-button" style={{ padding: '8px 16px' }}>◀</button>
-                <button onClick={handleMove} className="glass-button" style={{ padding: '8px 16px' }}>🔄 회전</button>
-                <button onClick={handleMove} className="glass-button" style={{ padding: '8px 16px' }}>▶</button>
-            </div>
-        </div>
-    );
-}
+// TetrisGame is imported from ../components/TetrisGame
 
 export function BrickBreakerGame() {
     const [score, setScore] = useState(0);

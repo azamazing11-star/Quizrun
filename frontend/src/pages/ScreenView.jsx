@@ -10,6 +10,7 @@ import { playSound } from '../utils/audio';
 import { getParticipantJoinUrl } from '../utils/url';
 import Ladder from './Ladder';
 import { StockGameScreenView, STOCK_DATA_2026 } from '../components/StockGame';
+import MultiplayerLiveSpectator from '../components/MultiplayerLiveSpectator';
 
 const GROUP_COLORS = [
     '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -189,6 +190,27 @@ export default function ScreenView({ socket }) {
             setLiveScores(contextScores);
         }
     }, [contextScores]);
+
+    const [playerStreams, setPlayerStreams] = useState({});
+
+    // Listen to live player stream events directly via socket
+    useEffect(() => {
+        if (!socket) return;
+        const handleRoomMsg = (msg) => {
+            const { event, payload } = msg || {};
+            if (event === 'game:player_stream' && payload && payload.nickname) {
+                setPlayerStreams(prev => ({
+                    ...prev,
+                    [payload.nickname]: {
+                        ...payload,
+                        lastUpdated: Date.now()
+                    }
+                }));
+            }
+        };
+        socket.on('room:message', handleRoomMsg);
+        return () => socket.off('room:message', handleRoomMsg);
+    }, [socket]);
 
     // Setup Unified BroadcastChannel
     useEffect(() => {
@@ -589,8 +611,27 @@ export default function ScreenView({ socket }) {
                 alignItems: 'center',
                 justifyContent: 'center'
             }}>
+                {/* --- SUB-VIEW 0: MULTIPLAYER MINI GAME LIVE SPECTATOR (1위, 2위, 3위) --- */}
+                {(viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game')) && (
+                    <div style={{
+                        flex: 1,
+                        width: '100%',
+                        height: '100%',
+                        minHeight: '520px',
+                        display: 'flex',
+                        flexDirection: 'column'
+                    }}>
+                        <MultiplayerLiveSpectator
+                            gameId={screenData.gameId}
+                            participants={screenData.participants || []}
+                            playerStreams={playerStreams}
+                            isHost={false}
+                        />
+                    </div>
+                )}
+
                 {/* --- SUB-VIEW A: HOME WAITING (Robots Visual) --- */}
-                {(viewMode === 'home' || gameState === 'waiting' || gameState === 'setup' || gameState === 'lobby') && (
+                {!((viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game'))) && (viewMode === 'home' || gameState === 'waiting' || gameState === 'setup' || gameState === 'lobby') && (
                     <div style={{
                         flex: 1,
                         textAlign: 'center',

@@ -1458,6 +1458,18 @@ io.on('connection', (socket) => {
   // --- MULTIPLAYER GAME GENERIC MESSAGES ---
   socket.on('room:message', (data) => {
     if (data && data.pin) {
+      const room = rooms[data.pin];
+      if (room && data.event === 'game:player_stream' && data.payload) {
+        const { nickname, score } = data.payload;
+        if (nickname && typeof score === 'number') {
+          const p = room.participants?.find(part => part.nickname === nickname);
+          if (p && p.score !== score) {
+            p.score = score;
+            if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+            io.to(data.pin).emit('host:participantsUpdated', room.participants);
+          }
+        }
+      }
       io.to(data.pin).emit('room:message', {
         sender: socket.id,
         event: data.event,
