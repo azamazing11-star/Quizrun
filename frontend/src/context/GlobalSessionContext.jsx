@@ -68,6 +68,13 @@ export function GlobalSessionProvider({ children, socket }) {
     const [publicUrl, setPublicUrlState] = useState(() => {
         return localStorage.getItem('quizrun_public_url') || '';
     });
+    const [publicHostIp, setPublicHostIpState] = useState(() => {
+        return localStorage.getItem('quizrun_public_host_ip') || '211.234.205.170';
+    });
+    const setPublicHostIp = (val) => {
+        setPublicHostIpState(val);
+        try { localStorage.setItem('quizrun_public_host_ip', val); } catch (e) {}
+    };
     const [ltUrl, setLtUrlState] = useState(() => {
         return localStorage.getItem('quizrun_lt_url') || '';
     });
@@ -283,8 +290,9 @@ export function GlobalSessionProvider({ children, socket }) {
         socket.on('room:stateUpdate', handleStateUpdate);
 
         const handleTunnelUpdate = (data) => {
-            if (data && data.publicUrl !== undefined) {
-                setPublicUrl(data.publicUrl || '');
+            if (data) {
+                if (data.publicUrl !== undefined) setPublicUrl(data.publicUrl || '');
+                if (data.publicHostIp) setPublicHostIp(data.publicHostIp);
             }
         };
         socket.on('tunnel:updated', handleTunnelUpdate);
@@ -293,6 +301,7 @@ export function GlobalSessionProvider({ children, socket }) {
             if (data) {
                 if (data.ip) setServerIp(data.ip);
                 if (data.publicUrl !== undefined) setPublicUrl(data.publicUrl || '');
+                if (data.publicHostIp) setPublicHostIp(data.publicHostIp);
             }
         };
         socket.on('network:updated', handleNetworkUpdate);
@@ -556,6 +565,8 @@ export function GlobalSessionProvider({ children, socket }) {
             setServerIp,
             publicUrl,
             setPublicUrl,
+            publicHostIp,
+            setPublicHostIp,
             ltUrl,
             setLtUrl,
             cfUrl,

@@ -108,6 +108,7 @@ export default function Home({ socket }) {
         setServerIp,
         publicUrl, 
         setPublicUrl,
+        publicHostIp,
         onlineParticipants = [],
         setOnlineParticipants,
         createOnlineRoom
@@ -735,16 +736,16 @@ export default function Home({ socket }) {
                             </div>
 
                             {publicUrl || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('192.168.') && !window.location.hostname.startsWith('10.')) ? (
-                                <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '5px 8px', borderRadius: '8px', marginBottom: '8px', width: '100%' }}>
-                                    🚀 5G / LTE / Wi-Fi 어디서나 접속 가능
+                                <div style={{ fontSize: '0.74rem', fontWeight: '800', color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '6px 10px', borderRadius: '10px', marginBottom: '8px', width: '100%' }}>
+                                    🚀 5G / LTE / Wi-Fi 어디서나 즉시 접속 가능
                                 </div>
                             ) : isTunnelVerifying ? (
-                                <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', padding: '5px 8px', borderRadius: '8px', marginBottom: '8px', width: '100%' }}>
-                                    ⏳ 전용 터널 활성화 중...
+                                <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', padding: '6px 8px', borderRadius: '10px', marginBottom: '8px', width: '100%' }}>
+                                    ⏳ 전용 인터넷 터널 연결 중...
                                 </div>
                             ) : (
-                                <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#0369a1', background: '#e0f2fe', border: '1px solid #bae6fd', padding: '5px 8px', borderRadius: '8px', marginBottom: '8px', width: '100%' }}>
-                                    📶 로컬 Wi-Fi 접속 모드
+                                <div style={{ fontSize: '0.74rem', fontWeight: '800', color: '#0369a1', background: '#e0f2fe', border: '1px solid #bae6fd', padding: '6px 10px', borderRadius: '10px', marginBottom: '8px', width: '100%' }}>
+                                    📶 스마트폰 QR 접속 준비 완료
                                 </div>
                             )}
 

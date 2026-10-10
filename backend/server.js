@@ -9,8 +9,10 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const compression = require('compression');
 
 const app = express();
+app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -66,11 +68,25 @@ let isLocaltunnelDisabledDueToErrors = false;
 let currentVerifyingUrl = null;
 let healthCheckRestartCount = 0;
 
+let publicHostIp = '211.234.205.170';
+async function fetchPublicHostIp() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) });
+    const data = await res.json();
+    if (data && data.ip) {
+      publicHostIp = data.ip;
+      broadcastTunnelUpdate();
+    }
+  } catch (e) {}
+}
+fetchPublicHostIp();
+
 function broadcastTunnelUpdate() {
   if (typeof io !== 'undefined' && io) {
     io.emit('tunnel:updated', { 
       publicUrl: activeTunnelUrl,
-      isVerifying: isTunnelVerifying
+      isVerifying: isTunnelVerifying,
+      publicHostIp: publicHostIp
     });
   }
 }
@@ -161,56 +177,70 @@ function startTunnelHealthMonitor() {
   }, 30000);
 }
 
-async function startLocalTunnelService() {
-  if (isLocaltunnelDisabledDueToErrors) return;
+let localhostRunProc = null;
+let localhostRunConsecutiveFails = 0;
+let localhostRunRestartTimer = null;
 
+function startLocalhostRunTunnel() {
+  if (localhostRunProc) {
+    try { localhostRunProc.kill(); } catch (e) {}
+  }
+
+  console.log('[Tunnel] Starting localhost.run high-speed universal tunnel...');
   try {
-    if (localtunnelInstance) {
-      try { localtunnelInstance.close(); } catch (e) {}
-    }
-    const cleanSubdomain = `quizrun-${Date.now().toString(36).slice(-6)}`;
-    console.log(`[LocalTunnel] Requesting tunnel (${cleanSubdomain})...`);
-    const tunnel = await localtunnel({ port: 5173, subdomain: cleanSubdomain });
-    localtunnelInstance = tunnel;
+    localhostRunProc = spawn('ssh', [
+      '-o', 'StrictHostKeyChecking=no',
+      '-o', 'ServerAliveInterval=30',
+      '-R', '80:127.0.0.1:5173',
+      'nokey@localhost.run'
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
 
-    if (tunnel && tunnel.url) {
-      console.log(`\n=========================================`);
-      console.log(`🚀 Public LocalTunnel Ready:`);
-      console.log(tunnel.url);
-      console.log(`=========================================\n`);
+    const regex = /https:\/\/[a-z0-9]+\.lhr\.life/;
+    let hasFoundUrl = false;
 
-      localtunnelConsecutiveFails = 0;
-      if (!activeTunnelUrl) {
-        activeTunnelUrl = tunnel.url;
+    const onData = (data) => {
+      const text = data.toString();
+      const match = text.match(regex);
+      if (match && !hasFoundUrl) {
+        hasFoundUrl = true;
+        const foundUrl = match[0];
+        console.log(`\n=========================================`);
+        console.log(`🚀 Public Universal Tunnel 100% Ready (localhost.run):`);
+        console.log(foundUrl);
+        console.log(`=========================================\n`);
+        
+        activeTunnelUrl = foundUrl;
         isTunnelVerifying = false;
+        localhostRunConsecutiveFails = 0;
         broadcastTunnelUpdate();
         startTunnelHealthMonitor();
       }
-    }
+    };
 
-    tunnel.on('close', () => {
-      console.log('[LocalTunnel] Connection closed.');
-      localtunnelConsecutiveFails++;
-      if (localtunnelConsecutiveFails >= 3) {
-        isLocaltunnelDisabledDueToErrors = true;
-        console.warn('\x1b[33m[LocalTunnel] 3 consecutive failures. Pausing auto-reconnect to protect data.\x1b[0m');
-        return;
+    localhostRunProc.stdout.on('data', onData);
+    localhostRunProc.stderr.on('data', onData);
+
+    localhostRunProc.on('close', (code) => {
+      console.log(`[Tunnel] localhost.run process exited with code ${code}`);
+      if (activeTunnelUrl && activeTunnelUrl.includes('lhr.life')) {
+        activeTunnelUrl = null;
+        broadcastTunnelUpdate();
       }
-      const delay = Math.min(3000 * Math.pow(2, localtunnelConsecutiveFails), 30000);
-      if (localtunnelRestartTimer) clearTimeout(localtunnelRestartTimer);
-      localtunnelRestartTimer = setTimeout(startLocalTunnelService, delay);
+      localhostRunConsecutiveFails++;
+      if (localhostRunConsecutiveFails < 5) {
+        const delay = Math.min(3000 * Math.pow(2, localhostRunConsecutiveFails), 30000);
+        if (localhostRunRestartTimer) clearTimeout(localhostRunRestartTimer);
+        localhostRunRestartTimer = setTimeout(startLocalhostRunTunnel, delay);
+      }
     });
 
-    tunnel.on('error', (err) => {
-      console.warn('[LocalTunnel] Error:', err.message);
+    localhostRunProc.on('error', (err) => {
+      console.warn('[Tunnel] localhost.run process error:', err.message);
     });
   } catch (err) {
-    localtunnelConsecutiveFails++;
-    console.warn(`[LocalTunnel] Init notice (${localtunnelConsecutiveFails}/3):`, err.message);
-    if (localtunnelConsecutiveFails >= 3) {
-      isLocaltunnelDisabledDueToErrors = true;
-      console.warn('\x1b[33m[LocalTunnel] Pausing auto-reconnect to protect mobile tethering data.\x1b[0m');
-    }
+    console.error('[Tunnel] Failed to spawn localhost.run:', err);
   }
 }
 
@@ -295,18 +325,17 @@ function restartAllTunnels(manual = true) {
   if (manual) {
     cloudflaredConsecutiveFails = 0;
     isCloudflaredDisabledDueToErrors = false;
-    localtunnelConsecutiveFails = 0;
-    isLocaltunnelDisabledDueToErrors = false;
+    localhostRunConsecutiveFails = 0;
     healthCheckRestartCount = 0;
   }
   if (cloudflaredRestartTimer) clearTimeout(cloudflaredRestartTimer);
-  if (localtunnelRestartTimer) clearTimeout(localtunnelRestartTimer);
+  if (localhostRunRestartTimer) clearTimeout(localhostRunRestartTimer);
 
   activeTunnelUrl = null;
   currentVerifyingUrl = null;
   isTunnelVerifying = true;
   broadcastTunnelUpdate();
-  startLocalTunnelService();
+  startLocalhostRunTunnel();
   startCloudflaredTunnel();
 }
 
@@ -322,14 +351,16 @@ function startTunnelServices() {
     console.log('[Tunnel] Native cloud host detected. Local tunnel services disabled (using native domain).');
     return;
   }
-  startLocalTunnelService();
+  startLocalhostRunTunnel();
   startCloudflaredTunnel();
 }
 
 // Clean up child process on exit
 process.on('exit', () => {
   if (tunnelHealthTimer) clearInterval(tunnelHealthTimer);
-  if (localtunnelInstance) try { localtunnelInstance.close(); } catch (e) {}
+  if (localhostRunProc) {
+    try { localhostRunProc.kill(); } catch (e) {}
+  }
   if (cloudflaredProc) {
     try { cloudflaredProc.kill(); } catch (e) {}
   }
@@ -375,11 +406,13 @@ function broadcastNetworkUpdate() {
       ip: currentIp,
       allIps: getAllLocalIPs(),
       publicUrl: activeTunnelUrl,
-      isVerifying: isTunnelVerifying
+      isVerifying: isTunnelVerifying,
+      publicHostIp: publicHostIp
     });
     io.emit('tunnel:updated', { 
       publicUrl: activeTunnelUrl,
-      isVerifying: isTunnelVerifying
+      isVerifying: isTunnelVerifying,
+      publicHostIp: publicHostIp
     });
   }
 }
@@ -402,7 +435,8 @@ app.get('/api/network-info', (req, res) => {
     ip: getLocalIP(),
     allIps: getAllLocalIPs(),
     publicUrl: activeTunnelUrl,
-    isVerifying: isTunnelVerifying
+    isVerifying: isTunnelVerifying,
+    publicHostIp: publicHostIp
   });
 });
 
@@ -721,12 +755,13 @@ function getQuestionAnswer(q) {
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  socket.emit('tunnel:updated', { publicUrl: activeTunnelUrl, isVerifying: isTunnelVerifying });
+  socket.emit('tunnel:updated', { publicUrl: activeTunnelUrl, isVerifying: isTunnelVerifying, publicHostIp: publicHostIp });
   socket.emit('network:updated', { 
     ip: getLocalIP(),
     allIps: getAllLocalIPs(),
     publicUrl: activeTunnelUrl,
-    isVerifying: isTunnelVerifying
+    isVerifying: isTunnelVerifying,
+    publicHostIp: publicHostIp
   });
 
   socket.on('tunnel:restart', () => {
