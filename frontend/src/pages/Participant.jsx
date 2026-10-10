@@ -592,6 +592,128 @@ export default function Participant({ socket }) {
         setGuessInput('');
     };
 
+    // --- UNIVERSAL BACK / POPSTATE NAVIGATION HANDLING ---
+    const handleStepBack = () => {
+        // 1. If currently in an active game or playing
+        if (gameState === 'game_active' || gameState === 'playing' || isGame || gameId) {
+            const leaveGame = window.confirm('게임을 나가고 대기실(이전 단계)로 돌아가시겠습니까?');
+            if (leaveGame) {
+                setIsGame(false);
+                setGameId('');
+                try {
+                    sessionStorage.removeItem('quizrun_game_id');
+                } catch (e) {}
+                setGameState('waiting');
+                if (socket) {
+                    socket.emit('room:message', {
+                        pin,
+                        event: 'game:participant_exit',
+                        payload: { nickname }
+                    });
+                }
+            }
+            return;
+        }
+
+        // 2. If in quiz answering or question stage
+        if (gameState === 'question' || gameState === 'answered' || gameState === 'leaderboard') {
+            const leaveQuiz = window.confirm('퀴즈 화면을 나가고 대기실(이전 단계)로 돌아가시겠습니까?');
+            if (leaveQuiz) {
+                setGameState('waiting');
+            }
+            return;
+        }
+
+        // 3. If in group selection screen
+        if (gameState === 'select_group') {
+            setGameState('select_join_type');
+            return;
+        }
+
+        // 4. If in join type selection screen
+        if (gameState === 'select_join_type') {
+            setGameState('join');
+            return;
+        }
+
+        // 5. If in waiting / lobby screen
+        if (gameState === 'waiting' || gameState === 'lobby') {
+            const leaveRoom = window.confirm('방에서 나가고 PIN 입력 화면으로 돌아가시겠습니까?');
+            if (leaveRoom) {
+                setHasJoined(false);
+                try {
+                    sessionStorage.removeItem('quizrun_joined');
+                } catch (e) {}
+                setGameState('join');
+            }
+            return;
+        }
+
+        // 6. If in join screen (initial participant screen)
+        if (gameState === 'join') {
+            const leaveApp = window.confirm('메인 화면으로 나가시겠습니까?');
+            if (leaveApp) {
+                navigate('/');
+            }
+            return;
+        }
+
+        // Default fallback
+        navigate(-1);
+    };
+
+    // Trap Android/Galaxy hardware or swipe back gesture using popstate
+    useEffect(() => {
+        // Push initial trap state
+        window.history.pushState({ app: 'quizrun_participant' }, '', window.location.href);
+
+        const handlePopState = (e) => {
+            // Keep the history entry alive so subsequent back clicks are still trapped
+            window.history.pushState({ app: 'quizrun_participant' }, '', window.location.href);
+            handleStepBack();
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+        };
+    }, [gameState, isGame, gameId, pin, nickname]);
+
+    // Floating universal back button for all mobile participants
+    const renderUniversalBackButton = () => {
+        if (gameState === 'join') return null; // 'join' already has its dedicated back button
+        return (
+            <button
+                type="button"
+                onClick={handleStepBack}
+                style={{
+                    position: 'fixed',
+                    top: '12px',
+                    left: '12px',
+                    padding: '8px 14px',
+                    fontSize: '0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'rgba(255, 255, 255, 0.92)',
+                    backdropFilter: 'blur(8px)',
+                    border: '1.5px solid #cbd5e1',
+                    borderRadius: '14px',
+                    fontWeight: '800',
+                    color: '#1e293b',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.12)',
+                    zIndex: 99999,
+                    transition: 'all 0.15s ease'
+                }}
+                title="이전 단계로 가기"
+            >
+                <ArrowLeft size={16} strokeWidth={2.5} color="var(--primary)" />
+                <span>이전 단계</span>
+            </button>
+        );
+    };
+
     // Canvas painting coordinates relays
     const emitStroke = (x, y, type) => {
         socket.emit('room:message', {
@@ -949,6 +1071,7 @@ export default function Participant({ socket }) {
         if (gameId === 'stock_game') {
             return (
                 <div style={{ width: '100%', minHeight: '100vh', background: '#090d16', position: 'relative' }}>
+                    {renderUniversalBackButton()}
                     {!isLoading && (
                         <div style={{
                             position: 'fixed',
@@ -975,6 +1098,7 @@ export default function Participant({ socket }) {
         }
         return (
             <div className="page-container" style={{ position: 'relative', padding: '2rem 1.5rem', minHeight: '100vh', alignItems: 'center' }}>
+                {renderUniversalBackButton()}
                 {!isLoading && (
                     <div style={{
                         position: 'fixed',
@@ -1003,6 +1127,8 @@ export default function Participant({ socket }) {
     const isQuizPhase = (gameState === 'question' || gameState === 'answered' || gameState === 'leaderboard' || gameState === 'final_leaderboard');
     return (
         <div className="page-container" style={{ position: 'relative', padding: isQuizPhase ? '0' : '2rem 1.5rem', minHeight: '100vh', alignItems: 'center' }}>
+            {/* Universal On-Screen Step Back Button */}
+            {renderUniversalBackButton()}
             {/* Confetti for correct answer */}
             {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={300} />}
             <div style={{ width: '100%', minHeight: '100vh', background: isBuzzerMode && groupId ? 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)' : 'var(--bg)' }}>

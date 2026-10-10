@@ -176,10 +176,13 @@ export default function Host({ socket }) {
     const participantCount = location.state?.participantCount || globalParticipantCount || 0;
 
     const [pin, setPin] = useState(location.state?.pin || savedHostState?.pin || onlinePin || null);
-    const [quizTitle, setQuizTitle] = useState(location.state?.customQuiz?.title || initialGameTitle || '');
+    const [quizTitle, setQuizTitle] = useState(location.state?.customQuiz?.title || initialGameTitle || savedHostState?.gameTitle || '');
     const [participants, setParticipants] = useState(onlineParticipants || []);
     const [gameId, setGameId] = useState(initialGameId);
     const [gameState, setGameState] = useState(() => {
+        if (savedHostState?.gameState && savedHostState.gameState !== 'setup') {
+            return savedHostState.gameState;
+        }
         if (isGame) {
             return (!isOffline && isLobbyMultiplayer) ? 'lobby' : 'game_active';
         }
@@ -220,8 +223,8 @@ export default function Host({ socket }) {
     });
 
     const offlineScores = (globalScores && globalScores.length > 0) ? globalScores : localOfflineScores;
-    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-    const [totalQuestions, setTotalQuestions] = useState(0);
+    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(savedHostState?.currentQuestionIndex || 0);
+    const [totalQuestions, setTotalQuestions] = useState(savedHostState?.totalQuestions || 0);
     const [offlineShowAnswer, setOfflineShowAnswer] = useState(false);
     const [showOfflineWinner, setShowOfflineWinner] = useState(false);
     const [showContinueModal, setShowContinueModal] = useState(false);
@@ -1395,8 +1398,27 @@ export default function Host({ socket }) {
 
     const handleExitToLobby = () => {
         try {
-            sessionStorage.removeItem('quizrun_last_host_state');
-            localStorage.removeItem('quizrun_active_game_id');
+            // Save active session so host can return from Home lobby without resetting
+            const sessionData = {
+                pin,
+                isGame,
+                gameId,
+                gameTitle: location.state?.gameTitle || initialGameTitle || '',
+                gameState,
+                currentQuestionIndex,
+                totalQuestions,
+                quizId,
+                customQuiz: location.state?.customQuiz || null,
+                isOffline,
+                isBuzzerMode,
+                quizType,
+                publicUrl,
+                serverIp,
+                savedAt: Date.now()
+            };
+            sessionStorage.setItem('quizrun_last_host_state', JSON.stringify(sessionData));
+            localStorage.setItem('quizrun_active_game_session', JSON.stringify(sessionData));
+
             const bc = new BroadcastChannel('quizrun_screen_sync');
             bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
             setTimeout(() => bc.close(), 300);
@@ -3118,7 +3140,13 @@ export default function Host({ socket }) {
 
                         <div style={{ textAlign: 'center' }}>
                             {gameState === 'final_leaderboard' ? (
-                                <button className="glass-button" onClick={() => navigate('/')}><Home /> 홈으로 돌아가기</button>
+                                <button className="glass-button" onClick={() => {
+                                    try {
+                                        localStorage.removeItem('quizrun_active_game_session');
+                                        sessionStorage.removeItem('quizrun_last_host_state');
+                                    } catch (e) {}
+                                    navigate('/');
+                                }}><Home /> 게임 종료 및 홈으로</button>
                             ) : (
                                 <button className="glass-button" onClick={nextQuestion}>다음 문제 <ChevronRight /></button>
                             )}

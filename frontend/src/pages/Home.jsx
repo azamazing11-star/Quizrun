@@ -116,6 +116,28 @@ export default function Home({ socket }) {
     const [isCopied, setIsCopied] = useState(false);
     const [showGitModal, setShowGitModal] = useState(false);
     const [currentMode, setCurrentMode] = useState('intro'); // 'intro', 'quizrun', 'gamerun'
+    const [activeSession, setActiveSession] = useState(() => {
+        try {
+            const raw = localStorage.getItem('quizrun_active_game_session') || sessionStorage.getItem('quizrun_last_host_state');
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    });
+
+    // Check periodically for active session updates
+    useEffect(() => {
+        const checkSession = () => {
+            try {
+                const raw = localStorage.getItem('quizrun_active_game_session') || sessionStorage.getItem('quizrun_last_host_state');
+                const parsed = raw ? JSON.parse(raw) : null;
+                setActiveSession(parsed);
+            } catch (e) {}
+        };
+        checkSession();
+        window.addEventListener('storage', checkSession);
+        return () => window.removeEventListener('storage', checkSession);
+    }, []);
 
     // Detect if this window is the Sub-Monitor screen
     const isSubScreen = Boolean(
@@ -598,6 +620,73 @@ export default function Home({ socket }) {
                 <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px)', backgroundSize: '40px 40px', pointerEvents: 'none', zIndex: 0 }} />
 
                 <div style={{ zIndex: 10, textAlign: 'center', marginBottom: '1.5rem' }}>
+                    {/* Resume Active Game Banner if session exists */}
+                    {activeSession && (
+                        <div style={{
+                            marginBottom: '1rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                            border: '2px solid #10b981',
+                            padding: '10px 22px',
+                            borderRadius: '20px',
+                            boxShadow: '0 8px 20px rgba(16, 185, 129, 0.25)',
+                            animation: 'popIn 0.3s ease-out'
+                        }}>
+                            <span style={{ fontSize: '1.2rem' }}>🎮</span>
+                            <div style={{ textAlign: 'left' }}>
+                                <div style={{ fontSize: '0.95rem', fontWeight: '900', color: '#065f46' }}>
+                                    진행 중인 게임이 있습니다! {activeSession.pin ? `(PIN: ${activeSession.pin})` : ''}
+                                </div>
+                                <div style={{ fontSize: '0.78rem', color: '#047857', fontWeight: '600' }}>
+                                    {activeSession.gameTitle || (activeSession.isGame ? '미니 게임' : '퀴즈')} · {activeSession.currentQuestionIndex ? `${activeSession.currentQuestionIndex + 1}번 문제` : '진행 중'}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => handleNavWithSync('/host', activeSession)}
+                                style={{
+                                    background: '#059669',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '8px 16px',
+                                    borderRadius: '12px',
+                                    fontWeight: '900',
+                                    fontSize: '0.88rem',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: '0 4px 10px rgba(5, 150, 105, 0.3)'
+                                }}
+                            >
+                                <span>게임으로 계속하기</span>
+                                <span>→</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (window.confirm('진행 중인 게임 세션을 종료하고 새로 시작하시겠습니까?')) {
+                                        localStorage.removeItem('quizrun_active_game_session');
+                                        sessionStorage.removeItem('quizrun_last_host_state');
+                                        setActiveSession(null);
+                                    }
+                                }}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#94a3b8',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem',
+                                    textDecoration: 'underline'
+                                }}
+                                title="진행 중인 세션 초기화"
+                            >
+                                닫기
+                            </button>
+                        </div>
+                    )}
                     <h1 style={{ fontSize: '3.2rem', fontFamily: 'Jua, sans-serif', background: 'linear-gradient(to right, #3b82f6, #f43f5e)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '2px', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))', margin: 0 }}>퀴즈앤런 (Quiz N Run)</h1>
                     <p style={{ fontSize: '1.15rem', color: '#475569', marginTop: '6px', fontFamily: 'Gowun Dodum, sans-serif', fontWeight: 'bold' }}>플레이할 모드를 선택해 주세요</p>
                 </div>
@@ -991,7 +1080,80 @@ export default function Home({ socket }) {
             )}
 
             {/* Folder Grid */}
-            <div className="folder-grid" style={{ zIndex: 10, marginTop: '80px' }}>
+            <div className="folder-grid" style={{ zIndex: 10, marginTop: activeSession ? '20px' : '80px' }}>
+                {/* Resume Active Game Banner in Lobby */}
+                {activeSession && (
+                    <div style={{
+                        gridColumn: '1 / -1',
+                        marginBottom: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                        border: '2px solid #10b981',
+                        padding: '12px 24px',
+                        borderRadius: '20px',
+                        boxShadow: '0 6px 18px rgba(16, 185, 129, 0.25)',
+                        animation: 'popIn 0.3s ease-out'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '1.5rem' }}>🎮</span>
+                            <div style={{ textAlign: 'left' }}>
+                                <div style={{ fontSize: '1.05rem', fontWeight: '900', color: '#065f46' }}>
+                                    진행 중인 게임이 있습니다! {activeSession.pin ? `(PIN: ${activeSession.pin})` : ''}
+                                </div>
+                                <div style={{ fontSize: '0.84rem', color: '#047857', fontWeight: '600' }}>
+                                    {activeSession.gameTitle || (activeSession.isGame ? '미니 게임' : '퀴즈')} · 참여자 QR을 보여준 뒤 바로 게임을 이어서 진행할 수 있습니다.
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <button
+                                type="button"
+                                onClick={() => handleNavWithSync('/host', activeSession)}
+                                style={{
+                                    background: '#059669',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '10px 22px',
+                                    borderRadius: '14px',
+                                    fontWeight: '900',
+                                    fontSize: '0.95rem',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: '0 4px 12px rgba(5, 150, 105, 0.35)'
+                                }}
+                            >
+                                <span>게임으로 계속하기</span>
+                                <span>→</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (window.confirm('진행 중인 게임 세션을 종료하고 새로 시작하시겠습니까?')) {
+                                        localStorage.removeItem('quizrun_active_game_session');
+                                        sessionStorage.removeItem('quizrun_last_host_state');
+                                        setActiveSession(null);
+                                    }
+                                }}
+                                style={{
+                                    background: 'white',
+                                    border: '1px solid #cbd5e1',
+                                    color: '#64748b',
+                                    padding: '8px 14px',
+                                    borderRadius: '12px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.82rem',
+                                    fontWeight: 'bold'
+                                }}
+                            >
+                                세션 종료
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* 1. Code Join (Static) */}
                 <div style={{ position: 'relative' }}>
