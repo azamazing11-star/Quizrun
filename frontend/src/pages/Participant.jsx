@@ -1027,7 +1027,7 @@ export default function Participant({ socket }) {
                         </h2>
 
                         {gameId === 'yutnori' && <YutnoriGame />}
-                        {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} />}
+                        {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
                         {gameId === 'rock_paper_scissors' && <RpsGame />}
                         {gameId === 'whack_mole' && <WhackMoleGame />}
                         {gameId === 'omok' && <OmokGame />}
@@ -1039,7 +1039,7 @@ export default function Participant({ socket }) {
                         {(gameId === 'card_game' || gameId === 'card_poker') && <PokerGame />}
                         {gameId === 'gostop' && <GoStopGame />}
                         {gameId === 'othello' && <OthelloGame />}
-                        {gameId === 'tetris' && <TetrisGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} />}
+                        {gameId === 'tetris' && <TetrisGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
                         {gameId === 'brick_breaker' && <BrickBreakerGame />}
                         {['memory_game', 'pass_bomb', 'ladder'].includes(gameId) && (
                             <div style={{ padding: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px' }}>

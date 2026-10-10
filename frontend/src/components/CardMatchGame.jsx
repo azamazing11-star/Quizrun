@@ -10,7 +10,8 @@ export default function CardMatchGame({
     pin,
     isHost = false,
     nickname = '호스트',
-    groupId = null
+    groupId = null,
+    baseScore = 0
 }) {
     const [themes, setThemes] = useState(getSavedCardThemes);
     const [activeThemeId, setActiveThemeId] = useState('flag');
@@ -19,6 +20,18 @@ export default function CardMatchGame({
     const [matched, setMatched] = useState([]);
     const [moves, setMoves] = useState(0);
     const [matchBanner, setMatchBanner] = useState(null);
+    const [isPracticeMode, setIsPracticeMode] = useState(false);
+
+    // Official round score locking
+    const officialBaseScoreRef = useRef(typeof baseScore === 'number' ? baseScore : 0);
+    const hasOfficiallyFinishedRef = useRef(false);
+    const officialLockedTotalScoreRef = useRef(null);
+
+    useEffect(() => {
+        if (!hasOfficiallyFinishedRef.current) {
+            officialBaseScoreRef.current = typeof baseScore === 'number' ? baseScore : 0;
+        }
+    }, [baseScore]);
 
     // Current active theme object
     const currentTheme = themes.find(t => t.id === activeThemeId) || themes[0] || DEFAULT_CARD_THEMES[0];
@@ -47,7 +60,11 @@ export default function CardMatchGame({
     };
 
     // Initialize Game (Immediately creates deck on all clients and streams initial state)
-    const initGame = (themeObj = currentTheme) => {
+    const initGame = (themeObj = currentTheme, isRestartAction = false) => {
+        if (isRestartAction || hasOfficiallyFinishedRef.current) {
+            setIsPracticeMode(true);
+        }
+
         const newDeck = generateDeck(themeObj);
         if (newDeck.length === 0) return;
 
@@ -72,7 +89,7 @@ export default function CardMatchGame({
         }
 
         // Notify initial stream right away
-        notifyPlayerStream(newDeck, [], [], 0, false);
+        notifyPlayerStream(newDeck, [], [], 0, false, (isRestartAction || hasOfficiallyFinishedRef.current));
     };
 
     // Initialize IMMEDIATELY on mount for ALL clients (host AND participants)
@@ -160,30 +177,72 @@ export default function CardMatchGame({
     }, [socket, pin, isHost, cards, matched, activeThemeId, currentTheme, nickname]);
 
     // Stream participant game progress to Host & Spectator
-    const notifyPlayerStream = (curCards = cards, curFlipped = flipped, curMatched = matched, curMoves = moves, finished = false) => {
+    const notifyPlayerStream = (curCards = cards, curFlipped = flipped, curMatched = matched, curMoves = moves, finished = false, forcePractice = false) => {
         if (!socket || !pin) return;
-        const currentScore = curMatched.length * 50 - (curMoves * 2);
-        const validScore = Math.max(0, currentScore);
+        const currentRoundScore = Math.max(0, curMatched.length * 50 - (curMoves * 2));
+        const inPractice = forcePractice || isPracticeMode || hasOfficiallyFinishedRef.current;
 
-        socket.emit('room:message', {
-            pin,
-            event: 'game:player_stream',
-            payload: {
-                nickname,
-                groupId,
-                gameId: 'card_match',
-                score: validScore,
-                isAlive: !finished,
-                isFinished: finished,
-                gameData: {
-                    cards: curCards,
-                    flipped: curFlipped,
-                    matched: curMatched,
-                    moves: curMoves,
-                    themeTitle: currentTheme.title
+        if (inPractice) {
+            // Early finisher in practice mode: keep official cumulative score securely locked!
+            const lockedScore = officialLockedTotalScoreRef.current !== null
+                ? officialLockedTotalScoreRef.current
+                : (officialBaseScoreRef.current + 500);
+
+            socket.emit('room:message', {
+                pin,
+                event: 'game:player_stream',
+                payload: {
+                    nickname,
+                    groupId,
+                    gameId: 'card_match',
+                    score: lockedScore,
+                    roundScore: 500,
+                    baseScore: officialBaseScoreRef.current,
+                    isPractice: true,
+                    isAlive: true,
+                    isFinished: false,
+                    gameData: {
+                        cards: curCards,
+                        flipped: curFlipped,
+                        matched: curMatched,
+                        moves: curMoves,
+                        themeTitle: currentTheme.title,
+                        isPractice: true
+                    }
                 }
+            });
+        } else {
+            // Official round:
+            const totalScore = officialBaseScoreRef.current + currentRoundScore;
+            if (finished) {
+                hasOfficiallyFinishedRef.current = true;
+                officialLockedTotalScoreRef.current = totalScore;
             }
-        });
+
+            socket.emit('room:message', {
+                pin,
+                event: 'game:player_stream',
+                payload: {
+                    nickname,
+                    groupId,
+                    gameId: 'card_match',
+                    score: totalScore,
+                    roundScore: currentRoundScore,
+                    baseScore: officialBaseScoreRef.current,
+                    isPractice: false,
+                    isAlive: !finished,
+                    isFinished: finished,
+                    gameData: {
+                        cards: curCards,
+                        flipped: curFlipped,
+                        matched: curMatched,
+                        moves: curMoves,
+                        themeTitle: currentTheme.title,
+                        isPractice: false
+                    }
+                }
+            });
+        }
     };
 
     // Card click handler
@@ -209,6 +268,10 @@ export default function CardMatchGame({
                 const finished = nextMatched.length === cards.length;
                 if (finished) {
                     playSound('fanfare');
+                    if (!isPracticeMode && !hasOfficiallyFinishedRef.current) {
+                        hasOfficiallyFinishedRef.current = true;
+                        officialLockedTotalScoreRef.current = officialBaseScoreRef.current + Math.max(0, nextMatched.length * 50 - (nextMoves * 2));
+                    }
                 } else {
                     playSound('correct');
                 }
@@ -301,6 +364,32 @@ export default function CardMatchGame({
                     <span>
                         🎉 <strong>[{matchBanner.matchedBy}]</strong>님이 <strong>[{matchBanner.itemName}]</strong> 짝을 맞췄습니다! 패가 실시간 오픈됩니다!
                     </span>
+                </div>
+            )}
+
+            {/* PRACTICE MODE NOTICE FOR EARLY FINISHERS */}
+            {isPracticeMode && (
+                <div style={{
+                    background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                    border: '2px solid #3b82f6',
+                    borderRadius: '12px',
+                    padding: '8px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '2px',
+                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                    animation: 'slideUp 0.3s ease-out',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                }}>
+                    <div style={{ color: '#1e40af', fontWeight: '900', fontSize: isHost ? '0.96rem' : '0.88rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span>🎮</span> 게임만 진행하고 점수 합산은 되지 않습니다
+                    </div>
+                    <div style={{ color: '#3b82f6', fontSize: '0.76rem', fontWeight: '700' }}>
+                        다른 유저들이 플레이 중입니다 (내 공식 점수: {officialLockedTotalScoreRef.current !== null ? officialLockedTotalScoreRef.current.toLocaleString() : (officialBaseScoreRef.current + 500).toLocaleString()}점 안전 보존)
+                    </div>
                 </div>
             )}
 
@@ -451,7 +540,7 @@ export default function CardMatchGame({
                     </h3>
                     <button
                         type="button"
-                        onClick={() => initGame()}
+                        onClick={() => initGame(currentTheme, true)}
                         className="glass-button"
                         style={{
                             padding: '6px 20px',
@@ -470,7 +559,7 @@ export default function CardMatchGame({
                 <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
                     <button
                         type="button"
-                        onClick={() => initGame()}
+                        onClick={() => initGame(currentTheme, hasOfficiallyFinishedRef.current)}
                         className="glass-button"
                         style={{
                             width: '100%',

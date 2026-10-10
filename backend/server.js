@@ -914,6 +914,9 @@ io.on('connection', (socket) => {
         p.hasAnswered = false;
         p.currentAnswer = null;
         p.isCorrect = false;
+        p.gameBaseScore = p.score || 0;
+        p.officialRoundScore = 0;
+        p.hasFinishedOfficialRound = false;
       });
     } else {
       rooms[pin] = {
@@ -1494,14 +1497,52 @@ io.on('connection', (socket) => {
   socket.on('room:message', (data) => {
     if (data && data.pin) {
       const room = rooms[data.pin];
+      // Track game lifecycle for score accumulation
+      if (room && data.event === 'game:start') {
+        if (room.participants) {
+          room.participants.forEach(p => {
+            p.gameBaseScore = p.score || 0;
+            p.officialRoundScore = 0;
+            p.hasFinishedOfficialRound = false;
+          });
+        }
+      }
+      if (room && (data.event === 'game:terminate' || data.event === 'game:catch_mind_terminate')) {
+        if (room.participants) {
+          room.participants.forEach(p => {
+            p.gameBaseScore = p.score || 0;
+            p.hasFinishedOfficialRound = false;
+          });
+        }
+      }
       if (room && data.event === 'game:player_stream' && data.payload) {
-        const { nickname, score } = data.payload;
-        if (nickname && typeof score === 'number') {
+        const { nickname, score, roundScore, isPractice, isFinished } = data.payload;
+        if (nickname) {
           const p = room.participants?.find(part => part.nickname === nickname);
-          if (p && p.score !== score) {
-            p.score = score;
-            if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-            io.to(data.pin).emit('host:participantsUpdated', room.participants);
+          if (p) {
+            if (p.gameBaseScore === undefined) {
+              p.gameBaseScore = p.score || 0;
+            }
+
+            // If participant is playing in practice mode or already officially finished, do NOT alter official cumulative score
+            if (isPractice || p.hasFinishedOfficialRound) {
+              // Score is safely preserved at the official finish result
+            } else {
+              // Official game run:
+              const roundPts = typeof roundScore === 'number' ? roundScore : (typeof score === 'number' ? score : 0);
+              p.officialRoundScore = roundPts;
+              const newScore = (p.gameBaseScore || 0) + roundPts;
+
+              if (isFinished) {
+                p.hasFinishedOfficialRound = true;
+              }
+
+              if (p.score !== newScore) {
+                p.score = newScore;
+                if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+                io.to(data.pin).emit('host:participantsUpdated', room.participants);
+              }
+            }
           }
         }
       }

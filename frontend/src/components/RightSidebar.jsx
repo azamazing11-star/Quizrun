@@ -298,6 +298,11 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     };
 
     const handleResetScoresOnly = () => {
+        const msg = isStockGame 
+            ? "모든 참가자의 자산을 초기화하시겠습니까? (1,000,000원으로 재설정됩니다)"
+            : "모든 참가자의 점수를 초기화하시겠습니까? (이전 퀴즈와 게임의 누적 점수가 0점이 됩니다)";
+        if (!window.confirm(msg)) return;
+
         const resetVal = isStockGame ? 1000000 : 0;
         if (gameMode === 'online') {
             if (socket && onlinePin) {
@@ -1224,23 +1229,23 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <button
                                 style={{
-                                    padding: '11px',
+                                    padding: '12px',
                                     borderRadius: '14px',
                                     border: 'none',
-                                    background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'var(--primary)',
+                                    background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
                                     color: 'white',
-                                    fontWeight: '800',
-                                    fontSize: '0.95rem',
+                                    fontWeight: '900',
+                                    fontSize: '0.98rem',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     gap: '6px',
-                                    boxShadow: isStockGame ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 12px rgba(14, 165, 233, 0.3)'
+                                    boxShadow: isStockGame ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 14px rgba(14, 165, 233, 0.35)'
                                 }}
-                                onClick={handleResetScoresOnly}
+                                onClick={() => setShowWinnerModal(false)}
                             >
-                                <RefreshCw size={16} /> {isStockGame ? '금액 초기화 후 계속하기' : '점수 초기화 후 계속하기'}
+                                <Check size={18} /> 누적 점수 유지하고 계속하기
                             </button>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <button
@@ -1252,12 +1257,16 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                         background: 'white',
                                         color: '#64748b',
                                         fontWeight: '800',
-                                        fontSize: '0.88rem',
-                                        cursor: 'pointer'
+                                        fontSize: '0.86rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '4px'
                                     }}
-                                    onClick={() => setShowWinnerModal(false)}
+                                    onClick={handleResetScoresOnly}
                                 >
-                                    창 닫기
+                                    <RotateCcw size={14} /> {isStockGame ? '금액 초기화' : '점수 초기화'}
                                 </button>
                                 <button
                                     style={{
@@ -1268,7 +1277,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                         background: '#fef2f2',
                                         color: '#ef4444',
                                         fontWeight: '800',
-                                        fontSize: '0.88rem',
+                                        fontSize: '0.86rem',
                                         cursor: 'pointer'
                                     }}
                                     onClick={() => {

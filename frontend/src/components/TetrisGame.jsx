@@ -26,7 +26,8 @@ export default function TetrisGame({
     pin,
     isHost = false,
     nickname = '호스트',
-    groupId = null
+    groupId = null,
+    baseScore = 0
 }) {
     const [grid, setGrid] = useState(createEmptyGrid);
     const [currentPiece, setCurrentPiece] = useState(null);
@@ -34,6 +35,18 @@ export default function TetrisGame({
     const [lines, setLines] = useState(0);
     const [isGameOver, setIsGameOver] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
+    const [isPracticeMode, setIsPracticeMode] = useState(false);
+
+    // Official round score locking
+    const officialBaseScoreRef = useRef(typeof baseScore === 'number' ? baseScore : 0);
+    const hasOfficiallyFinishedRef = useRef(false);
+    const officialLockedTotalScoreRef = useRef(null);
+
+    useEffect(() => {
+        if (!hasOfficiallyFinishedRef.current) {
+            officialBaseScoreRef.current = typeof baseScore === 'number' ? baseScore : 0;
+        }
+    }, [baseScore]);
 
     const gridRef = useRef(grid);
     gridRef.current = grid;
@@ -43,8 +56,9 @@ export default function TetrisGame({
     isGameOverRef.current = isGameOver;
 
     // Stream participant game progress to Host & Spectator
-    const notifyPlayerStream = useCallback((curGrid, curPiece, curScore, curLines, gameOver) => {
+    const notifyPlayerStream = useCallback((curGrid, curPiece, curScore, curLines, gameOver, forcePractice = false) => {
         if (!socket || !pin) return;
+        const inPractice = forcePractice || isPracticeMode || hasOfficiallyFinishedRef.current;
 
         // Render combined grid for spectator
         const flatCombined = Array(ROWS * COLS).fill(null);
@@ -70,25 +84,66 @@ export default function TetrisGame({
             }
         }
 
-        socket.emit('room:message', {
-            pin,
-            event: 'game:player_stream',
-            payload: {
-                nickname,
-                groupId,
-                gameId: 'tetris',
-                score: curScore,
-                isAlive: !gameOver,
-                isFinished: gameOver,
-                gameData: {
-                    grid: flatCombined,
-                    score: curScore,
-                    lines: curLines,
-                    isGameOver: gameOver
+        if (inPractice) {
+            // Practice mode: official score remains locked!
+            const lockedScore = officialLockedTotalScoreRef.current !== null
+                ? officialLockedTotalScoreRef.current
+                : (officialBaseScoreRef.current + curScore);
+
+            socket.emit('room:message', {
+                pin,
+                event: 'game:player_stream',
+                payload: {
+                    nickname,
+                    groupId,
+                    gameId: 'tetris',
+                    score: lockedScore,
+                    roundScore: curScore,
+                    baseScore: officialBaseScoreRef.current,
+                    isPractice: true,
+                    isAlive: !gameOver,
+                    isFinished: gameOver,
+                    gameData: {
+                        grid: flatCombined,
+                        score: curScore,
+                        lines: curLines,
+                        isGameOver: gameOver,
+                        isPractice: true
+                    }
                 }
+            });
+        } else {
+            // Official round:
+            const totalScore = officialBaseScoreRef.current + curScore;
+            if (gameOver) {
+                hasOfficiallyFinishedRef.current = true;
+                officialLockedTotalScoreRef.current = totalScore;
             }
-        });
-    }, [socket, pin, nickname, groupId]);
+
+            socket.emit('room:message', {
+                pin,
+                event: 'game:player_stream',
+                payload: {
+                    nickname,
+                    groupId,
+                    gameId: 'tetris',
+                    score: totalScore,
+                    roundScore: curScore,
+                    baseScore: officialBaseScoreRef.current,
+                    isPractice: false,
+                    isAlive: !gameOver,
+                    isFinished: gameOver,
+                    gameData: {
+                        grid: flatCombined,
+                        score: curScore,
+                        lines: curLines,
+                        isGameOver: gameOver,
+                        isPractice: false
+                    }
+                }
+            });
+        }
+    }, [socket, pin, nickname, groupId, isPracticeMode]);
 
     // Check collision
     const checkCollision = (piece, testGrid, offsetX = 0, offsetY = 0) => {
@@ -124,16 +179,24 @@ export default function TetrisGame({
         if (checkCollision(newPiece, gridRef.current)) {
             setIsGameOver(true);
             playSound('wrong');
+            if (!isPracticeMode && !hasOfficiallyFinishedRef.current) {
+                hasOfficiallyFinishedRef.current = true;
+                officialLockedTotalScoreRef.current = officialBaseScoreRef.current + score;
+            }
             notifyPlayerStream(gridRef.current, null, score, lines, true);
             return null;
         }
 
         setCurrentPiece(newPiece);
         return newPiece;
-    }, [score, lines, notifyPlayerStream]);
+    }, [score, lines, notifyPlayerStream, isPracticeMode]);
 
     // Initialize Game
-    const restartGame = useCallback(() => {
+    const restartGame = useCallback((isManualRestart = false) => {
+        if (isManualRestart || hasOfficiallyFinishedRef.current) {
+            setIsPracticeMode(true);
+        }
+
         const empty = createEmptyGrid();
         setGrid(empty);
         setScore(0);
@@ -150,7 +213,7 @@ export default function TetrisGame({
             y: 0
         };
         setCurrentPiece(firstPiece);
-        notifyPlayerStream(empty, firstPiece, 0, 0, false);
+        notifyPlayerStream(empty, firstPiece, 0, 0, false, (isManualRestart || hasOfficiallyFinishedRef.current));
     }, [notifyPlayerStream]);
 
     useEffect(() => {
@@ -349,6 +412,27 @@ export default function TetrisGame({
             margin: '0 auto',
             padding: '4px'
         }}>
+            {/* PRACTICE MODE NOTICE FOR EARLY FINISHERS */}
+            {isPracticeMode && (
+                <div style={{
+                    background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                    border: '2px solid #3b82f6',
+                    borderRadius: '12px',
+                    padding: '8px 12px',
+                    textAlign: 'center',
+                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                }}>
+                    <div style={{ color: '#1e40af', fontWeight: '900', fontSize: '0.92rem' }}>
+                        🎮 게임만 진행하고 점수 합산은 되지 않습니다
+                    </div>
+                    <div style={{ color: '#2563eb', fontSize: '0.74rem', marginTop: '2px', fontWeight: '700' }}>
+                        다른 유저들이 플레이 중입니다 (내 공식 점수: {officialLockedTotalScoreRef.current !== null ? officialLockedTotalScoreRef.current.toLocaleString() : (officialBaseScoreRef.current + score).toLocaleString()}점 안전 보존)
+                    </div>
+                </div>
+            )}
+
             {/* Top Score Bar */}
             <div style={{
                 display: 'flex',
@@ -420,7 +504,7 @@ export default function TetrisGame({
                         <h2 style={{ margin: 0, color: '#f87171', fontSize: '1.4rem', fontWeight: '950' }}>GAME OVER</h2>
                         <p style={{ margin: 0, fontSize: '0.9rem', color: '#cbd5e1' }}>최종 점수: {score.toLocaleString()}점</p>
                         <button
-                            onClick={restartGame}
+                            onClick={() => restartGame(true)}
                             style={{
                                 marginTop: '8px',
                                 background: '#3b82f6',

@@ -264,9 +264,9 @@ export default function MultiplayerLiveSpectator({
             id: p.id || `p-${idx}`,
             nickname: p.nickname || `참여자 ${idx + 1}`,
             groupId: p.groupId,
-            score: stream.score !== undefined ? stream.score : (p.score || 0),
-            isAlive: stream.isAlive !== undefined ? stream.isAlive : true,
-            isFinished: stream.isFinished !== undefined ? stream.isFinished : false,
+            score: p.score !== undefined ? p.score : (stream.score !== undefined ? stream.score : 0),
+            isAlive: stream.isPractice ? false : (stream.isAlive !== undefined ? stream.isAlive : true),
+            isFinished: stream.isPractice ? true : (stream.isFinished !== undefined ? stream.isFinished : false),
             gameData: stream.gameData || null,
             lastUpdated: stream.lastUpdated || Date.now()
         };
@@ -280,8 +280,8 @@ export default function MultiplayerLiveSpectator({
                 nickname: nick,
                 groupId: stream.groupId,
                 score: stream.score || 0,
-                isAlive: stream.isAlive !== undefined ? stream.isAlive : true,
-                isFinished: stream.isFinished || false,
+                isAlive: stream.isPractice ? false : (stream.isAlive !== undefined ? stream.isAlive : true),
+                isFinished: stream.isPractice ? true : (stream.isFinished || false),
                 gameData: stream.gameData || null,
                 lastUpdated: stream.lastUpdated || Date.now()
             });
