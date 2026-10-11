@@ -1,24 +1,109 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RotateCcw, ArrowLeft, ArrowRight, ArrowDown, ChevronDown, RefreshCw, Trophy, Skull } from 'lucide-react';
+import { RotateCcw, Volume2, VolumeX, Trophy, Skull, Sparkles, ChevronDown } from 'lucide-react';
 import { playSound } from '../utils/audio';
 
 const COLS = 10;
-const ROWS = 18;
+const ROWS = 20;
 
+// 1988 Sega Tetris (System 16) Palette & Pieces
 const TETROMINOES = {
-    I: { shape: [[1, 1, 1, 1]], color: '#06b6d4' },
-    O: { shape: [[1, 1], [1, 1]], color: '#eab308' },
-    T: { shape: [[0, 1, 0], [1, 1, 1]], color: '#a855f7' },
-    S: { shape: [[0, 1, 1], [1, 1, 0]], color: '#22c55e' },
-    Z: { shape: [[1, 1, 0], [0, 1, 1]], color: '#ef4444' },
-    J: { shape: [[1, 0, 0], [1, 1, 1]], color: '#3b82f6' },
-    L: { shape: [[0, 0, 1], [1, 1, 1]], color: '#f97316' }
+    I: {
+        shape: [
+            [0, 0, 0, 0],
+            [1, 1, 1, 1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
+        ],
+        color: '#ef4444', // Sega Vibrant Red
+        name: 'I'
+    },
+    O: {
+        shape: [
+            [1, 1],
+            [1, 1]
+        ],
+        color: '#2563eb', // Sega Deep Blue
+        name: 'O'
+    },
+    T: {
+        shape: [
+            [0, 1, 0],
+            [1, 1, 1],
+            [0, 0, 0]
+        ],
+        color: '#10b981', // Sega Emerald Green
+        name: 'T'
+    },
+    S: {
+        shape: [
+            [0, 1, 1],
+            [1, 1, 0],
+            [0, 0, 0]
+        ],
+        color: '#d946ef', // Sega Magenta Pink
+        name: 'S'
+    },
+    Z: {
+        shape: [
+            [1, 1, 0],
+            [0, 1, 1],
+            [0, 0, 0]
+        ],
+        color: '#84cc16', // Sega Lime Green
+        name: 'Z'
+    },
+    J: {
+        shape: [
+            [1, 0, 0],
+            [1, 1, 1],
+            [0, 0, 0]
+        ],
+        color: '#06b6d4', // Sega Sky Blue / Cyan
+        name: 'J'
+    },
+    L: {
+        shape: [
+            [0, 0, 1],
+            [1, 1, 1],
+            [0, 0, 0]
+        ],
+        color: '#f97316', // Sega Vivid Orange
+        name: 'L'
+    }
 };
 
 const SHAPES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
 
+// Authentic escalating gravity speed per Round (ms per drop)
+const FALL_SPEEDS = [
+    750, // Round 1
+    600, // Round 2
+    480, // Round 3
+    380, // Round 4
+    300, // Round 5
+    230, // Round 6
+    170, // Round 7
+    120, // Round 8
+    90,  // Round 9
+    70,  // Round 10
+    55,  // Round 11
+    45   // Round 12+ (Arcade Extreme Speed)
+];
+
 function createEmptyGrid() {
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+}
+
+function getRandomPiece() {
+    const key = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    const proto = TETROMINOES[key];
+    return {
+        key,
+        shape: proto.shape.map(r => [...r]),
+        color: proto.color,
+        x: Math.floor((COLS - proto.shape[0].length) / 2),
+        y: 0
+    };
 }
 
 export default function TetrisGame({
@@ -31,11 +116,29 @@ export default function TetrisGame({
 }) {
     const [grid, setGrid] = useState(createEmptyGrid);
     const [currentPiece, setCurrentPiece] = useState(null);
+    const [nextPiece, setNextPiece] = useState(() => getRandomPiece());
     const [score, setScore] = useState(0);
+    const [highScore, setHighScore] = useState(() => {
+        try {
+            return parseInt(localStorage.getItem('sega_tetris_hiscore') || '10000', 10);
+        } catch (e) {
+            return 10000;
+        }
+    });
+    const [round, setRound] = useState(1);
     const [lines, setLines] = useState(0);
+    const [linesInRound, setLinesInRound] = useState(0);
     const [isGameOver, setIsGameOver] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [isPracticeMode, setIsPracticeMode] = useState(false);
+    const [clearingRows, setClearingRows] = useState([]);
+    const [roundUpNotice, setRoundUpNotice] = useState(null);
+    const [tetrisFlash, setTetrisFlash] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+
+    // Audio elements
+    const bgmRef = useRef(null);
+    const gameOverAudioRef = useRef(null);
 
     // Official round score locking
     const officialBaseScoreRef = useRef(typeof baseScore === 'number' ? baseScore : 0);
@@ -52,15 +155,77 @@ export default function TetrisGame({
     gridRef.current = grid;
     const currentPieceRef = useRef(currentPiece);
     currentPieceRef.current = currentPiece;
+    const nextPieceRef = useRef(nextPiece);
+    nextPieceRef.current = nextPiece;
     const isGameOverRef = useRef(isGameOver);
     isGameOverRef.current = isGameOver;
+    const roundRef = useRef(round);
+    roundRef.current = round;
+    const linesRef = useRef(lines);
+    linesRef.current = lines;
+    const scoreRef = useRef(score);
+    scoreRef.current = score;
+
+    // Lock delay tracking
+    const lockTimerRef = useRef(null);
+    const lockResetsRef = useRef(0);
+
+    // Initialize Sega BGM and Game Over audio
+    useEffect(() => {
+        const bgm = new Audio('/audio/sega_tetris.mp3');
+        bgm.loop = true;
+        bgm.volume = isMuted ? 0 : 0.28;
+        bgmRef.current = bgm;
+
+        const goAudio = new Audio('/audio/sega_gameover.mp3');
+        goAudio.volume = isMuted ? 0 : 0.5;
+        gameOverAudioRef.current = goAudio;
+
+        // Auto play on mount or user gesture
+        const playPromise = bgm.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(() => {
+                // Browser policy blocked autoplay, will resume on interaction
+                const resumeBgm = () => {
+                    if (bgmRef.current && !isGameOverRef.current) {
+                        bgmRef.current.play().catch(() => {});
+                    }
+                    window.removeEventListener('pointerdown', resumeBgm);
+                    window.removeEventListener('keydown', resumeBgm);
+                };
+                window.addEventListener('pointerdown', resumeBgm, { once: true });
+                window.addEventListener('keydown', resumeBgm, { once: true });
+            });
+        }
+
+        return () => {
+            if (bgmRef.current) {
+                bgmRef.current.pause();
+                bgmRef.current = null;
+            }
+            if (gameOverAudioRef.current) {
+                gameOverAudioRef.current.pause();
+                gameOverAudioRef.current = null;
+            }
+        };
+    }, []);
+
+    // Handle mute toggle
+    useEffect(() => {
+        if (bgmRef.current) {
+            bgmRef.current.volume = isMuted ? 0 : 0.28;
+        }
+        if (gameOverAudioRef.current) {
+            gameOverAudioRef.current.volume = isMuted ? 0 : 0.5;
+        }
+    }, [isMuted]);
 
     // Stream participant game progress to Host & Spectator
-    const notifyPlayerStream = useCallback((curGrid, curPiece, curScore, curLines, gameOver, forcePractice = false) => {
+    const notifyPlayerStream = useCallback((curGrid, curPiece, curScore, curLines, curRound, gameOver, forcePractice = false) => {
         if (!socket || !pin) return;
         const inPractice = forcePractice || isPracticeMode || hasOfficiallyFinishedRef.current;
 
-        // Render combined grid for spectator
+        // Render combined 10x20 grid (200 items)
         const flatCombined = Array(ROWS * COLS).fill(null);
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
@@ -84,8 +249,16 @@ export default function TetrisGame({
             }
         }
 
+        const gamePayload = {
+            grid: flatCombined,
+            score: curScore,
+            lines: curLines,
+            round: curRound,
+            isGameOver: gameOver,
+            isPractice: inPractice
+        };
+
         if (inPractice) {
-            // Practice mode: official score remains locked!
             const lockedScore = officialLockedTotalScoreRef.current !== null
                 ? officialLockedTotalScoreRef.current
                 : (officialBaseScoreRef.current + curScore);
@@ -103,17 +276,10 @@ export default function TetrisGame({
                     isPractice: true,
                     isAlive: !gameOver,
                     isFinished: gameOver,
-                    gameData: {
-                        grid: flatCombined,
-                        score: curScore,
-                        lines: curLines,
-                        isGameOver: gameOver,
-                        isPractice: true
-                    }
+                    gameData: gamePayload
                 }
             });
         } else {
-            // Official round:
             const totalScore = officialBaseScoreRef.current + curScore;
             if (gameOver) {
                 hasOfficiallyFinishedRef.current = true;
@@ -133,13 +299,7 @@ export default function TetrisGame({
                     isPractice: false,
                     isAlive: !gameOver,
                     isFinished: gameOver,
-                    gameData: {
-                        grid: flatCombined,
-                        score: curScore,
-                        lines: curLines,
-                        isGameOver: gameOver,
-                        isPractice: false
-                    }
+                    gameData: gamePayload
                 }
             });
         }
@@ -147,6 +307,7 @@ export default function TetrisGame({
 
     // Check collision
     const checkCollision = (piece, testGrid, offsetX = 0, offsetY = 0) => {
+        if (!piece) return true;
         const { shape, x, y } = piece;
         for (let r = 0; r < shape.length; r++) {
             for (let c = 0; c < shape[r].length; c++) {
@@ -165,65 +326,104 @@ export default function TetrisGame({
         return false;
     };
 
-    // Spawn new tetromino
+    // Spawn new tetromino from nextPiece queue
     const spawnPiece = useCallback(() => {
-        const randomShapeKey = SHAPES[Math.floor(Math.random() * SHAPES.length)];
-        const proto = TETROMINOES[randomShapeKey];
+        const next = nextPieceRef.current || getRandomPiece();
+        const incoming = getRandomPiece();
+        setNextPiece(incoming);
+        nextPieceRef.current = incoming;
+
         const newPiece = {
-            shape: proto.shape,
-            color: proto.color,
-            x: Math.floor((COLS - proto.shape[0].length) / 2),
+            key: next.key,
+            shape: next.shape,
+            color: next.color,
+            x: Math.floor((COLS - next.shape[0].length) / 2),
             y: 0
         };
 
         if (checkCollision(newPiece, gridRef.current)) {
+            // Top out (GAME OVER)
             setIsGameOver(true);
-            playSound('wrong');
+            isGameOverRef.current = true;
+
+            if (bgmRef.current) {
+                bgmRef.current.pause();
+            }
+            if (gameOverAudioRef.current && !isMuted) {
+                gameOverAudioRef.current.currentTime = 0;
+                gameOverAudioRef.current.play().catch(() => {});
+            }
+
             if (!isPracticeMode && !hasOfficiallyFinishedRef.current) {
                 hasOfficiallyFinishedRef.current = true;
-                officialLockedTotalScoreRef.current = officialBaseScoreRef.current + score;
+                officialLockedTotalScoreRef.current = officialBaseScoreRef.current + scoreRef.current;
             }
-            notifyPlayerStream(gridRef.current, null, score, lines, true);
+            notifyPlayerStream(gridRef.current, null, scoreRef.current, linesRef.current, roundRef.current, true);
             return null;
         }
 
         setCurrentPiece(newPiece);
+        currentPieceRef.current = newPiece;
+        lockResetsRef.current = 0;
         return newPiece;
-    }, [score, lines, notifyPlayerStream, isPracticeMode]);
+    }, [notifyPlayerStream, isPracticeMode, isMuted]);
 
-    // Initialize Game
+    // Restart Game
     const restartGame = useCallback((isManualRestart = false) => {
         if (isManualRestart || hasOfficiallyFinishedRef.current) {
             setIsPracticeMode(true);
         }
 
+        if (lockTimerRef.current) {
+            clearTimeout(lockTimerRef.current);
+            lockTimerRef.current = null;
+        }
+
         const empty = createEmptyGrid();
         setGrid(empty);
+        gridRef.current = empty;
         setScore(0);
+        scoreRef.current = 0;
         setLines(0);
+        linesRef.current = 0;
+        setLinesInRound(0);
+        setRound(1);
+        roundRef.current = 1;
         setIsGameOver(false);
+        isGameOverRef.current = false;
         setIsPaused(false);
+        setClearingRows([]);
+        setRoundUpNotice(null);
+        setTetrisFlash(false);
 
-        const initialPieceKey = SHAPES[Math.floor(Math.random() * SHAPES.length)];
-        const proto = TETROMINOES[initialPieceKey];
-        const firstPiece = {
-            shape: proto.shape,
-            color: proto.color,
-            x: Math.floor((COLS - proto.shape[0].length) / 2),
-            y: 0
-        };
+        const firstPiece = getRandomPiece();
+        const upcoming = getRandomPiece();
         setCurrentPiece(firstPiece);
-        notifyPlayerStream(empty, firstPiece, 0, 0, false, (isManualRestart || hasOfficiallyFinishedRef.current));
-    }, [notifyPlayerStream]);
+        currentPieceRef.current = firstPiece;
+        setNextPiece(upcoming);
+        nextPieceRef.current = upcoming;
+
+        if (gameOverAudioRef.current) {
+            gameOverAudioRef.current.pause();
+        }
+        if (bgmRef.current && !isMuted) {
+            bgmRef.current.currentTime = 0;
+            bgmRef.current.play().catch(() => {});
+        }
+
+        notifyPlayerStream(empty, firstPiece, 0, 0, 1, false, (isManualRestart || hasOfficiallyFinishedRef.current));
+    }, [notifyPlayerStream, isMuted]);
 
     useEffect(() => {
         restartGame();
     }, []);
 
-    // Merge piece into board and clear rows
-    const lockPieceAndClearRows = useCallback((piece) => {
-        const newGrid = gridRef.current.map(row => [...row]);
-        const { shape, color, x, y } = piece;
+    // Merge piece and clear rows with Sega scoring formula
+    const lockPieceAndClearRows = useCallback((pieceToLock) => {
+        if (!pieceToLock) return;
+        const currentGrid = gridRef.current;
+        const newGrid = currentGrid.map(row => [...row]);
+        const { shape, color, x, y } = pieceToLock;
 
         for (let r = 0; r < shape.length; r++) {
             for (let c = 0; c < shape[r].length; c++) {
@@ -237,58 +437,124 @@ export default function TetrisGame({
             }
         }
 
-        // Check for full rows
-        let cleared = 0;
-        const remainingRows = [];
+        // Detect full rows
+        const fullRowIndices = [];
         for (let r = 0; r < ROWS; r++) {
-            const isFull = newGrid[r].every(cell => cell !== null);
-            if (!isFull) {
-                remainingRows.push(newGrid[r]);
-            } else {
-                cleared++;
+            if (newGrid[r].every(cell => cell !== null)) {
+                fullRowIndices.push(r);
             }
         }
 
-        const emptyRowsToAdd = Array.from({ length: cleared }, () => Array(COLS).fill(null));
-        const finalGrid = [...emptyRowsToAdd, ...remainingRows];
+        if (fullRowIndices.length > 0) {
+            // Flash rows before clearing
+            setClearingRows(fullRowIndices);
+            if (fullRowIndices.length >= 4) {
+                setTetrisFlash(true);
+                setTimeout(() => setTetrisFlash(false), 900);
+            }
 
-        let addedScore = 10;
-        if (cleared === 1) addedScore += 100;
-        else if (cleared === 2) addedScore += 300;
-        else if (cleared === 3) addedScore += 500;
-        else if (cleared >= 4) addedScore += 800;
+            playSound(fullRowIndices.length >= 4 ? 'fanfare' : 'correct');
 
-        if (cleared > 0) {
-            playSound('correct');
+            setTimeout(() => {
+                const remainingRows = newGrid.filter((_, idx) => !fullRowIndices.includes(idx));
+                const emptyRows = Array.from({ length: fullRowIndices.length }, () => Array(COLS).fill(null));
+                const updatedGrid = [...emptyRows, ...remainingRows];
+
+                const curRound = roundRef.current;
+                let addedScore = 0;
+                const clearedCount = fullRowIndices.length;
+
+                // Authentic Sega Arcade Scoring: 100 / 400 / 900 / 2000 * Round
+                if (clearedCount === 1) addedScore = 100 * curRound;
+                else if (clearedCount === 2) addedScore = 400 * curRound;
+                else if (clearedCount === 3) addedScore = 900 * curRound;
+                else if (clearedCount >= 4) addedScore = 2000 * curRound;
+
+                const nextScore = scoreRef.current + addedScore;
+                const nextLines = linesRef.current + clearedCount;
+                scoreRef.current = nextScore;
+                linesRef.current = nextLines;
+
+                // High score update
+                if (nextScore > highScore) {
+                    setHighScore(nextScore);
+                    try {
+                        localStorage.setItem('sega_tetris_hiscore', String(nextScore));
+                    } catch (e) {}
+                }
+
+                // Escalating difficulty: Round advances every 4 lines
+                setLinesInRound(prevLinesInRound => {
+                    const totalInRound = prevLinesInRound + clearedCount;
+                    if (totalInRound >= 4) {
+                        const newRound = curRound + 1;
+                        setRound(newRound);
+                        roundRef.current = newRound;
+                        setRoundUpNotice(`ROUND ${newRound < 10 ? '0' + newRound : newRound} - SPEED UP!`);
+                        playSound('reveal');
+                        setTimeout(() => setRoundUpNotice(null), 1800);
+                        return totalInRound % 4;
+                    }
+                    return totalInRound;
+                });
+
+                setGrid(updatedGrid);
+                gridRef.current = updatedGrid;
+                setScore(nextScore);
+                setLines(nextLines);
+                setClearingRows([]);
+
+                const spawned = spawnPiece();
+                notifyPlayerStream(updatedGrid, spawned, nextScore, nextLines, roundRef.current, isGameOverRef.current);
+            }, 200);
+        } else {
+            // No lines cleared, place and spawn immediately
+            setGrid(newGrid);
+            gridRef.current = newGrid;
+            playSound('step');
+            const spawned = spawnPiece();
+            notifyPlayerStream(newGrid, spawned, scoreRef.current, linesRef.current, roundRef.current, isGameOverRef.current);
         }
+    }, [spawnPiece, notifyPlayerStream, highScore]);
 
-        const nextScore = score + addedScore;
-        const nextLines = lines + cleared;
-
-        setGrid(finalGrid);
-        setScore(nextScore);
-        setLines(nextLines);
-
-        // Spawn next
-        const nextPiece = spawnPiece();
-        notifyPlayerStream(finalGrid, nextPiece, nextScore, nextLines, isGameOverRef.current);
-    }, [score, lines, spawnPiece, notifyPlayerStream]);
-
-    // Move Piece Down (Tick)
-    const moveDown = useCallback(() => {
+    // Move Piece Down (Tick with Lock Delay)
+    const moveDown = useCallback((isManual = false) => {
         if (!currentPieceRef.current || isGameOverRef.current) return;
 
-        if (!checkCollision(currentPieceRef.current, gridRef.current, 0, 1)) {
+        const piece = currentPieceRef.current;
+        if (!checkCollision(piece, gridRef.current, 0, 1)) {
+            // Able to drop 1 row
+            if (lockTimerRef.current) {
+                clearTimeout(lockTimerRef.current);
+                lockTimerRef.current = null;
+            }
             const moved = {
-                ...currentPieceRef.current,
-                y: currentPieceRef.current.y + 1
+                ...piece,
+                y: piece.y + 1
             };
             setCurrentPiece(moved);
-            notifyPlayerStream(gridRef.current, moved, score, lines, false);
+            currentPieceRef.current = moved;
+
+            if (isManual) {
+                // Soft drop +1 score bonus
+                const updatedScore = scoreRef.current + 1;
+                setScore(updatedScore);
+                scoreRef.current = updatedScore;
+            }
+
+            notifyPlayerStream(gridRef.current, moved, scoreRef.current, linesRef.current, roundRef.current, false);
         } else {
-            lockPieceAndClearRows(currentPieceRef.current);
+            // On ground: Lock Delay (450ms)
+            if (!lockTimerRef.current) {
+                lockTimerRef.current = setTimeout(() => {
+                    lockTimerRef.current = null;
+                    if (currentPieceRef.current && checkCollision(currentPieceRef.current, gridRef.current, 0, 1)) {
+                        lockPieceAndClearRows(currentPieceRef.current);
+                    }
+                }, 450);
+            }
         }
-    }, [lockPieceAndClearRows, score, lines, notifyPlayerStream]);
+    }, [lockPieceAndClearRows, notifyPlayerStream]);
 
     // Move Left / Right
     const moveHorizontal = useCallback((dir) => {
@@ -300,65 +566,112 @@ export default function TetrisGame({
                 x: currentPieceRef.current.x + offset
             };
             setCurrentPiece(moved);
+            currentPieceRef.current = moved;
             playSound('submit');
-            notifyPlayerStream(gridRef.current, moved, score, lines, false);
-        }
-    }, [score, lines, notifyPlayerStream]);
 
-    // Rotate Piece
+            // Reset lock delay on movement if on ground (up to 8 times)
+            if (lockTimerRef.current && lockResetsRef.current < 8) {
+                lockResetsRef.current++;
+                clearTimeout(lockTimerRef.current);
+                lockTimerRef.current = setTimeout(() => {
+                    lockTimerRef.current = null;
+                    if (currentPieceRef.current && checkCollision(currentPieceRef.current, gridRef.current, 0, 1)) {
+                        lockPieceAndClearRows(currentPieceRef.current);
+                    }
+                }, 450);
+            }
+
+            notifyPlayerStream(gridRef.current, moved, scoreRef.current, linesRef.current, roundRef.current, false);
+        }
+    }, [lockPieceAndClearRows, notifyPlayerStream]);
+
+    // Rotate Piece (Sega Rotation System with Wall Kicks)
     const rotatePiece = useCallback(() => {
         if (!currentPieceRef.current || isGameOverRef.current) return;
-        const { shape } = currentPieceRef.current;
-        // Matrix transpose and reverse rows for 90deg clockwise rotation
+        const piece = currentPieceRef.current;
+        const { shape } = piece;
+
+        // 90 deg clockwise matrix rotation
         const rotated = shape[0].map((_, index) => shape.map(row => row[index]).reverse());
         const candidate = {
-            ...currentPieceRef.current,
+            ...piece,
             shape: rotated
         };
 
+        // Check normal placement or wall kicks
+        let finalPiece = null;
         if (!checkCollision(candidate, gridRef.current, 0, 0)) {
-            setCurrentPiece(candidate);
-            playSound('submit');
-            notifyPlayerStream(gridRef.current, candidate, score, lines, false);
+            finalPiece = candidate;
         } else if (!checkCollision(candidate, gridRef.current, -1, 0)) {
-            // Wall kick left
-            const kicked = { ...candidate, x: candidate.x - 1 };
-            setCurrentPiece(kicked);
-            notifyPlayerStream(gridRef.current, kicked, score, lines, false);
+            finalPiece = { ...candidate, x: candidate.x - 1 };
         } else if (!checkCollision(candidate, gridRef.current, 1, 0)) {
-            // Wall kick right
-            const kicked = { ...candidate, x: candidate.x + 1 };
-            setCurrentPiece(kicked);
-            notifyPlayerStream(gridRef.current, kicked, score, lines, false);
+            finalPiece = { ...candidate, x: candidate.x + 1 };
+        } else if (!checkCollision(candidate, gridRef.current, -2, 0) && piece.key === 'I') {
+            finalPiece = { ...candidate, x: candidate.x - 2 };
+        } else if (!checkCollision(candidate, gridRef.current, 2, 0) && piece.key === 'I') {
+            finalPiece = { ...candidate, x: candidate.x + 2 };
         }
-    }, [score, lines, notifyPlayerStream]);
+
+        if (finalPiece) {
+            setCurrentPiece(finalPiece);
+            currentPieceRef.current = finalPiece;
+            playSound('submit');
+
+            // Reset lock delay on rotation (up to 8 times)
+            if (lockTimerRef.current && lockResetsRef.current < 8) {
+                lockResetsRef.current++;
+                clearTimeout(lockTimerRef.current);
+                lockTimerRef.current = setTimeout(() => {
+                    lockTimerRef.current = null;
+                    if (currentPieceRef.current && checkCollision(currentPieceRef.current, gridRef.current, 0, 1)) {
+                        lockPieceAndClearRows(currentPieceRef.current);
+                    }
+                }, 450);
+            }
+
+            notifyPlayerStream(gridRef.current, finalPiece, scoreRef.current, linesRef.current, roundRef.current, false);
+        }
+    }, [lockPieceAndClearRows, notifyPlayerStream]);
 
     // Hard Drop
     const hardDrop = useCallback(() => {
         if (!currentPieceRef.current || isGameOverRef.current) return;
+        if (lockTimerRef.current) {
+            clearTimeout(lockTimerRef.current);
+            lockTimerRef.current = null;
+        }
+
         let dropY = 0;
         while (!checkCollision(currentPieceRef.current, gridRef.current, 0, dropY + 1)) {
             dropY++;
         }
+
         const droppedPiece = {
             ...currentPieceRef.current,
             y: currentPieceRef.current.y + dropY
         };
+
+        // Hard drop bonus score: +2 per row
+        const bonusScore = dropY * 2;
+        const updatedScore = scoreRef.current + bonusScore;
+        setScore(updatedScore);
+        scoreRef.current = updatedScore;
+
         playSound('reveal');
         lockPieceAndClearRows(droppedPiece);
     }, [lockPieceAndClearRows]);
 
-    // Game loop tick interval
+    // Fall Gravity Interval based on escalating Round speed
     useEffect(() => {
         if (isGameOver || isPaused) return;
-        const speed = Math.max(250, 700 - Math.floor(lines / 5) * 50);
+        const currentSpeed = FALL_SPEEDS[Math.min(round - 1, FALL_SPEEDS.length - 1)];
         const interval = setInterval(() => {
-            moveDown();
-        }, speed);
+            moveDown(false);
+        }, currentSpeed);
         return () => clearInterval(interval);
-    }, [isGameOver, isPaused, lines, moveDown]);
+    }, [isGameOver, isPaused, round, moveDown]);
 
-    // Keyboard controls
+    // Keyboard Controls
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (isGameOver) return;
@@ -370,11 +683,11 @@ export default function TetrisGame({
                 moveHorizontal('right');
             } else if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                moveDown();
-            } else if (e.key === 'ArrowUp' || e.key === 'z' || e.key === 'x') {
+                moveDown(true);
+            } else if (e.key === 'ArrowUp' || e.key === 'x' || e.key === 'X') {
                 e.preventDefault();
                 rotatePiece();
-            } else if (e.key === ' ') {
+            } else if (e.key === ' ' || e.key === 'z' || e.key === 'Z') {
                 e.preventDefault();
                 hardDrop();
             }
@@ -384,7 +697,7 @@ export default function TetrisGame({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isGameOver, moveHorizontal, moveDown, rotatePiece, hardDrop]);
 
-    // Combined rendering of static grid + active piece
+    // Construct Display Grid
     const displayGrid = grid.map(row => [...row]);
     if (currentPiece) {
         const { shape, color, x, y } = currentPiece;
@@ -401,176 +714,477 @@ export default function TetrisGame({
         }
     }
 
+    // Helper: format arcade numbers with leading zeroes
+    const formatScore = (n) => String(n).padStart(6, '0');
+    const formatNumber = (n, len = 3) => String(n).padStart(len, '0');
+
     return (
         <div style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: '12px',
+            gap: '8px',
             width: '100%',
-            maxWidth: isHost ? '500px' : '100%',
+            maxWidth: isHost ? '540px' : '440px',
             margin: '0 auto',
-            padding: '4px'
+            padding: '4px',
+            fontFamily: "'Courier New', Courier, monospace",
+            userSelect: 'none'
         }}>
             {/* PRACTICE MODE NOTICE FOR EARLY FINISHERS */}
             {isPracticeMode && (
                 <div style={{
-                    background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-                    border: '2px solid #3b82f6',
-                    borderRadius: '12px',
-                    padding: '8px 12px',
+                    background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+                    border: '2px solid #818cf8',
+                    borderRadius: '10px',
+                    padding: '6px 12px',
                     textAlign: 'center',
-                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                    boxShadow: '0 4px 12px rgba(129, 140, 248, 0.25)',
                     width: '100%',
                     boxSizing: 'border-box'
                 }}>
-                    <div style={{ color: '#1e40af', fontWeight: '900', fontSize: '0.92rem' }}>
-                        🎮 게임만 진행하고 점수 합산은 되지 않습니다
-                    </div>
-                    <div style={{ color: '#2563eb', fontSize: '0.74rem', marginTop: '2px', fontWeight: '700' }}>
-                        다른 유저들이 플레이 중입니다 (내 공식 점수: {officialLockedTotalScoreRef.current !== null ? officialLockedTotalScoreRef.current.toLocaleString() : (officialBaseScoreRef.current + score).toLocaleString()}점 안전 보존)
+                    <div style={{ color: '#a5b4fc', fontWeight: '900', fontSize: '0.85rem', letterSpacing: '0.5px' }}>
+                        🎮 연습 모드 (내 공식 점수 {officialLockedTotalScoreRef.current !== null ? officialLockedTotalScoreRef.current.toLocaleString() : (officialBaseScoreRef.current + score).toLocaleString()}점 안전 보존됨)
                     </div>
                 </div>
             )}
 
-            {/* Top Score Bar */}
+            {/* SEGA 1988 ARCADE CABINET CONTAINER */}
             <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
+                background: '#0a0d14',
+                border: '4px solid #334155',
+                borderRadius: '16px',
+                padding: '12px 14px',
+                boxShadow: '0 12px 36px rgba(0,0,0,0.7), inset 0 0 20px rgba(0,0,0,0.8)',
                 width: '100%',
-                padding: '10px 16px',
-                background: '#0f172a',
-                borderRadius: '14px',
-                border: '1.5px solid #1e293b',
-                color: 'white',
-                fontWeight: '900',
-                fontSize: isHost ? '1rem' : '0.86rem'
+                boxSizing: 'border-box',
+                position: 'relative'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Trophy size={16} color="#fbbf24" />
-                    <span>점수: <strong style={{ color: '#38bdf8' }}>{score.toLocaleString()}점</strong></span>
-                </div>
-                <div>
-                    <span>줄: <strong style={{ color: '#4ade80' }}>{lines}줄</strong></span>
-                </div>
-            </div>
+                {/* ARCADE MARQUEE / HEADER */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderBottom: '2px solid #1e293b',
+                    paddingBottom: '8px',
+                    marginBottom: '10px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{
+                            fontSize: '1.25rem',
+                            fontWeight: '900',
+                            letterSpacing: '2px',
+                            background: 'linear-gradient(180deg, #fef08a 0%, #f59e0b 50%, #d97706 100%)',
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent',
+                            textShadow: '0 0 10px rgba(245, 158, 11, 0.5)'
+                        }}>
+                            TETRIS
+                        </span>
+                        <span style={{
+                            fontSize: '0.65rem',
+                            color: '#94a3b8',
+                            border: '1px solid #475569',
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            fontWeight: 'bold',
+                            letterSpacing: '1px'
+                        }}>
+                            SEGA 1988
+                        </span>
+                    </div>
 
-            {/* Tetris Board */}
-            <div style={{
-                position: 'relative',
-                display: 'grid',
-                gridTemplateColumns: `repeat(${COLS}, 1fr)`,
-                gap: '2px',
-                background: '#090d16',
-                padding: '8px',
-                borderRadius: '14px',
-                border: '3px solid #1e293b',
-                width: isHost ? '240px' : '220px',
-                aspectRatio: `${COLS}/${ROWS}`,
-                boxShadow: '0 8px 25px rgba(0,0,0,0.4)'
-            }}>
-                {displayGrid.flatMap((row, rIdx) =>
-                    row.map((cellColor, cIdx) => (
-                        <div
-                            key={`${rIdx}-${cIdx}`}
-                            style={{
-                                borderRadius: '3px',
-                                background: cellColor || 'rgba(255,255,255,0.03)',
-                                border: cellColor ? '1.5px solid rgba(255,255,255,0.3)' : 'none',
-                                boxShadow: cellColor ? `inset 0 0 6px rgba(255,255,255,0.5), 0 0 4px ${cellColor}` : 'none'
-                            }}
-                        />
-                    ))
-                )}
+                    {/* Audio Mute/Unmute Button */}
+                    <button
+                        onClick={() => setIsMuted(prev => !prev)}
+                        style={{
+                            background: isMuted ? '#334155' : '#0284c7',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '8px',
+                            padding: '4px 8px',
+                            color: 'white',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 'bold'
+                        }}
+                        title="BGM 소리 켜기/끄기"
+                    >
+                        {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                        <span>{isMuted ? '음소거' : 'BGM ON'}</span>
+                    </button>
+                </div>
 
-                {/* Game Over Overlay */}
-                {isGameOver && (
+                {/* ARCADE HUD (1UP SCORE / HI-SCORE / ROUND / LINES / NEXT) */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr) auto',
+                    gap: '6px',
+                    background: '#05070d',
+                    padding: '8px 10px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #1e293b',
+                    marginBottom: '10px',
+                    alignItems: 'center'
+                }}>
+                    {/* 1UP SCORE */}
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ color: '#38bdf8', fontSize: '0.62rem', fontWeight: '900', letterSpacing: '1px' }}>1UP SCORE</div>
+                        <div style={{ color: '#ffffff', fontSize: '0.95rem', fontWeight: '900', letterSpacing: '1px' }}>{formatScore(score)}</div>
+                    </div>
+
+                    {/* HI-SCORE */}
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ color: '#f87171', fontSize: '0.62rem', fontWeight: '900', letterSpacing: '1px' }}>HI-SCORE</div>
+                        <div style={{ color: '#fca5a5', fontSize: '0.95rem', fontWeight: '900', letterSpacing: '1px' }}>{formatScore(highScore)}</div>
+                    </div>
+
+                    {/* ROUND (LEVEL) */}
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ color: '#fbbf24', fontSize: '0.62rem', fontWeight: '900', letterSpacing: '1px' }}>ROUND</div>
+                        <div style={{ color: '#fef08a', fontSize: '1rem', fontWeight: '900', letterSpacing: '1px' }}>{round < 10 ? '0' + round : round}</div>
+                    </div>
+
+                    {/* LINES */}
+                    <div style={{ textAlign: 'center' }}>
+                        <div style={{ color: '#4ade80', fontSize: '0.62rem', fontWeight: '900', letterSpacing: '1px' }}>LINES</div>
+                        <div style={{ color: '#bbf7d0', fontSize: '0.95rem', fontWeight: '900', letterSpacing: '1px' }}>{formatNumber(lines)}</div>
+                    </div>
+
+                    {/* NEXT PIECE BOX */}
                     <div style={{
-                        position: 'absolute',
-                        top: 0, left: 0, right: 0, bottom: 0,
-                        background: 'rgba(15, 23, 42, 0.92)',
-                        backdropFilter: 'blur(3px)',
-                        borderRadius: '12px',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '10px',
-                        color: 'white',
-                        padding: '16px',
-                        textAlign: 'center'
+                        background: '#0d1322',
+                        border: '2px solid #334155',
+                        borderRadius: '6px',
+                        padding: '4px 6px',
+                        minWidth: '48px',
+                        minHeight: '44px'
                     }}>
-                        <Skull size={36} color="#ef4444" />
-                        <h2 style={{ margin: 0, color: '#f87171', fontSize: '1.4rem', fontWeight: '950' }}>GAME OVER</h2>
-                        <p style={{ margin: 0, fontSize: '0.9rem', color: '#cbd5e1' }}>최종 점수: {score.toLocaleString()}점</p>
-                        <button
-                            onClick={() => restartGame(true)}
-                            style={{
-                                marginTop: '8px',
-                                background: '#3b82f6',
-                                color: 'white',
-                                border: 'none',
-                                padding: '8px 18px',
-                                borderRadius: '10px',
-                                fontWeight: '900',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            <RotateCcw size={14} style={{ display: 'inline', marginRight: '4px' }} /> 다시 도전
-                        </button>
+                        <div style={{ color: '#facc15', fontSize: '0.58rem', fontWeight: '900', marginBottom: '2px' }}>NEXT</div>
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(${nextPiece ? nextPiece.shape[0].length : 4}, 7px)`,
+                            gap: '1px'
+                        }}>
+                            {nextPiece && nextPiece.shape.map((row, rI) =>
+                                row.map((cell, cI) => (
+                                    <div
+                                        key={`next-${rI}-${cI}`}
+                                        style={{
+                                            width: '7px',
+                                            height: '7px',
+                                            background: cell ? nextPiece.color : 'transparent',
+                                            border: cell ? '1px solid rgba(255,255,255,0.4)' : 'none',
+                                            borderRadius: '1px'
+                                        }}
+                                    />
+                                ))
+                            )}
+                        </div>
                     </div>
-                )}
+                </div>
+
+                {/* PLAYFIELD WITH AUTHENTIC SEGA STONE CABINET BORDER */}
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    position: 'relative'
+                }}>
+                    {/* LEFT STONE BORDER */}
+                    <div style={{
+                        width: '16px',
+                        height: isHost ? '360px' : '320px',
+                        background: 'repeating-linear-gradient(180deg, #475569 0px, #475569 16px, #1e293b 16px, #1e293b 19px, #64748b 19px, #64748b 20px)',
+                        borderTopLeftRadius: '6px',
+                        borderBottomLeftRadius: '6px',
+                        border: '2px solid #334155',
+                        borderRight: 'none',
+                        boxShadow: 'inset 2px 2px 4px rgba(255,255,255,0.2), inset -2px -2px 4px rgba(0,0,0,0.5)'
+                    }} />
+
+                    {/* MAIN 10x20 MATRIX */}
+                    <div style={{
+                        position: 'relative',
+                        display: 'grid',
+                        gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+                        gap: '1px',
+                        background: '#040711',
+                        padding: '4px',
+                        border: '2px solid #475569',
+                        width: isHost ? '200px' : '180px',
+                        height: isHost ? '360px' : '320px',
+                        boxShadow: 'inset 0 0 15px rgba(0,0,0,0.95), 0 0 10px rgba(0,0,0,0.5)'
+                    }}>
+                        {displayGrid.flatMap((row, rIdx) => {
+                            const isRowClearing = clearingRows.includes(rIdx);
+                            return row.map((cellColor, cIdx) => {
+                                const isFilled = !!cellColor;
+                                return (
+                                    <div
+                                        key={`${rIdx}-${cIdx}`}
+                                        style={{
+                                            borderRadius: '2px',
+                                            background: isRowClearing
+                                                ? '#ffffff'
+                                                : (isFilled ? cellColor : 'rgba(255, 255, 255, 0.02)'),
+                                            borderTop: isFilled ? '2.5px solid rgba(255, 255, 255, 0.75)' : 'none',
+                                            borderLeft: isFilled ? '2.5px solid rgba(255, 255, 255, 0.45)' : 'none',
+                                            borderRight: isFilled ? '2.5px solid rgba(0, 0, 0, 0.65)' : 'none',
+                                            borderBottom: isFilled ? '2.5px solid rgba(0, 0, 0, 0.85)' : 'none',
+                                            boxShadow: isFilled
+                                                ? 'inset 1px 1px 1px rgba(255,255,255,0.4), inset -1px -1px 2px rgba(0,0,0,0.6)'
+                                                : 'none',
+                                            transition: isRowClearing ? 'background 0.08s ease' : 'none'
+                                        }}
+                                    />
+                                );
+                            });
+                        })}
+
+                        {/* ROUND UP / STAGE SPEED UP FLASH BANNER */}
+                        {roundUpNotice && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '35%',
+                                left: 0,
+                                right: 0,
+                                background: 'linear-gradient(90deg, rgba(234, 88, 12, 0.95), rgba(245, 158, 11, 0.95))',
+                                color: '#ffffff',
+                                textAlign: 'center',
+                                padding: '10px 4px',
+                                fontWeight: '950',
+                                fontSize: '0.88rem',
+                                letterSpacing: '1px',
+                                borderTop: '2px solid #fef08a',
+                                borderBottom: '2px solid #fef08a',
+                                boxShadow: '0 0 20px rgba(245, 158, 11, 0.8)',
+                                zIndex: 10,
+                                animation: 'pulse 0.3s infinite alternate'
+                            }}>
+                                ⚡ {roundUpNotice} ⚡
+                            </div>
+                        )}
+
+                        {/* TETRIS 4-LINE FLASH BANNER */}
+                        {tetrisFlash && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '48%',
+                                left: 0,
+                                right: 0,
+                                background: 'linear-gradient(90deg, #dc2626, #f59e0b)',
+                                color: '#ffffff',
+                                textAlign: 'center',
+                                padding: '8px 2px',
+                                fontWeight: '950',
+                                fontSize: '1.1rem',
+                                letterSpacing: '2px',
+                                borderTop: '2px solid #ffffff',
+                                borderBottom: '2px solid #ffffff',
+                                boxShadow: '0 0 25px rgba(239, 68, 68, 0.9)',
+                                zIndex: 12
+                            }}>
+                                🌟 TETRIS! +{2000 * round} 🌟
+                            </div>
+                        )}
+
+                        {/* GAME OVER RETRO OVERLAY */}
+                        {isGameOver && (
+                            <div style={{
+                                position: 'absolute',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                background: 'rgba(5, 7, 15, 0.94)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '10px',
+                                color: 'white',
+                                padding: '14px',
+                                textAlign: 'center',
+                                zIndex: 20
+                            }}>
+                                <Skull size={32} color="#ef4444" />
+                                <div style={{
+                                    margin: 0,
+                                    color: '#ef4444',
+                                    fontSize: '1.45rem',
+                                    fontWeight: '950',
+                                    letterSpacing: '2px',
+                                    textShadow: '0 0 10px rgba(239, 68, 68, 0.8)'
+                                }}>
+                                    GAME OVER
+                                </div>
+                                <div style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: '1.4' }}>
+                                    <div>최종 점수: <strong style={{ color: '#38bdf8' }}>{score.toLocaleString()}점</strong></div>
+                                    <div>도달 라운드: <strong style={{ color: '#fbbf24' }}>ROUND {round}</strong></div>
+                                    <div>제거 라인: <strong style={{ color: '#4ade80' }}>{lines}줄</strong></div>
+                                </div>
+                                <button
+                                    onClick={() => restartGame(true)}
+                                    style={{
+                                        marginTop: '6px',
+                                        background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
+                                        color: 'white',
+                                        border: '2px solid #93c5fd',
+                                        padding: '8px 18px',
+                                        borderRadius: '8px',
+                                        fontWeight: '900',
+                                        fontSize: '0.85rem',
+                                        cursor: 'pointer',
+                                        letterSpacing: '1px',
+                                        boxShadow: '0 4px 12px rgba(59, 130, 246, 0.5)'
+                                    }}
+                                >
+                                    <RotateCcw size={13} style={{ display: 'inline', marginRight: '5px' }} />
+                                    다시 도전 (INSERT COIN)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* RIGHT STONE BORDER */}
+                    <div style={{
+                        width: '16px',
+                        height: isHost ? '360px' : '320px',
+                        background: 'repeating-linear-gradient(180deg, #475569 0px, #475569 16px, #1e293b 16px, #1e293b 19px, #64748b 19px, #64748b 20px)',
+                        borderTopRightRadius: '6px',
+                        borderBottomRightRadius: '6px',
+                        border: '2px solid #334155',
+                        borderLeft: 'none',
+                        boxShadow: 'inset 2px 2px 4px rgba(255,255,255,0.2), inset -2px -2px 4px rgba(0,0,0,0.5)'
+                    }} />
+                </div>
+
+                {/* BOTTOM PLAQUE */}
+                <div style={{
+                    marginTop: '8px',
+                    textAlign: 'center',
+                    fontSize: '0.62rem',
+                    color: '#64748b',
+                    letterSpacing: '1.5px',
+                    fontWeight: 'bold',
+                    borderTop: '1px solid #1e293b',
+                    paddingTop: '6px'
+                }}>
+                    © 1988 SEGA ENTERPRISES, LTD.
+                </div>
             </div>
 
-            {/* Mobile Touch Controls */}
+            {/* RETRO ARCADE MOBILE TOUCH CONTROLS */}
             <div style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',
                 width: '100%',
-                maxWidth: '300px',
+                maxWidth: '340px',
                 marginTop: '4px'
             }}>
-                {/* Upper control row: Left, Rotate, Right */}
+                {/* Upper Row: Left, Rotate, Right */}
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                     <button
                         onClick={() => moveHorizontal('left')}
                         disabled={isGameOver}
-                        style={{ flex: 1, padding: '12px 0', borderRadius: '12px', background: '#1e293b', border: '1.5px solid #334155', color: 'white', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        style={{
+                            flex: 1,
+                            padding: '14px 0',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(180deg, #334155 0%, #1e293b 100%)',
+                            border: '2px solid #475569',
+                            color: '#e2e8f0',
+                            fontSize: '1.25rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)'
+                        }}
                     >
                         ◀
                     </button>
                     <button
                         onClick={rotatePiece}
                         disabled={isGameOver}
-                        style={{ flex: 1.3, padding: '12px 0', borderRadius: '12px', background: '#8b5cf6', border: 'none', color: 'white', fontSize: '0.95rem', fontWeight: '900', cursor: 'pointer' }}
+                        style={{
+                            flex: 1.4,
+                            padding: '14px 0',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%)',
+                            border: '2px solid #a78bfa',
+                            color: '#ffffff',
+                            fontSize: '1rem',
+                            fontWeight: '900',
+                            cursor: 'pointer',
+                            letterSpacing: '1px',
+                            boxShadow: '0 4px 10px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(255,255,255,0.3)'
+                        }}
                     >
-                        🔄 회전
+                        🔄 회전 (ROTATE)
                     </button>
                     <button
                         onClick={() => moveHorizontal('right')}
                         disabled={isGameOver}
-                        style={{ flex: 1, padding: '12px 0', borderRadius: '12px', background: '#1e293b', border: '1.5px solid #334155', color: 'white', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        style={{
+                            flex: 1,
+                            padding: '14px 0',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(180deg, #334155 0%, #1e293b 100%)',
+                            border: '2px solid #475569',
+                            color: '#e2e8f0',
+                            fontSize: '1.25rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)'
+                        }}
                     >
                         ▶
                     </button>
                 </div>
 
-                {/* Lower control row: Soft Drop, Hard Drop */}
+                {/* Lower Row: Soft Drop, Hard Drop */}
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                     <button
-                        onClick={moveDown}
+                        onClick={() => moveDown(true)}
                         disabled={isGameOver}
-                        style={{ flex: 1, padding: '12px 0', borderRadius: '12px', background: '#334155', border: 'none', color: 'white', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer' }}
+                        style={{
+                            flex: 1,
+                            padding: '12px 0',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(180deg, #475569 0%, #334155 100%)',
+                            border: '2px solid #64748b',
+                            color: '#f8fafc',
+                            fontSize: '0.92rem',
+                            fontWeight: '900',
+                            cursor: 'pointer',
+                            letterSpacing: '0.5px',
+                            boxShadow: '0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)'
+                        }}
                     >
-                        ▼ 내리기
+                        ▼ 내리기 (DOWN)
                     </button>
                     <button
                         onClick={hardDrop}
                         disabled={isGameOver}
-                        style={{ flex: 1, padding: '12px 0', borderRadius: '12px', background: '#ef4444', border: 'none', color: 'white', fontSize: '0.9rem', fontWeight: '900', cursor: 'pointer' }}
+                        style={{
+                            flex: 1.2,
+                            padding: '12px 0',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)',
+                            border: '2px solid #f87171',
+                            color: '#ffffff',
+                            fontSize: '0.92rem',
+                            fontWeight: '900',
+                            cursor: 'pointer',
+                            letterSpacing: '1px',
+                            boxShadow: '0 4px 10px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255,255,255,0.3)'
+                        }}
                     >
-                        ⏬ 즉시 하강
+                        ⚡ 즉시 하강 (DROP)
                     </button>
                 </div>
             </div>

@@ -16,14 +16,23 @@ import { io } from 'socket.io-client';
 import { GlobalSessionProvider } from './context/GlobalSessionContext';
 import RightSidebar from './components/RightSidebar';
 import ScrollToTop from './utils/ScrollToTop';
+import { preloadGameAssets } from './utils/assetPreloader';
 
 const socket = io({
   transports: ['polling', 'websocket'],
   reconnection: true,
   reconnectionAttempts: Infinity,
-  reconnectionDelay: 500,
-  reconnectionDelayMax: 3000,
-  timeout: 10000
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 30000
+});
+
+socket.on('connect', () => {
+  console.log('[Socket] Connected to server successfully:', socket.id);
+});
+
+socket.on('connect_error', (err) => {
+  console.warn('[Socket] Connection warning:', err?.message || err);
 });
 
 // Auto-reconnect when mobile screen turns back on or browser tab gains focus
@@ -210,7 +219,7 @@ function AppLayout({ socket, isMobileMode, setIsMobileMode }) {
             <Route path="/topic/:id" element={<TopicDetail socket={socket} />} />
             <Route path="/quiz/:topicId/:subId" element={<QuizDetail socket={socket} />} />
             <Route path="/ladder" element={<Ladder socket={socket} />} />
-            <Route path="/timeattack" element={<TimeAttack />} />
+            <Route path="/timeattack" element={<TimeAttack socket={socket} />} />
             <Route path="/spot-difference" element={<SpotDifference socket={socket} />} />
             <Route path="/fortune" element={<Fortune socket={socket} />} />
             <Route path="/card-game" element={<CardGame socket={socket} />} />
@@ -252,6 +261,10 @@ function AppLayout({ socket, isMobileMode, setIsMobileMode }) {
 
 function App() {
   const [isMobileMode, setIsMobileMode] = useState(false);
+
+  useEffect(() => {
+    preloadGameAssets();
+  }, []);
 
   return (
     <ErrorBoundary>

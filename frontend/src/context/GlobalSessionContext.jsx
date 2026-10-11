@@ -351,8 +351,10 @@ export function GlobalSessionProvider({ children, socket }) {
         };
 
         syncSubScreenRoom();
-        const interval = setInterval(syncSubScreenRoom, 2000);
-        return () => clearInterval(interval);
+        socket.on('connect', syncSubScreenRoom);
+        return () => {
+            socket.off('connect', syncSubScreenRoom);
+        };
     }, [onlinePin, socket, isSubScreen]);
 
     // BroadcastChannel synchronization between Main Screen and Sub-Monitor

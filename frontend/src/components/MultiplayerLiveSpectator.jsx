@@ -57,7 +57,8 @@ function SpectatorCardMatchView({ gameData, activeTheme }) {
                 boxSizing: 'border-box'
             }}>
                 <span>🎯 시도: <strong style={{ color: '#2563eb' }}>{moves}회</strong></span>
-                <span>🧩 매칭: <strong style={{ color: '#16a34a' }}>{matched.length / 2} / 10쌍</strong></span>
+                <span>🧩 매칭: <strong style={{ color: '#16a34a' }}>{Math.floor(matched.length / 2)} / 10쌍</strong></span>
+                <span>🏆 점수: <strong style={{ color: '#ea580c' }}>{Math.floor(matched.length / 2) * 10}점</strong></span>
             </div>
 
             {/* 20 Cards Grid: Explicit 5 cols x 4 rows, Aspect Ratio 5/4, Perfectly Centered */}
@@ -165,69 +166,163 @@ function SpectatorCardMatchView({ gameData, activeTheme }) {
 
 // 2. Mini Tetris Board Spectator
 function SpectatorTetrisView({ gameData }) {
-    const grid = gameData?.grid || Array(180).fill(null); // 10 cols x 18 rows
+    const grid = gameData?.grid || Array(200).fill(null); // 10 cols x 20 rows (200 cells)
     const lines = gameData?.lines || 0;
     const score = gameData?.score || 0;
+    const round = gameData?.round || 1;
 
     return (
         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.78rem', color: '#64748b', fontWeight: '800' }}>
-                <span>🏆 점수: <strong style={{ color: '#9333ea' }}>{score.toLocaleString()}</strong></span>
-                <span>🧱 제거 줄: <strong style={{ color: '#2563eb' }}>{lines}줄</strong></span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.76rem', color: '#64748b', fontWeight: '800' }}>
+                <span>🏆 <strong style={{ color: '#0284c7' }}>{score.toLocaleString()}점</strong></span>
+                <span>⚡ <strong style={{ color: '#d97706' }}>ROUND {round}</strong></span>
+                <span>🧱 <strong style={{ color: '#16a34a' }}>{lines}줄</strong></span>
             </div>
 
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(10, 1fr)',
-                gap: '2px',
-                background: '#090d16',
-                padding: '6px',
-                borderRadius: '10px',
-                border: '2px solid #1e293b',
+                gap: '1px',
+                background: '#040711',
+                padding: '4px',
+                borderRadius: '8px',
+                border: '2px solid #334155',
                 width: '100%',
-                maxWidth: '220px',
-                aspectRatio: '10/18',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                maxWidth: '200px',
+                aspectRatio: '10/20',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
             }}>
-                {grid.map((cell, idx) => (
-                    <div
-                        key={idx}
-                        style={{
-                            borderRadius: '2px',
-                            background: cell ? (typeof cell === 'string' && cell.startsWith('#') ? cell : '#38bdf8') : 'rgba(255,255,255,0.03)',
-                            border: cell ? '1px solid rgba(255,255,255,0.3)' : 'none',
-                            boxShadow: cell ? 'inset 0 0 3px rgba(255,255,255,0.4)' : 'none'
-                        }}
-                    />
-                ))}
+                {grid.map((cell, idx) => {
+                    const isFilled = !!cell;
+                    return (
+                        <div
+                            key={idx}
+                            style={{
+                                borderRadius: '1.5px',
+                                background: isFilled ? (typeof cell === 'string' && cell.startsWith('#') ? cell : '#38bdf8') : 'rgba(255,255,255,0.02)',
+                                borderTop: isFilled ? '1.5px solid rgba(255,255,255,0.7)' : 'none',
+                                borderLeft: isFilled ? '1.5px solid rgba(255,255,255,0.4)' : 'none',
+                                borderRight: isFilled ? '1.5px solid rgba(0,0,0,0.6)' : 'none',
+                                borderBottom: isFilled ? '1.5px solid rgba(0,0,0,0.8)' : 'none',
+                                boxShadow: isFilled ? 'inset 1px 1px 1px rgba(255,255,255,0.3)' : 'none'
+                            }}
+                        />
+                    );
+                })}
             </div>
         </div>
     );
 }
 
-// 3. Mini Brick Breaker Spectator
+// 3. Mini Brick Breaker Spectator (Arkanoid Vaus)
 function SpectatorBrickBreakerView({ gameData }) {
     const paddlePos = gameData?.paddlePos ?? 50;
     const score = gameData?.score || 0;
+    const round = gameData?.round || 1;
+    const lives = gameData?.lives ?? 3;
 
     return (
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '800' }}>
-                🏆 점수: <strong style={{ color: '#2563eb' }}>{score.toLocaleString()}</strong>
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: '#64748b', fontWeight: '800' }}>
+                <span>🏆 <strong style={{ color: '#0284c7' }}>{score.toLocaleString()}점</strong></span>
+                <span>⚡ <strong style={{ color: '#d97706' }}>ROUND {round}</strong></span>
+                <span>🚀 <strong style={{ color: '#ef4444' }}>{lives}L</strong></span>
             </div>
-            <div style={{ position: 'relative', width: '100%', height: '180px', background: '#0f172a', borderRadius: '12px', border: '2px solid #334155', overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', padding: '12px 10px 0 10px' }}>
-                    {Array.from({ length: 18 }).map((_, i) => (
-                        <div key={i} style={{ height: '10px', background: ['#ef4444', '#f59e0b', '#10b981', '#3b82f6'][i % 4], borderRadius: '2px' }} />
-                    ))}
+            <div style={{ position: 'relative', width: '100%', height: '180px', background: '#060913', borderRadius: '10px', border: '2px solid #334155', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+                {/* 3D Arkanoid Brick Wall */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '3px', padding: '10px 8px 0 8px' }}>
+                    {['#cbd5e1', '#ef4444', '#eab308', '#3b82f6', '#10b981'].flatMap((color, rowIdx) =>
+                        Array.from({ length: 8 }).map((_, colIdx) => (
+                            <div
+                                key={`${rowIdx}-${colIdx}`}
+                                style={{
+                                    height: '9px',
+                                    background: color,
+                                    borderRadius: '1.5px',
+                                    borderTop: '1px solid rgba(255,255,255,0.7)',
+                                    borderLeft: '1px solid rgba(255,255,255,0.4)',
+                                    borderRight: '1px solid rgba(0,0,0,0.5)',
+                                    borderBottom: '1px solid rgba(0,0,0,0.7)',
+                                    boxShadow: 'inset 0 0 2px rgba(255,255,255,0.3)'
+                                }}
+                            />
+                        ))
+                    )}
                 </div>
-                <div style={{ position: 'absolute', bottom: '15px', left: `${paddlePos}%`, transform: 'translateX(-50%)', width: '45px', height: '8px', background: '#38bdf8', borderRadius: '4px', boxShadow: '0 0 8px #38bdf8' }} />
+
+                {/* Vaus Metallic Paddle */}
+                <div style={{
+                    position: 'absolute',
+                    bottom: '12px',
+                    left: `${paddlePos}%`,
+                    transform: 'translateX(-50%)',
+                    width: '50px',
+                    height: '10px',
+                    background: '#cbd5e1',
+                    borderRadius: '5px',
+                    border: '1.5px solid #94a3b8',
+                    boxShadow: '0 0 10px rgba(56, 189, 248, 0.6)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                }}>
+                    <div style={{ width: '12px', height: '4px', background: '#38bdf8', borderRadius: '1px' }} />
+                </div>
             </div>
         </div>
     );
 }
 
-// 4. Mini Generic / Fallback Game Spectator
+// 4. Mini Airplane Game (Xenon 2: Megablast) Spectator View
+function SpectatorAirplaneView({ gameData }) {
+    const shield = gameData?.shield !== undefined ? gameData.shield : 100;
+    const bombs = gameData?.bombs !== undefined ? gameData.bombs : 3;
+    const lives = gameData?.lives !== undefined ? gameData.lives : 3;
+    const stage = gameData?.stage || 'SECTOR 1';
+    const score = gameData?.score || 0;
+
+    return (
+        <div style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'radial-gradient(circle at center, #0f172a 0%, #020617 100%)',
+            borderRadius: '12px',
+            padding: '12px',
+            color: '#f8fafc',
+            border: '1.5px solid #334155',
+            boxSizing: 'border-box'
+        }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                <span style={{ color: '#38bdf8' }}>🚀 {stage}</span>
+                <span style={{ color: '#fbbf24' }}>🏆 {score.toLocaleString()}점</span>
+            </div>
+
+            {/* Fighter Plane Graphic */}
+            <div style={{ position: 'relative', width: '80px', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize: '3.2rem', filter: 'drop-shadow(0 0 10px rgba(56, 189, 248, 0.6))', animation: 'levitate 1.5s ease-in-out infinite' }}>
+                    🚀
+                </div>
+            </div>
+
+            {/* Shield and Bombs */}
+            <div style={{ width: '100%', maxWidth: '240px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#94a3b8', marginBottom: '3px' }}>
+                    <span>🛡️ SHIELD {shield}%</span>
+                    <span>💣 폭탄: {bombs}개</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${shield}%`, height: '100%', background: shield > 30 ? 'linear-gradient(90deg, #06b6d4, #3b82f6)' : '#ef4444' }} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// 5. Mini Generic / Fallback Game Spectator
 function SpectatorGenericView({ gameData, gameId }) {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0', minHeight: '160px' }}>
@@ -260,11 +355,16 @@ export default function MultiplayerLiveSpectator({
     // Merge participant roster with live stream updates
     const playerList = participants.map((p, idx) => {
         const stream = playerStreams[p.nickname] || {};
+        const streamScore = typeof stream.score === 'number' 
+            ? stream.score 
+            : (stream.gameData?.matched?.length ? Math.floor(stream.gameData.matched.length / 2) * 10 : 0);
+        const effectiveScore = Math.max(p.score || 0, streamScore);
+
         return {
             id: p.id || `p-${idx}`,
             nickname: p.nickname || `참여자 ${idx + 1}`,
             groupId: p.groupId,
-            score: p.score !== undefined ? p.score : (stream.score !== undefined ? stream.score : 0),
+            score: effectiveScore,
             isAlive: stream.isPractice ? false : (stream.isAlive !== undefined ? stream.isAlive : true),
             isFinished: stream.isPractice ? true : (stream.isFinished !== undefined ? stream.isFinished : false),
             gameData: stream.gameData || null,
@@ -275,11 +375,15 @@ export default function MultiplayerLiveSpectator({
     // If no participants registered yet, create placeholders from streams
     Object.entries(playerStreams).forEach(([nick, stream]) => {
         if (!playerList.some(p => p.nickname === nick)) {
+            const streamScore = typeof stream.score === 'number' 
+                ? stream.score 
+                : (stream.gameData?.matched?.length ? Math.floor(stream.gameData.matched.length / 2) * 10 : 0);
+
             playerList.push({
                 id: `stream-${nick}`,
                 nickname: nick,
                 groupId: stream.groupId,
-                score: stream.score || 0,
+                score: streamScore,
                 isAlive: stream.isPractice ? false : (stream.isAlive !== undefined ? stream.isAlive : true),
                 isFinished: stream.isPractice ? true : (stream.isFinished || false),
                 gameData: stream.gameData || null,
@@ -498,6 +602,8 @@ export default function MultiplayerLiveSpectator({
                                     <SpectatorTetrisView gameData={player.gameData} />
                                 ) : gameId === 'brick_breaker' ? (
                                     <SpectatorBrickBreakerView gameData={player.gameData} />
+                                ) : (gameId === 'timeattack' || gameId === 'airplane_game') ? (
+                                    <SpectatorAirplaneView gameData={player.gameData} />
                                 ) : (
                                     <SpectatorGenericView gameData={player.gameData} gameId={gameId} />
                                 )}

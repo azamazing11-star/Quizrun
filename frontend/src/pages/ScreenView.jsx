@@ -11,6 +11,7 @@ import { getParticipantJoinUrl } from '../utils/url';
 import Ladder from './Ladder';
 import { StockGameScreenView, STOCK_DATA_2026 } from '../components/StockGame';
 import MultiplayerLiveSpectator from '../components/MultiplayerLiveSpectator';
+import WordBombArena from '../components/WordBombArena';
 
 const GROUP_COLORS = [
     '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -179,7 +180,17 @@ export default function ScreenView({ socket }) {
         publicUrl: contextPublicUrl || '',
         confetti: false,
         offlineWinnerList: [],
-        isMediaMutedOnScreen: false
+        isMediaMutedOnScreen: false,
+        gameId: '',
+        isGame: false,
+        gameSyllable: '가',
+        gameTimeLeft: 15,
+        gameEliminated: [],
+        gameUsedWords: [],
+        gameWinner: null,
+        activePlayerIndex: 0,
+        activePlayerId: null,
+        activePlayerNickname: ''
     });
 
     const channelRef = useRef(null);
@@ -361,8 +372,52 @@ export default function ScreenView({ socket }) {
         socket.on('stock_game:participant_joined', handleParticipantJoined);
 
         const onRoomMsg = (msg) => {
-            if (msg && msg.event === 'stock_game:state_sync' && msg.payload) {
+            if (!msg || !msg.event) return;
+            if (msg.event === 'stock_game:state_sync' && msg.payload) {
                 handleStockSync(msg.payload);
+            } else if (msg.event === 'game:start') {
+                if (msg.payload && msg.payload.gameId) {
+                    setScreenData(prev => ({
+                        ...prev,
+                        isGame: true,
+                        gameId: msg.payload.gameId,
+                        gameState: 'game_active',
+                        gameSyllable: msg.payload.syllable || prev.gameSyllable || '가',
+                        gameTimeLeft: msg.payload.timeLeft !== undefined ? msg.payload.timeLeft : 15,
+                        activePlayerId: msg.payload.activePlayerId,
+                        activePlayerNickname: msg.payload.activePlayerNickname,
+                        activePlayerIndex: msg.payload.activePlayerIndex ?? 0,
+                        gameEliminated: [],
+                        gameUsedWords: [],
+                        gameWinner: null
+                    }));
+                }
+            } else if (msg.event === 'game:word_bomb_state') {
+                if (msg.payload) {
+                    setScreenData(prev => ({
+                        ...prev,
+                        isGame: true,
+                        gameId: 'word_bomb',
+                        gameState: 'game_active',
+                        gameSyllable: msg.payload.syllable !== undefined ? msg.payload.syllable : prev.gameSyllable,
+                        gameTimeLeft: msg.payload.timeLeft !== undefined ? msg.payload.timeLeft : prev.gameTimeLeft,
+                        activePlayerId: msg.payload.activePlayerId !== undefined ? msg.payload.activePlayerId : prev.activePlayerId,
+                        activePlayerNickname: msg.payload.activePlayerNickname !== undefined ? msg.payload.activePlayerNickname : prev.activePlayerNickname,
+                        activePlayerIndex: msg.payload.activePlayerIndex !== undefined ? msg.payload.activePlayerIndex : prev.activePlayerIndex,
+                        gameEliminated: msg.payload.eliminated !== undefined ? msg.payload.eliminated : prev.gameEliminated,
+                        gameUsedWords: msg.payload.usedWords !== undefined ? msg.payload.usedWords : prev.gameUsedWords
+                    }));
+                }
+            } else if (msg.event === 'game:word_bomb_end') {
+                if (msg.payload) {
+                    setScreenData(prev => ({
+                        ...prev,
+                        gameWinner: msg.payload.winner,
+                        rankings: msg.payload.rankings || prev.rankings,
+                        participants: msg.payload.participants || prev.participants,
+                        gameUsedWords: msg.payload.usedWords || prev.gameUsedWords
+                    }));
+                }
             }
         };
         const handleNetworkUpdate = (data) => {
@@ -611,8 +666,48 @@ export default function ScreenView({ socket }) {
                 alignItems: 'center',
                 justifyContent: 'center'
             }}>
-                {/* --- SUB-VIEW 0: MULTIPLAYER MINI GAME LIVE SPECTATOR (1위, 2위, 3위) --- */}
-                {(viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game')) && (
+                {/* --- SUB-VIEW 0-A: WORD BOMB ARENA (Main & Sub Monitor Synchronized) --- */}
+                {(screenData.gameId === 'word_bomb' && (screenData.isGame || viewMode === 'multiplayer_game' || screenData.gameState === 'game_active')) && (
+                    <div style={{
+                        flex: 1,
+                        width: '100%',
+                        maxWidth: '1000px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center'
+                    }}>
+                        <WordBombArena
+                            syllable={screenData.gameSyllable || '가'}
+                            timeLeft={screenData.gameTimeLeft !== undefined ? screenData.gameTimeLeft : 15}
+                            participants={activeParticipants}
+                            activePlayerIndex={screenData.activePlayerIndex || 0}
+                            eliminated={screenData.gameEliminated || []}
+                            usedWords={screenData.gameUsedWords || []}
+                            winner={screenData.gameWinner}
+                            rankings={screenData.rankings}
+                            isHost={false}
+                            isSubScreen={true}
+                            onSubmitWord={(word) => {
+                                if (channelRef.current) {
+                                    channelRef.current.postMessage({
+                                        type: 'SCREEN_WORD_SUBMIT',
+                                        payload: { word }
+                                    });
+                                }
+                                if (socket && activePin) {
+                                    socket.emit('room:message', {
+                                        pin: activePin,
+                                        event: 'game:submit_word',
+                                        payload: { word }
+                                    });
+                                }
+                            }}
+                        />
+                    </div>
+                )}
+
+                {/* --- SUB-VIEW 0-B: MULTIPLAYER MINI GAME LIVE SPECTATOR (Arcade games) --- */}
+                {screenData.gameId !== 'word_bomb' && (viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game' && screenData.gameId !== 'ox_run' && screenData.gameId !== 'catch_mind')) && (
                     <div style={{
                         flex: 1,
                         width: '100%',
@@ -631,7 +726,7 @@ export default function ScreenView({ socket }) {
                 )}
 
                 {/* --- SUB-VIEW A: HOME WAITING (Robots Visual) --- */}
-                {!((viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game'))) && (viewMode === 'home' || gameState === 'waiting' || gameState === 'setup' || gameState === 'lobby') && (
+                {screenData.gameId !== 'word_bomb' && !((viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game' && screenData.gameId !== 'ox_run' && screenData.gameId !== 'catch_mind'))) && (viewMode === 'home' || gameState === 'waiting' || gameState === 'setup' || gameState === 'lobby') && (
                     <div style={{
                         flex: 1,
                         textAlign: 'center',

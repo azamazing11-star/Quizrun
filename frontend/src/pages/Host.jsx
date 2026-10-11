@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Users, Play, ChevronRight, Trophy, Home, ArrowLeft, Zap, ClipboardCheck, Type, Edit3, Tv, Eye, X } from 'lucide-react';
+import { Users, Play, ChevronRight, Trophy, Home, ArrowLeft, Zap, ClipboardCheck, Type, Edit3, Tv, Eye, X, Music, Volume2, VolumeX } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useGlobalSession } from '../context/GlobalSessionContext';
 import QRCode from 'react-qr-code';
@@ -27,9 +27,11 @@ import {
 import CardMatchGame from '../components/CardMatchGame';
 import CardThemeBar from '../components/CardThemeBar';
 import TetrisGame from '../components/TetrisGame';
+import AirplaneGame from '../components/AirplaneGame';
 import MultiplayerLiveSpectator from '../components/MultiplayerLiveSpectator';
 import StockGame from '../components/StockGame';
 import RightSidebar from '../components/RightSidebar';
+import WordBombArena from '../components/WordBombArena';
 
 // Group colors for the racing track
 const GROUP_COLORS = [
@@ -140,6 +142,32 @@ function RaceTrack({ groupScores, participants, totalScore }) {
     );
 }
 
+// Multiplayer Mini Game Constants
+const SYLLABLES = ['사', '기', '학', '바', '전', '수', '공', '자', '정', '이', '하', '대', '한', '국', '물', '불', '가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하'];
+const OX_QUESTIONS = [
+    { q: "딸기는 생물학적으로 채소(과채류)에 속한다.", a: "O" },
+    { q: "호랑이는 고양이과 동물로서 물과 수영을 극도로 싫어한다.", a: "X" },
+    { q: "지구의 나이는 약 45억 년으로 추정된다.", a: "O" },
+    { q: "펭귄은 남극에만 살고, 북극에는 살지 않는다.", a: "O" },
+    { q: "바나나는 여러 해 살이 풀로서 나무가 아닌 거대 풀이다.", a: "O" },
+    { q: "달팽이는 이빨이 없다.", a: "X" },
+    { q: "금붕어의 기억력은 약 3초밖에 안 된다.", a: "X" },
+    { q: "인간의 뇌는 통증을 느끼는 통각 세포가 없다.", a: "O" },
+    { q: "하마의 땀은 자외선을 차단해주는 붉은색이다.", a: "O" },
+    { q: "에펠탑은 여름철 기온이 올라가면 열팽창으로 인해 더 키가 커진다.", a: "O" },
+    { q: "사막에 사는 낙타의 혹 속에는 비상시 마실 수 있는 물이 들어있다.", a: "X" },
+    { q: "지구상에서 가장 건조하고 비가 내리지 않는 곳은 사하라 사막이다.", a: "X" },
+    { q: "만리장성은 우주선이나 인공위성에서 육안으로 쉽게 관측이 가능하다.", a: "X" },
+    { q: "북극곰의 피부색은 털 색깔과 마찬가지로 하얀색이다.", a: "X" },
+    { q: "아보카도는 과일이 아니라 채소류에 속한다.", a: "X" },
+    { q: "토마토는 세계에서 가장 많이 소비되는 채소이다.", a: "O" },
+    { q: "바람이 불 때 온도가 더 춥게 느껴지는 현상을 체감온도라고 한다.", a: "O" },
+    { q: "피자는 원래 이탈리아 귀족들이 먹던 고급 요리에서 유래했다.", a: "X" },
+    { q: "콜라의 원래 제형 색깔은 초록색이었다.", a: "X" },
+    { q: "달에 가면 지구보다 중력이 낮아 몸무게가 6분의 1로 줄어든다.", a: "O" }
+];
+const CATCH_MIND_WORDS = ['사과', '바나나', '피자', '축구', '눈사람', '강아지', '고양이', '의자', '우산', '비행기', '자동차', '텔레비전', '노트북', '자전거', '꽃병', '안경'];
+
 export default function Host({ socket }) {
     const location = useLocation();
     const navigate = useNavigate();
@@ -157,7 +185,7 @@ export default function Host({ socket }) {
     const isGame = Boolean(location.state?.isGame ?? savedHostState?.isGame);
     const initialGameId = location.state?.gameId || savedHostState?.gameId || '';
     const initialGameTitle = location.state?.gameTitle || savedHostState?.gameTitle || '';
-    const isLobbyMultiplayer = ['word_bomb', 'ox_run', 'catch_mind'].includes(initialGameId);
+    const isLobbyMultiplayer = ['ox_run', 'catch_mind'].includes(initialGameId);
 
     const quizId = location.state?.quizId || 'general';
 
@@ -235,6 +263,47 @@ export default function Host({ socket }) {
     // Live Player Streams for 1st, 2nd, 3rd place spectating
     const [playerStreams, setPlayerStreams] = useState({});
     const [cardMatchThemeId, setCardMatchThemeId] = useState('flag');
+
+    // Multiplayer Game States (Word Bomb, OX, Catch Mind)
+    const [activePlayerIndex, setActivePlayerIndex] = useState(0);
+    const [gameSyllable, setGameSyllable] = useState('');
+    const [gameTimeLeft, setGameTimeLeft] = useState(15);
+    const [gameEliminated, setGameEliminated] = useState([]);
+    const [gameUsedWords, setGameUsedWords] = useState([]);
+    const [gameWinner, setGameWinner] = useState(null);
+    const [gameRankings, setGameRankings] = useState([]);
+    
+    // OX Game states
+    const [oxQuestionIndex, setOxQuestionIndex] = useState(0);
+    const [oxChoices, setOxChoices] = useState({}); // { playerId: choice }
+    const [oxReveal, setOxReveal] = useState(false);
+    
+    // Catch Mind states
+    const [painterId, setPainterId] = useState('');
+    const [painterNickname, setPainterNickname] = useState('');
+    const [catchMindSecretWord, setCatchMindSecretWord] = useState('');
+    const [catchMindWinner, setCatchMindWinner] = useState(null);
+    const [canvasLines, setCanvasLines] = useState([]);
+
+    // BGM State for Carefree playback (for all GameRun except stock_game & ladder, and all QuizRun)
+    const [isBgmEnabled, setIsBgmEnabled] = useState(() => {
+        try {
+            return localStorage.getItem('quizrun_bgm_enabled') !== 'false';
+        } catch (e) {
+            return true;
+        }
+    });
+    const bgmAudioRef = useRef(null);
+
+    const toggleBgm = () => {
+        setIsBgmEnabled(prev => {
+            const next = !prev;
+            try {
+                localStorage.setItem('quizrun_bgm_enabled', String(next));
+            } catch (e) {}
+            return next;
+        });
+    };
 
     // Listen to live player stream events
     useEffect(() => {
@@ -345,7 +414,14 @@ export default function Host({ socket }) {
             publicUrl: location.state?.publicUrl || '',
             confetti: offlineConfetti,
             offlineWinnerList: offlineScores?.slice()?.sort((a, b) => b.score - a.score) || [],
-            isMediaMutedOnScreen: isScreenConnected ? (audioOutputTarget === 'host' || audioOutputTarget === 'none') : false
+            isMediaMutedOnScreen: isScreenConnected ? (audioOutputTarget === 'host' || audioOutputTarget === 'none') : false,
+            gameSyllable: overrides.gameSyllable !== undefined ? overrides.gameSyllable : gameSyllable,
+            gameTimeLeft: overrides.gameTimeLeft !== undefined ? overrides.gameTimeLeft : gameTimeLeft,
+            gameEliminated: overrides.gameEliminated !== undefined ? overrides.gameEliminated : gameEliminated,
+            gameUsedWords: overrides.gameUsedWords !== undefined ? overrides.gameUsedWords : gameUsedWords,
+            gameWinner: overrides.gameWinner !== undefined ? overrides.gameWinner : gameWinner,
+            activePlayerIndex: overrides.activePlayerIndex !== undefined ? overrides.activePlayerIndex : activePlayerIndex,
+            rankings: overrides.rankings !== undefined ? overrides.rankings : gameRankings
         };
     };
 
@@ -381,6 +457,7 @@ export default function Host({ socket }) {
     const isOfflineRef = useRef(isOffline);
     isOfflineRef.current = isOffline;
     const lastScreenPingRef = useRef(0);
+    const handleWordSubmitRef = useRef(null);
 
     useEffect(() => {
         let channel;
@@ -413,6 +490,10 @@ export default function Host({ socket }) {
                     } else {
                         setShowAnswer(true);
                         playSound('reveal');
+                    }
+                } else if (type === 'SCREEN_WORD_SUBMIT') {
+                    if (payload && payload.word && handleWordSubmitRef.current) {
+                        handleWordSubmitRef.current('screen', payload.word);
                     }
                 }
             };
@@ -452,7 +533,8 @@ export default function Host({ socket }) {
         gameState, currentQuestion, currentOptions, correctIndex, correctAnswer, 
         currentExplanation, offlineShowAnswer, showAnswer, currentQuestionIndex, 
         totalQuestions, currentPoints, currentMediaUrl, buzzedInfo, judgeResult, 
-        groupScores, participants, offlineScores, offlineConfetti, audioOutputTarget, isScreenConnected
+        groupScores, participants, offlineScores, offlineConfetti, audioOutputTarget, isScreenConnected,
+        gameId, gameSyllable, gameTimeLeft, gameEliminated, gameUsedWords, gameWinner, activePlayerIndex, gameRankings
     ]);
 
     const handleBackToSetupClick = () => {
@@ -471,25 +553,6 @@ export default function Host({ socket }) {
             setGameId(location.state.gameId);
         }
     }, [location.state?.gameId]);
-
-    const [activePlayerIndex, setActivePlayerIndex] = useState(0);
-    const [gameSyllable, setGameSyllable] = useState('');
-    const [gameTimeLeft, setGameTimeLeft] = useState(15);
-    const [gameEliminated, setGameEliminated] = useState([]);
-    const [gameUsedWords, setGameUsedWords] = useState([]);
-    const [gameWinner, setGameWinner] = useState(null);
-    
-    // OX Game states
-    const [oxQuestionIndex, setOxQuestionIndex] = useState(0);
-    const [oxChoices, setOxChoices] = useState({}); // { playerId: choice }
-    const [oxReveal, setOxReveal] = useState(false);
-    
-    // Catch Mind states
-    const [painterId, setPainterId] = useState('');
-    const [painterNickname, setPainterNickname] = useState('');
-    const [catchMindSecretWord, setCatchMindSecretWord] = useState('');
-    const [catchMindWinner, setCatchMindWinner] = useState(null);
-    const [canvasLines, setCanvasLines] = useState([]);
 
     useEffect(() => {
         const handleTunnelUpdate = (data) => {
@@ -631,35 +694,44 @@ export default function Host({ socket }) {
     }, [socket]);
 
     useEffect(() => {
-        if (gameState !== 'game_active' || !gameId) return;
-        // 주식게임은 BGM 없음
-        if (gameId === 'stock_game') return;
-        
-        let bgmFile = '/audio/science_is_fun.mp3'; // Default (e.g. word_bomb, minesweeper)
-        if (gameId === 'ox_run' || gameId === 'whack_mole' || gameId === 'tetris') {
-            bgmFile = '/audio/new_rally_x.mp3';
-        } else if (gameId === 'janggi' || gameId === 'omok' || gameId === 'gostop' || gameId === 'yutnori') {
-            bgmFile = '/audio/bgm.mp3';
-        } else if (gameId === 'brick_breaker' || gameId === 'rock_paper_scissors' || gameId === 'speed_numbers') {
-            bgmFile = '/audio/arcade_theme.mp3';
-        } else if (gameId === 'chess' || gameId === 'card_poker' || gameId === 'othello' || gameId === 'card_match') {
-            bgmFile = '/audio/chill_theme.mp3';
-        } else if (gameId === 'catch_mind' || gameId === 'memory_game') {
-            bgmFile = '/audio/puzzle_theme.mp3';
-        } else if (gameId === 'pass_bomb') {
-            bgmFile = '/audio/battle_theme.mp3';
+        // 주식 게임, 사다리 타기, 테트리스, 벽돌깨기, 비행기게임은 자체 전용 BGM 사용 (carefree 제외)
+        const isGameModeActive = gameState === 'game_active' && gameId && gameId !== 'stock_game' && gameId !== 'ladder' && gameId !== 'tetris' && gameId !== 'brick_breaker' && gameId !== 'timeattack' && gameId !== 'airplane_game';
+        const isQuizActive = gameState === 'question';
+        const shouldPlay = isBgmEnabled && (isGameModeActive || isQuizActive);
+
+        if (!shouldPlay) {
+            if (bgmAudioRef.current) {
+                bgmAudioRef.current.pause();
+            }
+            return;
         }
-        
-        const audio = new Audio(bgmFile);
-        audio.loop = true;
-        audio.volume = 0.25;
-        
-        audio.play().catch(e => console.log('BGM play blocked on host:', e));
-        
+
+        const bgmFile = '/audio/carefree.mp3';
+
+        if (!bgmAudioRef.current) {
+            bgmAudioRef.current = new Audio(bgmFile);
+            bgmAudioRef.current.loop = true;
+        } else if (!bgmAudioRef.current.src.endsWith('carefree.mp3')) {
+            bgmAudioRef.current.pause();
+            bgmAudioRef.current = new Audio(bgmFile);
+            bgmAudioRef.current.loop = true;
+        }
+
+        // If media is playing on question phase, lower volume so questions are audible
+        if (isQuizActive && currentMediaUrl) {
+            bgmAudioRef.current.volume = 0.05;
+        } else {
+            bgmAudioRef.current.volume = 0.22;
+        }
+
+        bgmAudioRef.current.play().catch(e => console.log('BGM play blocked on host:', e));
+
         return () => {
-            audio.pause();
+            if (bgmAudioRef.current) {
+                bgmAudioRef.current.pause();
+            }
         };
-    }, [gameState, gameId]);
+    }, [gameState, gameId, isBgmEnabled, currentMediaUrl]);
 
     useEffect(() => {
         if (gameId === 'stock_game') {
@@ -900,10 +972,15 @@ export default function Host({ socket }) {
                 if (res.success) {
                     setPin(res.pin);
                     setQuizTitle(res.title);
-                    if (res.participants && Array.isArray(res.participants) && res.participants.length > 0) {
-                        setParticipants(res.participants);
+                    const currentParticipants = (res.participants && Array.isArray(res.participants) && res.participants.length > 0)
+                        ? res.participants
+                        : participants;
+                    if (currentParticipants.length > 0) {
+                        setParticipants(currentParticipants);
                     }
-                    if (isLobbyMultiplayer && !isOffline) {
+                    if (gameId === 'word_bomb') {
+                        startMultiplayerGame(res.pin || targetPin, currentParticipants);
+                    } else if (isLobbyMultiplayer && !isOffline) {
                         setGameState('lobby');
                     } else {
                         setGameState('game_active');
@@ -1017,39 +1094,20 @@ export default function Host({ socket }) {
         return () => clearInterval(interval);
     }, [gameState, painterId, catchMindWinner]);
 
-    // Word List for Word Bomb
-    const SYLLABLES = ['사', '기', '학', '바', '전', '수', '공', '자', '정', '이', '하', '대', '한', '국', '물', '불', '가', '나', '다', '라', '마', '바', '사', '아', '자', '차', '카', '타', '파', '하'];
-    
-    // OX Questions
-    const OX_QUESTIONS = [
-        { q: "딸기는 생물학적으로 채소(과채류)에 속한다.", a: "O" },
-        { q: "호랑이는 고양이과 동물로서 물과 수영을 극도로 싫어한다.", a: "X" },
-        { q: "지구의 나이는 약 45억 년으로 추정된다.", a: "O" },
-        { q: "펭귄은 남극에만 살고, 북극에는 살지 않는다.", a: "O" },
-        { q: "바나나는 여러 해 살이 풀로서 나무가 아닌 거대 풀이다.", a: "O" },
-        { q: "달팽이는 이빨이 없다.", a: "X" },
-        { q: "금붕어의 기억력은 약 3초밖에 안 된다.", a: "X" },
-        { q: "인간의 뇌는 통증을 느끼는 통각 세포가 없다.", a: "O" },
-        { q: "하마의 땀은 자외선을 차단해주는 붉은색이다.", a: "O" },
-        { q: "에펠탑은 여름철 기온이 올라가면 열팽창으로 인해 더 키가 커진다.", a: "O" },
-        { q: "사막에 사는 낙타의 혹 속에는 비상시 마실 수 있는 물이 들어있다.", a: "X" },
-        { q: "지구상에서 가장 건조하고 비가 내리지 않는 곳은 사하라 사막이다.", a: "X" },
-        { q: "만리장성은 우주선이나 인공위성에서 육안으로 쉽게 관측이 가능하다.", a: "X" },
-        { q: "북극곰의 피부색은 털 색깔과 마찬가지로 하얀색이다.", a: "X" },
-        { q: "아보카도는 과일이 아니라 채소류에 속한다.", a: "X" },
-        { q: "토마토는 세계에서 가장 많이 소비되는 채소이다.", a: "O" },
-        { q: "바람이 불 때 온도가 더 춥게 느껴지는 현상을 체감온도라고 한다.", a: "O" },
-        { q: "피자는 원래 이탈리아 귀족들이 먹던 고급 요리에서 유래했다.", a: "X" },
-        { q: "콜라의 원래 제형 색깔은 초록색이었다.", a: "X" },
-        { q: "달에 가면 지구보다 중력이 낮아 몸무게가 6분의 1로 줄어든다.", a: "O" }
-    ];
-
-    // Catch Mind Words
-    const CATCH_MIND_WORDS = ['사과', '바나나', '피자', '축구', '눈사람', '강아지', '고양이', '의자', '우산', '비행기', '자동차', '텔레비전', '노트북', '자전거', '꽃병', '안경'];
-
-    const startMultiplayerGame = () => {
-        const currentPin = location.state?.pin || pin;
+    const startMultiplayerGame = (overridePin = null, overrideParticipants = null) => {
+        const currentPin = overridePin || location.state?.pin || pin;
+        const currentParticipants = (overrideParticipants && overrideParticipants.length > 0)
+            ? overrideParticipants
+            : participants;
         setGameState('game_active');
+        
+        // Ensure server room state is synchronized to game_active
+        socket.emit('room:stateUpdate', {
+            pin: currentPin,
+            state: 'game_active',
+            isGame: true,
+            gameId
+        });
         
         if (gameId === 'word_bomb') {
             const startSyllable = SYLLABLES[Math.floor(Math.random() * SYLLABLES.length)];
@@ -1058,19 +1116,42 @@ export default function Host({ socket }) {
             setGameEliminated([]);
             setGameUsedWords([]);
             setGameWinner(null);
+            setGameRankings([]);
             setActivePlayerIndex(0);
             
+            const firstPlayer = currentParticipants[0];
             socket.emit('room:message', {
                 pin: currentPin,
                 event: 'game:start',
                 payload: {
                     gameId,
-                    activePlayerId: participants[0]?.id,
-                    activePlayerNickname: participants[0]?.nickname,
+                    activePlayerId: firstPlayer ? firstPlayer.id : 'host',
+                    activePlayerNickname: firstPlayer ? firstPlayer.nickname : '호스트',
+                    activePlayerIndex: 0,
                     syllable: startSyllable,
-                    timeLeft: 15
+                    timeLeft: 15,
+                    participants: currentParticipants
                 }
             });
+
+            if (screenChannelRef.current) {
+                screenChannelRef.current.postMessage({
+                    type: 'STATE_UPDATE',
+                    payload: getScreenPayload({
+                        gameId: 'word_bomb',
+                        gameState: 'game_active',
+                        isGame: true,
+                        gameSyllable: startSyllable,
+                        gameTimeLeft: 15,
+                        gameEliminated: [],
+                        gameUsedWords: [],
+                        gameWinner: null,
+                        rankings: [],
+                        activePlayerIndex: 0,
+                        participants: currentParticipants
+                    })
+                });
+            }
         } else if (gameId === 'ox_run') {
             setOxQuestionIndex(0);
             setOxChoices({});
@@ -1093,8 +1174,8 @@ export default function Host({ socket }) {
             
             const firstPainter = participants[0];
             const secret = CATCH_MIND_WORDS[Math.floor(Math.random() * CATCH_MIND_WORDS.length)];
-            setPainterId(firstPainter.id);
-            setPainterNickname(firstPainter.nickname);
+            setPainterId(firstPainter?.id || 'host');
+            setPainterNickname(firstPainter?.nickname || '호스트');
             setCatchMindSecretWord(secret);
             setCatchMindWinner(null);
             
@@ -1103,8 +1184,8 @@ export default function Host({ socket }) {
                 event: 'game:start',
                 payload: {
                     gameId,
-                    painterId: firstPainter.id,
-                    painterNickname: firstPainter.nickname,
+                    painterId: firstPainter?.id || 'host',
+                    painterNickname: firstPainter?.nickname || '호스트',
                     secretWord: secret,
                     timeLeft: 45
                 }
@@ -1122,75 +1203,242 @@ export default function Host({ socket }) {
 
     // Word Bomb Submit Word Handler
     const handleWordSubmit = (senderId, word) => {
+        if (!word) return;
+        const cleanWord = String(word).trim();
+        const currentPin = location.state?.pin || pin;
+        if (cleanWord.length < 2) {
+            playSound('wrong');
+            socket.emit('room:message', {
+                pin: currentPin,
+                event: 'game:word_feedback',
+                payload: {
+                    playerId: senderId,
+                    text: '⚠️ 2글자 이상의 단어를 입력해주세요!'
+                }
+            });
+            return;
+        }
+        if (gameSyllable && !cleanWord.includes(gameSyllable)) {
+            playSound('wrong');
+            socket.emit('room:message', {
+                pin: currentPin,
+                event: 'game:word_feedback',
+                payload: {
+                    playerId: senderId,
+                    text: `⚠️ 제시어 '${gameSyllable}'(이)가 포함되어야 합니다!`
+                }
+            });
+            return;
+        }
+        
+        // Duplicate word check
+        if (gameUsedWords.includes(cleanWord)) {
+            playSound('wrong');
+            socket.emit('room:message', {
+                pin: currentPin,
+                event: 'game:word_feedback',
+                payload: {
+                    playerId: senderId,
+                    text: `⚠️ '${cleanWord}'(은)는 이미 제출한 답입니다!`
+                }
+            });
+            return;
+        }
+
+        const isHostOrScreen = senderId === 'host' || senderId === 'screen';
         const activePlayer = participants[activePlayerIndex];
-        if (!activePlayer || senderId !== activePlayer.id) return;
-        
-        const cleanWord = word.trim();
-        if (cleanWord.length < 2) return;
-        if (!cleanWord.includes(gameSyllable)) return;
-        if (gameUsedWords.includes(cleanWord)) return;
-        
+
+        // If there are participants and input is from mobile, ensure it matches current turn
+        if (participants.length > 0 && !isHostOrScreen) {
+            if (!activePlayer || senderId !== activePlayer.id) return;
+        }
+
         // Valid Word!
         const nextUsed = [...gameUsedWords, cleanWord];
         setGameUsedWords(nextUsed);
         playSound('correct');
-        
+
+        // Award +10 points to active player
+        let updatedParticipants = participants;
+        if (activePlayer) {
+            updatedParticipants = participants.map((p, idx) => {
+                if (idx === activePlayerIndex || p.id === activePlayer.id || p.nickname === activePlayer.nickname) {
+                    return { ...p, score: (p.score || 0) + 10 };
+                }
+                return p;
+            });
+            setParticipants(updatedParticipants);
+            if (typeof setOnlineParticipants === 'function') {
+                setOnlineParticipants(updatedParticipants);
+            }
+            socket.emit('host:adjustScore', {
+                pin: currentPin,
+                nickname: activePlayer.nickname,
+                delta: 10
+            });
+        } else if (isHostOrScreen) {
+            setTotalScore(prev => prev + 10);
+        }
+
         // Choose new syllable
         const nextSyllable = SYLLABLES[Math.floor(Math.random() * SYLLABLES.length)];
         setGameSyllable(nextSyllable);
         setGameTimeLeft(15);
-        
-        // Find next player
+
+        // Advance to next active participant if players exist
         let nextIndex = activePlayerIndex;
-        let found = false;
-        for (let i = 1; i <= participants.length; i++) {
-            const idx = (activePlayerIndex + i) % participants.length;
-            if (!gameEliminated.includes(participants[idx].id)) {
-                nextIndex = idx;
-                found = true;
-                break;
+        if (participants.length > 0) {
+            for (let i = 1; i <= participants.length; i++) {
+                const idx = (activePlayerIndex + i) % participants.length;
+                if (!gameEliminated.includes(participants[idx].id)) {
+                    nextIndex = idx;
+                    break;
+                }
             }
-        }
-        
-        if (found) {
             setActivePlayerIndex(nextIndex);
-            const currentPin = location.state?.pin || pin;
+        }
+
+        const nextActive = updatedParticipants[nextIndex];
+
+        // Broadcast to mobile and screen view
+        socket.emit('room:message', {
+            pin: currentPin,
+            event: 'game:word_bomb_state',
+            payload: {
+                activePlayerId: nextActive ? nextActive.id : 'host',
+                activePlayerNickname: nextActive ? nextActive.nickname : '호스트',
+                activePlayerIndex: nextIndex,
+                syllable: nextSyllable,
+                timeLeft: 15,
+                eliminated: gameEliminated,
+                usedWords: nextUsed,
+                participants: updatedParticipants
+            }
+        });
+
+        // Broadcast directly to sub-monitor
+        if (screenChannelRef.current) {
+            screenChannelRef.current.postMessage({
+                type: 'STATE_UPDATE',
+                payload: getScreenPayload({
+                    gameSyllable: nextSyllable,
+                    gameTimeLeft: 15,
+                    gameUsedWords: nextUsed,
+                    activePlayerIndex: nextIndex,
+                    participants: updatedParticipants
+                })
+            });
+        }
+    };
+    handleWordSubmitRef.current = handleWordSubmit;
+
+    const handleBombExplosion = () => {
+        playSound('wrong');
+        const currentPin = location.state?.pin || pin;
+
+        // Solo / Host test mode without mobile participants
+        if (participants.length === 0) {
+            const nextSyllable = SYLLABLES[Math.floor(Math.random() * SYLLABLES.length)];
+            setGameSyllable(nextSyllable);
+            setGameTimeLeft(15);
             socket.emit('room:message', {
                 pin: currentPin,
                 event: 'game:word_bomb_state',
                 payload: {
-                    activePlayerId: participants[nextIndex].id,
-                    activePlayerNickname: participants[nextIndex].nickname,
+                    activePlayerId: 'host',
+                    activePlayerNickname: '호스트',
+                    activePlayerIndex: 0,
                     syllable: nextSyllable,
                     timeLeft: 15,
-                    eliminated: gameEliminated,
-                    usedWords: nextUsed
+                    eliminated: [],
+                    usedWords: gameUsedWords
                 }
             });
+            if (screenChannelRef.current) {
+                screenChannelRef.current.postMessage({
+                    type: 'STATE_UPDATE',
+                    payload: getScreenPayload({
+                        gameSyllable: nextSyllable,
+                        gameTimeLeft: 15
+                    })
+                });
+            }
+            return;
         }
-    };
 
-    const handleBombExplosion = () => {
         const activePlayer = participants[activePlayerIndex];
         if (!activePlayer) return;
-        
-        playSound('wrong');
+
         const nextEliminated = [...gameEliminated, activePlayer.id];
         setGameEliminated(nextEliminated);
-        
+
         // Check survivors
         const survivors = participants.filter(p => !nextEliminated.includes(p.id));
-        const currentPin = location.state?.pin || pin;
-        
+
         if (survivors.length <= 1) {
             // Game Over! Winner is the survivor
-            const winnerName = survivors[0] ? survivors[0].nickname : 'None';
+            const winnerPlayer = survivors[0];
+            const winnerName = winnerPlayer ? winnerPlayer.nickname : (participants[0]?.nickname || '호스트');
+
+            let finalParticipants = participants;
+            if (winnerPlayer) {
+                finalParticipants = participants.map(p => {
+                    if (p.id === winnerPlayer.id) {
+                        return { ...p, score: (p.score || 0) + 20 };
+                    }
+                    return p;
+                });
+                setParticipants(finalParticipants);
+                if (typeof setOnlineParticipants === 'function') {
+                    setOnlineParticipants(finalParticipants);
+                }
+                socket.emit('host:adjustScore', {
+                    pin: currentPin,
+                    nickname: winnerPlayer.nickname,
+                    delta: 20
+                });
+            }
+
+            const rankings = [...finalParticipants]
+                .sort((a, b) => {
+                    const aSurvivor = !nextEliminated.includes(a.id);
+                    const bSurvivor = !nextEliminated.includes(b.id);
+                    if (aSurvivor && !bSurvivor) return -1;
+                    if (!aSurvivor && bSurvivor) return 1;
+                    return (b.score || 0) - (a.score || 0);
+                })
+                .map((p, idx) => ({
+                    rank: idx + 1,
+                    id: p.id,
+                    nickname: p.nickname,
+                    score: p.score || 0,
+                    isWinner: p.nickname === winnerName,
+                    isEliminated: nextEliminated.includes(p.id)
+                }));
+
             setGameWinner(winnerName);
+            setGameRankings(rankings);
             socket.emit('room:message', {
                 pin: currentPin,
                 event: 'game:word_bomb_end',
-                payload: { winner: winnerName }
+                payload: { 
+                    winner: winnerName,
+                    rankings,
+                    usedWords: gameUsedWords,
+                    participants: finalParticipants
+                }
             });
+            if (screenChannelRef.current) {
+                screenChannelRef.current.postMessage({
+                    type: 'STATE_UPDATE',
+                    payload: getScreenPayload({
+                        gameWinner: winnerName,
+                        gameEliminated: nextEliminated,
+                        rankings,
+                        participants: finalParticipants
+                    })
+                });
+            }
         } else {
             // Find next player
             let nextIndex = activePlayerIndex;
@@ -1205,19 +1453,32 @@ export default function Host({ socket }) {
             setGameSyllable(nextSyllable);
             setGameTimeLeft(15);
             setActivePlayerIndex(nextIndex);
-            
+
             socket.emit('room:message', {
                 pin: currentPin,
                 event: 'game:word_bomb_state',
                 payload: {
                     activePlayerId: participants[nextIndex].id,
                     activePlayerNickname: participants[nextIndex].nickname,
+                    activePlayerIndex: nextIndex,
                     syllable: nextSyllable,
                     timeLeft: 15,
                     eliminated: nextEliminated,
                     usedWords: gameUsedWords
                 }
             });
+
+            if (screenChannelRef.current) {
+                screenChannelRef.current.postMessage({
+                    type: 'STATE_UPDATE',
+                    payload: getScreenPayload({
+                        gameSyllable: nextSyllable,
+                        gameTimeLeft: 15,
+                        gameEliminated: nextEliminated,
+                        activePlayerIndex: nextIndex
+                    })
+                });
+            }
         }
     };
 
@@ -1467,6 +1728,31 @@ export default function Host({ socket }) {
                             </h2>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {/* Carefree BGM Control Toggle */}
+                            {(gameId !== 'stock_game' && gameId !== 'ladder') && (
+                                <button
+                                    onClick={toggleBgm}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        padding: '7px 14px',
+                                        background: isBgmEnabled ? '#ecfdf5' : '#f8fafc',
+                                        border: `1.5px solid ${isBgmEnabled ? '#10b981' : '#cbd5e1'}`,
+                                        borderRadius: '14px',
+                                        fontWeight: '800',
+                                        fontSize: '0.86rem',
+                                        color: isBgmEnabled ? '#065f46' : '#64748b',
+                                        cursor: 'pointer',
+                                        boxShadow: isBgmEnabled ? '0 2px 8px rgba(16, 185, 129, 0.25)' : 'none',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                    title={isBgmEnabled ? "BGM 멈추기 (일시정지)" : "BGM 다시 시작하기"}
+                                >
+                                    <Music size={16} color={isBgmEnabled ? "#059669" : "#64748b"} style={{ animation: isBgmEnabled ? 'bounce 1.2s infinite' : 'none' }} />
+                                    <span>{isBgmEnabled ? '🎵 Carefree 켜짐' : '🔇 BGM 멈춤'}</span>
+                                </button>
+                            )}
                             <button
                                 onClick={openScreenWindow}
                                 className="glass-button"
@@ -1595,7 +1881,8 @@ export default function Host({ socket }) {
                                         {gameId === 'gostop' && <GoStopGame />}
                                         {gameId === 'othello' && <OthelloGame />}
                                         {gameId === 'tetris' && <TetrisGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
-                                        {gameId === 'brick_breaker' && <BrickBreakerGame />}
+                                        {gameId === 'brick_breaker' && <BrickBreakerGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
+                                        {(gameId === 'timeattack' || gameId === 'airplane_game') && <AirplaneGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
                                         {gameId === 'memory_game' && <MemoryGame />}
                                         {gameId === 'pass_bomb' && <PassBombGame />}
                                     </div>
@@ -1742,96 +2029,20 @@ export default function Host({ socket }) {
 
                 {/* --- WORD BOMB ACTIVE UI --- */}
                 {gameId === 'word_bomb' && (
-                    <div>
-                        {gameWinner ? (
-                            <div className="animate-pop-in" style={{ padding: '2rem' }}>
-                                <div style={{ fontSize: '5rem' }}>👑</div>
-                                <h1 style={{ fontSize: '3rem', fontFamily: 'Jua, sans-serif', color: 'var(--secondary)', margin: '1rem 0' }}>{gameWinner} 승리!</h1>
-                                <p style={{ fontSize: '1.2rem', color: 'var(--text-muted)' }}>모든 라이벌을 제치고 폭탄을 피했습니다!</p>
-                                <button className="glass-button" onClick={() => setGameState('leaderboard')} style={{ marginTop: '2rem' }}>최종 결과판 가기</button>
-                            </div>
-                        ) : (
-                            <div>
-                                {/* Bomb Image & Animation */}
-                                <div style={{ position: 'relative', width: '220px', height: '220px', margin: '0 auto 2rem auto' }}>
-                                    <div style={{
-                                        fontSize: '10rem',
-                                        lineHeight: '220px',
-                                        animation: gameTimeLeft <= 4 ? 'spin 0.2s linear infinite' : 'levitate 1s ease-in-out infinite'
-                                    }}>
-                                        💣
-                                    </div>
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: '15px',
-                                        right: '15px',
-                                        width: '60px',
-                                        height: '60px',
-                                        borderRadius: '50%',
-                                        background: '#ef4444',
-                                        color: 'white',
-                                        fontSize: '2rem',
-                                        fontWeight: '900',
-                                        lineHeight: '60px',
-                                        boxShadow: '0 0 15px rgba(239,68,68,0.5)',
-                                        border: '3px solid white'
-                                    }}>
-                                        {gameTimeLeft}
-                                    </div>
-                                </div>
-
-                                <div style={{ background: '#fff1f2', border: '2px solid #ffe4e6', borderRadius: '24px', padding: '2rem', marginBottom: '2rem' }}>
-                                    <h3 style={{ margin: 0, color: '#f43f5e', fontSize: '1.4rem' }}>제시어 조건</h3>
-                                    <h1 style={{ fontSize: '5rem', margin: '1rem 0', color: '#e11d48', fontWeight: '900' }}>
-                                        {gameSyllable}
-                                    </h1>
-                                    <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>
-                                        글자가 <strong>포함된</strong> 단어를 입력해 주세요! (2글자 이상)
-                                    </p>
-                                </div>
-
-                                <div style={{ background: '#f8fafc', border: '2px solid #e2e8f0', borderRadius: '20px', padding: '1.5rem', marginBottom: '2rem' }}>
-                                    <h3 style={{ margin: '0 0 1rem 0', color: 'var(--text-muted)', fontSize: '1.1rem' }}>현재 차례</h3>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', justifyContent: 'center' }}>
-                                        {participants.map((p, idx) => {
-                                            const isActive = idx === activePlayerIndex;
-                                            const isEliminated = gameEliminated.includes(p.id);
-                                            return (
-                                                <div 
-                                                    key={p.id}
-                                                    style={{
-                                                        padding: '12px 24px',
-                                                        borderRadius: '16px',
-                                                        fontSize: '1.2rem',
-                                                        fontWeight: 'bold',
-                                                        background: isEliminated ? '#e2e8f0' : (isActive ? '#ef4444' : 'white'),
-                                                        color: isEliminated ? '#94a3b8' : (isActive ? 'white' : 'var(--text)'),
-                                                        border: isActive ? '3px solid #ef4444' : '2px solid #cbd5e1',
-                                                        transform: isActive ? 'scale(1.08)' : 'scale(1)',
-                                                        boxShadow: isActive ? '0 10px 15px rgba(239,68,68,0.2)' : 'none',
-                                                        textDecoration: isEliminated ? 'line-through' : 'none',
-                                                        transition: 'all 0.3s'
-                                                    }}
-                                                >
-                                                    {isEliminated ? '💥 ' : (isActive ? '⏱️ ' : '')}
-                                                    {p.nickname}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h4 style={{ color: 'var(--text-muted)', marginBottom: '0.5rem' }}>사용된 단어 리스트 ({gameUsedWords.length}개)</h4>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', maxHeight: '100px', overflowY: 'auto', padding: '10px', background: '#f1f5f9', borderRadius: '12px' }}>
-                                        {gameUsedWords.map((w, idx) => (
-                                            <span key={idx} style={{ background: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '0.9rem', border: '1px solid #e2e8f0' }}>{w}</span>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <WordBombArena
+                        syllable={gameSyllable || '가'}
+                        timeLeft={gameTimeLeft}
+                        participants={participants}
+                        activePlayerIndex={activePlayerIndex}
+                        eliminated={gameEliminated}
+                        usedWords={gameUsedWords}
+                        winner={gameWinner}
+                        rankings={gameRankings}
+                        isHost={true}
+                        onSubmitWord={(cleanWord) => handleWordSubmit('host', cleanWord)}
+                        onExitGame={() => navigate('/')}
+                        onRestartGame={() => startMultiplayerGame()}
+                    />
                 )}
 
                 {/* --- OX RUN ACTIVE UI --- */}
@@ -2493,11 +2704,33 @@ export default function Host({ socket }) {
                             >
                                 <ArrowLeft size={16} /> 나가기
                             </button>
-                            {/* Question counter */}
+                            {/* Question counter & BGM Toggle */}
                             {totalQuestions > 0 && (
-                                <div style={{ fontSize:'0.9rem', color:'var(--text-muted)', marginBottom:'0.8rem', fontWeight:'bold' }}>
-                                    문제 {currentQuestionIndex + 1} / {totalQuestions}
-                                    {isOffline && <span style={{ marginLeft:'12px', background:'var(--secondary)', color:'white', padding:'2px 10px', borderRadius:'12px', fontSize:'0.8rem' }}>📺 오프라인</span>}
+                                <div style={{ fontSize:'0.9rem', color:'var(--text-muted)', marginBottom:'0.8rem', fontWeight:'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                                    <span>문제 {currentQuestionIndex + 1} / {totalQuestions}</span>
+                                    {isOffline && <span style={{ background:'var(--secondary)', color:'white', padding:'2px 10px', borderRadius:'12px', fontSize:'0.8rem' }}>📺 오프라인</span>}
+                                    <button
+                                        type="button"
+                                        onClick={toggleBgm}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '5px',
+                                            padding: '4px 12px',
+                                            background: isBgmEnabled ? '#ecfdf5' : '#f1f5f9',
+                                            border: `1.5px solid ${isBgmEnabled ? '#10b981' : '#cbd5e1'}`,
+                                            borderRadius: '16px',
+                                            fontWeight: '800',
+                                            fontSize: '0.8rem',
+                                            color: isBgmEnabled ? '#065f46' : '#64748b',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                        title={isBgmEnabled ? "BGM 멈추기 (일시정지)" : "BGM 다시 시작하기"}
+                                    >
+                                        <Music size={14} color={isBgmEnabled ? "#059669" : "#64748b"} style={{ animation: isBgmEnabled ? 'bounce 1.2s infinite' : 'none' }} />
+                                        <span>{isBgmEnabled ? '🎵 Carefree 켜짐' : '🔇 BGM 멈춤'}</span>
+                                    </button>
                                 </div>
                             )}
 

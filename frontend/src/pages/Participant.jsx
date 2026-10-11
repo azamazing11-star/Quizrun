@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, KeyRound, AlertCircle, CheckCircle, XCircle, ArrowLeft } from 'lucide-react';
+import { User, KeyRound, AlertCircle, CheckCircle, XCircle, ArrowLeft, Music } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { playSound } from '../utils/audio';
 import { getChosung } from '../utils/chosung';
@@ -8,8 +8,10 @@ import MediaViewer from '../components/MediaViewer';
 import StockGame from '../components/StockGame';
 import CardMatchGame from '../components/CardMatchGame';
 import TetrisGame from '../components/TetrisGame';
+import BrickBreakerGame from '../components/BrickBreakerGame';
+import AirplaneGame from '../components/AirplaneGame';
 
-export { CardMatchGame, TetrisGame };
+export { CardMatchGame, TetrisGame, BrickBreakerGame, AirplaneGame };
 
 export default function Participant({ socket }) {
     const location = useLocation();
@@ -23,7 +25,7 @@ export default function Participant({ socket }) {
 
     const [gameState, setGameState] = useState('join');
     const [hasJoined, setHasJoined] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(!socket.connected);
     const [socketConnected, setSocketConnected] = useState(socket.connected);
     const [leaderboard, setLeaderboard] = useState([]);
     const [myScore, setMyScore] = useState(0);
@@ -31,6 +33,26 @@ export default function Participant({ socket }) {
     const [isBuzzerMode, setIsBuzzerMode] = useState(false);
     const [quizType, setQuizType] = useState('mcq');
     const [groupId, setGroupId] = useState(null);
+
+    // BGM State for Carefree playback (for GameRun except stock_game & ladder, and QuizRun)
+    const [isBgmEnabled, setIsBgmEnabled] = useState(() => {
+        try {
+            return localStorage.getItem('quizrun_bgm_enabled') !== 'false';
+        } catch (e) {
+            return true;
+        }
+    });
+    const bgmAudioRef = useRef(null);
+
+    const toggleBgm = () => {
+        setIsBgmEnabled(prev => {
+            const next = !prev;
+            try {
+                localStorage.setItem('quizrun_bgm_enabled', String(next));
+            } catch (e) {}
+            return next;
+        });
+    };
 
     // --- MULTIPLAYER GAME STATES ---
     const [isGame, setIsGame] = useState(Boolean(sessionStorage.getItem('quizrun_game_id')));
@@ -96,6 +118,8 @@ export default function Participant({ socket }) {
     const [gameWinner, setGameWinner] = useState(null);
     const [wordInput, setWordInput] = useState('');
     const [gameUsedWords, setGameUsedWords] = useState([]);
+    const [wordFeedback, setWordFeedback] = useState('');
+    const [gameRankings, setGameRankings] = useState([]);
     
     // OX Game states
     const [oxQuestion, setOxQuestion] = useState('');
@@ -144,9 +168,13 @@ export default function Participant({ socket }) {
 
     useEffect(() => {
         setSocketConnected(socket.connected);
+        if (!socket.connected) {
+            socket.connect();
+        }
         const onConnect = () => {
             setSocketConnected(true);
             setIsLoading(false);
+            setError(prev => (prev && (prev.includes('서버와 연결되지 않았습니다') || prev.includes('연결 중')) ? null : prev));
 
             // AUTO-REJOIN: If connection dropped and restored, re-register this new socket.id with existing participant session
             const currentPin = pinRef.current || new URLSearchParams(window.location.search).get('pin') || sessionStorage.getItem('quizrun_pin');
@@ -330,6 +358,14 @@ export default function Participant({ socket }) {
                         setGameWinner(null);
                         setWordInput('');
                         setGameUsedWords([]);
+                        setWordFeedback('');
+                        setGameRankings([]);
+                        if (data.payload.participants && Array.isArray(data.payload.participants)) {
+                            const me = data.payload.participants.find(p => p.id === socket.id || (p.nickname && p.nickname === nickname));
+                            if (me && me.score !== undefined) {
+                                setMyScore(me.score);
+                            }
+                        }
                     } else if (data.payload.gameId === 'ox_run') {
                         setOxQuestion(data.payload.question);
                         setGameTimeLeft(data.payload.timeLeft);
@@ -352,8 +388,32 @@ export default function Participant({ socket }) {
                     setGameTimeLeft(data.payload.timeLeft);
                     setGameEliminated(data.payload.eliminated || []);
                     setGameUsedWords(data.payload.usedWords || []);
+                    setWordFeedback('');
+                    if (data.payload.participants && Array.isArray(data.payload.participants)) {
+                        const me = data.payload.participants.find(p => p.id === socket.id || (p.nickname && p.nickname === nickname));
+                        if (me && me.score !== undefined) {
+                            setMyScore(me.score);
+                        }
+                    }
+                } else if (data.event === 'game:word_feedback') {
+                    if (!data.payload.playerId || data.payload.playerId === socket.id) {
+                        setWordFeedback(data.payload.text || '');
+                        playSound('wrong');
+                    }
                 } else if (data.event === 'game:word_bomb_end') {
                     setGameWinner(data.payload.winner);
+                    if (data.payload.rankings) {
+                        setGameRankings(data.payload.rankings);
+                    }
+                    if (data.payload.usedWords) {
+                        setGameUsedWords(data.payload.usedWords);
+                    }
+                    if (data.payload.participants && Array.isArray(data.payload.participants)) {
+                        const me = data.payload.participants.find(p => p.id === socket.id || (p.nickname && p.nickname === nickname));
+                        if (me && me.score !== undefined) {
+                            setMyScore(me.score);
+                        }
+                    }
                 } else if (data.event === 'game:ox_state') {
                     setOxQuestion(data.payload.question);
                     setGameTimeLeft(data.payload.timeLeft);
@@ -424,83 +484,109 @@ export default function Participant({ socket }) {
     }, [socket, groupId, nickname]);
 
     useEffect(() => {
-        if (gameState !== 'game_active' || !gameId) return;
-        // 주식게임은 BGM 없음
-        if (gameId === 'stock_game') return;
-        
-        let bgmFile = '/audio/science_is_fun.mp3'; // Default (e.g. word_bomb, minesweeper)
-        if (gameId === 'ox_run' || gameId === 'whack_mole' || gameId === 'tetris') {
-            bgmFile = '/audio/new_rally_x.mp3';
-        } else if (gameId === 'janggi' || gameId === 'omok' || gameId === 'gostop' || gameId === 'yutnori') {
-            bgmFile = '/audio/bgm.mp3';
-        } else if (gameId === 'brick_breaker' || gameId === 'rock_paper_scissors' || gameId === 'speed_numbers') {
-            bgmFile = '/audio/arcade_theme.mp3';
-        } else if (gameId === 'chess' || gameId === 'card_poker' || gameId === 'othello' || gameId === 'card_match') {
-            bgmFile = '/audio/chill_theme.mp3';
-        } else if (gameId === 'catch_mind' || gameId === 'memory_game') {
-            bgmFile = '/audio/puzzle_theme.mp3';
-        } else if (gameId === 'pass_bomb') {
-            bgmFile = '/audio/battle_theme.mp3';
-        }
-        
-        const audio = new Audio(bgmFile);
-        audio.loop = true;
-        audio.volume = 0.15; // Set slightly lower volume for headphones/mobile speakers
-        
-        audio.play().catch(e => console.log('BGM play blocked on participant:', e));
-        
-        return () => {
-            audio.pause();
-        };
-    }, [gameState, gameId]);
+        // 주식 게임, 사다리 타기, 테트리스, 벽돌깨기, 비행기게임은 자체 전용 BGM 사용 (carefree 제외)
+        const isGameModeActive = gameState === 'game_active' && gameId && gameId !== 'stock_game' && gameId !== 'ladder' && gameId !== 'tetris' && gameId !== 'brick_breaker' && gameId !== 'timeattack' && gameId !== 'airplane_game';
+        const isQuizActive = gameState === 'question';
+        const shouldPlay = isBgmEnabled && (isGameModeActive || isQuizActive);
 
-    const handleJoin = (e) => {
-        e.preventDefault();
-        if (!pin || !nickname) return;
-        if (!socketConnected) {
-            setError('서버와 연결되지 않았습니다. 잠시만 기다려주세요.');
+        if (!shouldPlay) {
+            if (bgmAudioRef.current) {
+                bgmAudioRef.current.pause();
+            }
             return;
         }
 
-        const cleanPin = String(pin).trim();
-        socket.emit('participant:joinRoom', { pin: cleanPin, nickname }, (res) => {
-            if (res.success) {
-                setHasJoined(true);
-                localStorage.setItem('quizrun_nickname', nickname);
-                setIsBuzzerMode(!!res.isBuzzerMode);
-                const qType = res.quizType || 'mcq';
-                setQuizType(qType);
-                if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
-                if (res.options) setCurrentOptions(res.options);
-                if (res.currentQuestionIndex !== undefined) setCurrentQuestionIndex(res.currentQuestionIndex);
-                if (res.totalQuestions !== undefined) setTotalQuestions(res.totalQuestions);
-                if (res.points !== undefined) setCurrentPoints(res.points);
-                if (res.mediaUrl) setCurrentMediaUrl(res.mediaUrl);
-                if (res.mediaType) setCurrentMediaType(res.mediaType);
-                if (res.mediaName) setCurrentMediaName(res.mediaName);
-                if (res.mediaDisplayMode) setCurrentMediaDisplayMode(res.mediaDisplayMode);
-                if (res.autoplay !== undefined) setCurrentAutoplay(res.autoplay);
-                if (res.showChosung !== undefined) setShowChosung(res.showChosung);
-                
-                if (res.myScore !== undefined) {
-                    setMyScore(res.myScore);
-                }
-                if (res.groupId !== undefined && res.groupId !== null) {
-                    setGroupId(res.groupId);
-                }
-                if (res.isGame || res.gameId) {
-                    setIsGame(true);
-                    if (res.gameId) setGameId(res.gameId);
-                    setGameState('game_active');
-                } else if (res.isBuzzerMode) {
-                    setGameState(res.groupId ? 'waiting' : 'select_join_type');
-                } else {
-                    setGameState(res.roomState === 'lobby' ? 'waiting' : res.roomState);
-                }
-            } else {
-                setError(res.message);
+        const bgmFile = '/audio/carefree.mp3';
+
+        if (!bgmAudioRef.current) {
+            bgmAudioRef.current = new Audio(bgmFile);
+            bgmAudioRef.current.loop = true;
+        } else if (!bgmAudioRef.current.src.endsWith('carefree.mp3')) {
+            bgmAudioRef.current.pause();
+            bgmAudioRef.current = new Audio(bgmFile);
+            bgmAudioRef.current.loop = true;
+        }
+
+        bgmAudioRef.current.volume = 0.15; // Set slightly lower volume for headphones/mobile speakers
+        bgmAudioRef.current.play().catch(e => console.log('BGM play blocked on participant:', e));
+
+        return () => {
+            if (bgmAudioRef.current) {
+                bgmAudioRef.current.pause();
             }
-        });
+        };
+    }, [gameState, gameId, isBgmEnabled]);
+
+    const handleJoin = (e) => {
+        if (e) e.preventDefault();
+        if (!pin || !nickname) return;
+        setError(null);
+
+        const cleanPin = String(pin).trim();
+
+        const doEmitJoin = () => {
+            setIsLoading(true);
+            socket.emit('participant:joinRoom', { pin: cleanPin, nickname }, (res) => {
+                setIsLoading(false);
+                if (res && res.success) {
+                    setHasJoined(true);
+                    localStorage.setItem('quizrun_nickname', nickname);
+                    setIsBuzzerMode(!!res.isBuzzerMode);
+                    const qType = res.quizType || 'mcq';
+                    setQuizType(qType);
+                    if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
+                    if (res.options) setCurrentOptions(res.options);
+                    if (res.currentQuestionIndex !== undefined) setCurrentQuestionIndex(res.currentQuestionIndex);
+                    if (res.totalQuestions !== undefined) setTotalQuestions(res.totalQuestions);
+                    if (res.points !== undefined) setCurrentPoints(res.points);
+                    if (res.mediaUrl) setCurrentMediaUrl(res.mediaUrl);
+                    if (res.mediaType) setCurrentMediaType(res.mediaType);
+                    if (res.mediaName) setCurrentMediaName(res.mediaName);
+                    if (res.mediaDisplayMode) setCurrentMediaDisplayMode(res.mediaDisplayMode);
+                    if (res.autoplay !== undefined) setCurrentAutoplay(res.autoplay);
+                    if (res.showChosung !== undefined) setShowChosung(res.showChosung);
+                    
+                    if (res.myScore !== undefined) {
+                        setMyScore(res.myScore);
+                    }
+                    if (res.groupId !== undefined && res.groupId !== null) {
+                        setGroupId(res.groupId);
+                    }
+                    if (res.isGame || res.gameId) {
+                        setIsGame(true);
+                        if (res.gameId) setGameId(res.gameId);
+                        setGameState('game_active');
+                    } else if (res.isBuzzerMode) {
+                        setGameState(res.groupId ? 'waiting' : 'select_join_type');
+                    } else {
+                        setGameState(res.roomState === 'lobby' ? 'waiting' : res.roomState);
+                    }
+                } else {
+                    setError(res?.message || '방에 입장할 수 없습니다. PIN 번호를 확인해주세요.');
+                }
+            });
+        };
+
+        if (socket.connected) {
+            doEmitJoin();
+        } else {
+            // Not connected yet - initiate connect and wait
+            setError('서버에 연결 중입니다... 잠시만 기다려주세요.');
+            socket.connect();
+            const timer = setTimeout(() => {
+                socket.off('connect', onConnectReady);
+                if (!socket.connected) {
+                    setError('서버 연결 시간이 초과되었습니다. 화면을 새로고침해주세요.');
+                }
+            }, 6000);
+            const onConnectReady = () => {
+                clearTimeout(timer);
+                setError(null);
+                setSocketConnected(true);
+                doEmitJoin();
+            };
+            socket.once('connect', onConnectReady);
+        }
     };
 
     const selectJoinType = (type) => {
@@ -559,12 +645,29 @@ export default function Participant({ socket }) {
     
     const submitWord = (e) => {
         e.preventDefault();
-        if (!wordInput.trim()) return;
+        const clean = wordInput.trim();
+        if (!clean) return;
+
+        // 중복 단어 체크
+        if (gameUsedWords && gameUsedWords.includes(clean)) {
+            setWordFeedback(`⚠️ '${clean}'은(는) 이미 제출한 답입니다!`);
+            playSound('wrong');
+            return;
+        }
+
+        // 제시어 포함 여부 체크
+        if (gameSyllable && !clean.includes(gameSyllable)) {
+            setWordFeedback(`⚠️ 제시어 '${gameSyllable}'(이)가 포함되어야 합니다!`);
+            playSound('wrong');
+            return;
+        }
+
+        setWordFeedback('');
         playSound('submit');
         socket.emit('room:message', {
             pin,
             event: 'game:submit_word',
-            payload: { word: wordInput }
+            payload: { word: clean }
         });
         setWordInput('');
     };
@@ -795,8 +898,32 @@ export default function Participant({ socket }) {
         return (
             <div className="glass-panel card-container animate-slide-up" style={{ padding: '2rem 1.5rem', width: '100%', maxWidth: '500px', margin: '0 auto', textAlign: 'center', color: 'var(--text)' }}>
                 {/* Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #e2e8f0', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.8rem', marginBottom: '1.2rem' }}>
                     <div style={{ fontWeight: 'bold' }}>👤 {nickname}</div>
+                    {gameId !== 'stock_game' && gameId !== 'ladder' && (
+                        <button
+                            type="button"
+                            onClick={toggleBgm}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '4px 10px',
+                                borderRadius: '16px',
+                                border: `1.5px solid ${isBgmEnabled ? '#10b981' : '#cbd5e1'}`,
+                                background: isBgmEnabled ? '#ecfdf5' : '#f8fafc',
+                                color: isBgmEnabled ? '#065f46' : '#64748b',
+                                fontSize: '0.78rem',
+                                fontWeight: '800',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                            }}
+                            title={isBgmEnabled ? "BGM 멈추기 (일시정지)" : "BGM 다시 재생하기"}
+                        >
+                            <Music size={13} color={isBgmEnabled ? "#059669" : "#64748b"} />
+                            <span>{isBgmEnabled ? '🎵 Carefree' : '🔇 BGM 멈춤'}</span>
+                        </button>
+                    )}
                     <div style={{ fontWeight: 'bold', color: 'var(--secondary)' }}>🏆 {myScore}점</div>
                 </div>
 
@@ -806,22 +933,73 @@ export default function Participant({ socket }) {
                         {gameWinner ? (
                             <div className="animate-pop-in">
                                 <div style={{ fontSize: '4rem' }}>👑</div>
-                                <h2 style={{ fontSize: '2rem', fontFamily: 'Jua, sans-serif', color: 'var(--secondary)' }}>{gameWinner} 승리!</h2>
-                                <p style={{ color: 'var(--text-muted)' }}>게임이 종료되었습니다.</p>
+                                <h2 style={{ fontSize: '1.8rem', fontFamily: 'Jua, sans-serif', color: 'var(--secondary)', margin: '0.5rem 0' }}>
+                                    {gameWinner} 최종 우승!
+                                </h2>
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0 0 1rem 0' }}>단어 폭탄 게임이 종료되었습니다.</p>
+
+                                {/* 내 순위 배너 */}
+                                {(() => {
+                                    const myRankIndex = gameRankings.findIndex(r => r.id === socket.id || (r.nickname && r.nickname === nickname));
+                                    const myRank = myRankIndex !== -1 ? myRankIndex + 1 : null;
+                                    const myRankData = myRankIndex !== -1 ? gameRankings[myRankIndex] : null;
+                                    return myRank ? (
+                                        <div style={{ background: myRank === 1 ? '#fef3c7' : '#f1f5f9', border: `2px solid ${myRank === 1 ? '#f59e0b' : '#cbd5e1'}`, borderRadius: '16px', padding: '12px', marginBottom: '12px' }}>
+                                            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>내 최종 성적</div>
+                                            <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: myRank === 1 ? '#b45309' : '#1e293b' }}>
+                                                {myRank === 1 ? '🥇 1위' : myRank === 2 ? '🥈 2위' : myRank === 3 ? '🥉 3위' : `🎖️ ${myRank}위`} ({myRankData?.score ?? myScore}점)
+                                            </div>
+                                        </div>
+                                    ) : null;
+                                })()}
+
+                                {/* 전체 순위표 */}
+                                {gameRankings.length > 0 && (
+                                    <div style={{ textAlign: 'left', background: '#f8fafc', borderRadius: '14px', padding: '12px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                                        <div style={{ fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '8px', color: '#334155' }}>🏆 최종 순위표</div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                            {gameRankings.map((r, idx) => {
+                                                const isMe = r.id === socket.id || (r.nickname && r.nickname === nickname);
+                                                return (
+                                                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px', borderRadius: '8px', background: isMe ? '#e0e7ff' : '#ffffff', border: isMe ? '1.5px solid #6366f1' : '1px solid #e2e8f0', fontWeight: isMe ? 'bold' : 'normal' }}>
+                                                        <span style={{ fontSize: '0.9rem' }}>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}위`} {r.nickname} {isMe && '(나)'}</span>
+                                                        <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '0.9rem' }}>{r.score ?? 0}점</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 사용된 단어 모음 */}
+                                {gameUsedWords.length > 0 && (
+                                    <div style={{ textAlign: 'left', background: '#f8fafc', padding: '10px 12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#64748b', marginBottom: '6px' }}>
+                                            📜 사용된 단어 목록 (총 {gameUsedWords.length}개):
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', maxHeight: '110px', overflowY: 'auto' }}>
+                                            {gameUsedWords.map((w, idx) => (
+                                                <span key={idx} style={{ background: '#e2e8f0', color: '#334155', padding: '3px 8px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '500' }}>
+                                                    {w}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div>
-                                <div style={{ fontSize: '3rem', margin: '0.5rem 0' }}>
-                                    {isMyTurnWordBomb ? '💣 내 차례! ⏱️' + gameTimeLeft : '⏳ 대기 중'}
+                                <div style={{ fontSize: '2.5rem', margin: '0.5rem 0', fontWeight: 'bold', color: isMyTurnWordBomb ? '#ef4444' : '#64748b' }}>
+                                    {isMyTurnWordBomb ? `💣 내 차례! ⏱️ ${gameTimeLeft}초` : `⏳ 대기 중 (${activePlayerNickname})`}
                                 </div>
                                 
-                                <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '20px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-                                    <h3 style={{ margin: 0, color: '#f43f5e', fontSize: '1rem' }}>제시어 글자</h3>
-                                    <h1 style={{ fontSize: '4rem', margin: '0.5rem 0', color: '#e11d48', fontWeight: '900' }}>
+                                <div style={{ background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: '20px', padding: '1.2rem', marginBottom: '1.2rem' }}>
+                                    <h3 style={{ margin: 0, color: '#f43f5e', fontSize: '0.95rem' }}>제시어 글자</h3>
+                                    <h1 style={{ fontSize: '3.8rem', margin: '0.4rem 0', color: '#e11d48', fontWeight: '900' }}>
                                         {gameSyllable}
                                     </h1>
-                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>
-                                        위 글자가 <strong>포함된</strong> 단어를 입력하세요!
+                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
+                                        위 글자가 <strong>포함된</strong> 단어를 입력하세요! <span style={{ color: '#2563eb', fontWeight: 'bold' }}>(정답 시 +10점)</span>
                                     </p>
                                 </div>
 
@@ -836,18 +1014,26 @@ export default function Participant({ socket }) {
                                             type="text" 
                                             placeholder="단어를 입력하세요" 
                                             value={wordInput} 
-                                            onChange={(e) => setWordInput(e.target.value)}
+                                            onChange={(e) => {
+                                                setWordInput(e.target.value);
+                                                if (wordFeedback) setWordFeedback('');
+                                            }}
                                             style={{ 
                                                 width: '100%', 
                                                 padding: '12px', 
                                                 borderRadius: '12px', 
-                                                border: '2px solid #ef4444', 
+                                                border: wordFeedback ? '2px solid #ef4444' : '2px solid #3b82f6', 
                                                 fontSize: '1.2rem',
                                                 textAlign: 'center'
                                             }}
                                         />
-                                        <button className="primary-btn" type="submit" style={{ background: '#ef4444', padding: '12px', borderRadius: '12px', fontSize: '1.1rem' }}>
-                                            제출하기
+                                        {wordFeedback && (
+                                            <div style={{ color: '#b91c1c', background: '#fee2e2', padding: '8px 12px', borderRadius: '8px', fontSize: '0.9rem', fontWeight: 'bold', border: '1px solid #fca5a5' }}>
+                                                {wordFeedback}
+                                            </div>
+                                        )}
+                                        <button className="primary-btn" type="submit" style={{ background: '#ef4444', padding: '12px', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                                            제출하기 (+10점)
                                         </button>
                                     </form>
                                 ) : (
@@ -856,6 +1042,23 @@ export default function Participant({ socket }) {
                                             📢 <strong>{activePlayerNickname}</strong>님의 차례입니다
                                         </p>
                                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>차례가 올 때까지 기다려 주세요!</span>
+                                    </div>
+                                )}
+
+                                {/* 중복 방지를 위한 이미 맞춘 단어 목록 */}
+                                {gameUsedWords.length > 0 && (
+                                    <div style={{ marginTop: '1.2rem', textAlign: 'left', background: '#f8fafc', padding: '10px 12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#64748b', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                                            <span>📜 이미 제출된 단어 (중복 제출 불가):</span>
+                                            <span style={{ color: '#ef4444' }}>총 {gameUsedWords.length}개</span>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', maxHeight: '110px', overflowY: 'auto' }}>
+                                            {gameUsedWords.map((w, idx) => (
+                                                <span key={idx} style={{ background: '#e2e8f0', color: '#1e293b', padding: '3px 8px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '500' }}>
+                                                    {w}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1024,10 +1227,11 @@ export default function Participant({ socket }) {
                             {gameId === 'speed_numbers' && '숫자 순서'}
                             {gameId === 'tetris' && '미니 테트리스'}
                             {gameId === 'brick_breaker' && '벽돌깨기'}
+                            {(gameId === 'timeattack' || gameId === 'airplane_game') && '비행기게임 (Xenon 2)'}
                         </h2>
 
                         {gameId === 'yutnori' && <YutnoriGame />}
-                        {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
+                        {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} onScoreUpdate={(newScore) => setMyScore(newScore)} />}
                         {gameId === 'rock_paper_scissors' && <RpsGame />}
                         {gameId === 'whack_mole' && <WhackMoleGame />}
                         {gameId === 'omok' && <OmokGame />}
@@ -1040,7 +1244,8 @@ export default function Participant({ socket }) {
                         {gameId === 'gostop' && <GoStopGame />}
                         {gameId === 'othello' && <OthelloGame />}
                         {gameId === 'tetris' && <TetrisGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
-                        {gameId === 'brick_breaker' && <BrickBreakerGame />}
+                        {gameId === 'brick_breaker' && <BrickBreakerGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
+                        {(gameId === 'timeattack' || gameId === 'airplane_game') && <AirplaneGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
                         {['memory_game', 'pass_bomb', 'ladder'].includes(gameId) && (
                             <div style={{ padding: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
                                 <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '1.1rem' }}>
@@ -1132,25 +1337,55 @@ export default function Participant({ socket }) {
             {/* Confetti for correct answer */}
             {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={300} />}
             <div style={{ width: '100%', minHeight: '100vh', background: isBuzzerMode && groupId ? 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)' : 'var(--bg)' }}>
-                {/* Connection status badge for Participant */}
+                {/* Connection status badge & BGM toggle for Participant */}
                 {!isLoading && (
                     <div style={{
                         position: 'fixed',
                         top: '10px',
                         right: '10px',
-                        padding: '4px 10px',
-                        borderRadius: '12px',
-                        fontSize: '0.7rem',
-                        background: 'rgba(255,255,255,0.8)',
-                        border: '1px solid #ddd',
-                        color: socketConnected ? '#059669' : '#dc2626',
-                        zIndex: 1000,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '5px'
+                        gap: '6px',
+                        zIndex: 1000
                     }}>
-                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: socketConnected ? '#059669' : '#dc2626' }} />
-                        {socketConnected ? '수신 중' : '연결 끊김'}
+                        {(isQuizPhase || gameState === 'game_active') && gameId !== 'stock_game' && gameId !== 'ladder' && (
+                            <button
+                                type="button"
+                                onClick={toggleBgm}
+                                style={{
+                                    padding: '4px 9px',
+                                    borderRadius: '12px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '800',
+                                    background: isBgmEnabled ? '#ecfdf5' : 'rgba(255,255,255,0.9)',
+                                    border: `1.5px solid ${isBgmEnabled ? '#10b981' : '#cbd5e1'}`,
+                                    color: isBgmEnabled ? '#065f46' : '#64748b',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 6px rgba(0,0,0,0.06)'
+                                }}
+                                title={isBgmEnabled ? "BGM 멈추기 (일시정지)" : "BGM 다시 재생하기"}
+                            >
+                                <Music size={12} color={isBgmEnabled ? "#059669" : "#64748b"} />
+                                <span>{isBgmEnabled ? 'Carefree' : 'BGM 꺼짐'}</span>
+                            </button>
+                        )}
+                        <div style={{
+                            padding: '4px 10px',
+                            borderRadius: '12px',
+                            fontSize: '0.7rem',
+                            background: 'rgba(255,255,255,0.8)',
+                            border: '1px solid #ddd',
+                            color: socketConnected ? '#059669' : '#dc2626',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                        }}>
+                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: socketConnected ? '#059669' : '#dc2626' }} />
+                            {socketConnected ? '수신 중' : '연결 끊김'}
+                        </div>
                     </div>
                 )}
                 {gameState === 'join' && (
@@ -2835,48 +3070,7 @@ export function OthelloGame() {
     );
 }
 
-// TetrisGame is imported from ../components/TetrisGame
-
-export function BrickBreakerGame() {
-    const [score, setScore] = useState(0);
-    const [paddlePos, setPaddlePos] = useState(50); // percentage 0-100
-    
-    const movePaddle = (dir) => {
-        setPaddlePos(prev => {
-            const next = dir === 'left' ? prev - 10 : prev + 10;
-            return Math.max(10, Math.min(90, next));
-        });
-        setScore(prev => prev + 10);
-    };
-    
-    return (
-        <div style={{ padding: '0.5rem' }}>
-            <p style={{ margin: '0 0 10px 0', fontSize: '1rem', fontWeight: 'bold' }}>점수: <span style={{ color: '#2563eb' }}>{score}점</span></p>
-            
-            {/* Retro screen */}
-            <div style={{ position: 'relative', height: '150px', background: '#0f172a', borderRadius: '16px', overflow: 'hidden', border: '3px solid #334155', marginBottom: '1rem' }}>
-                {/* Bricks */}
-                <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', padding: '15px 10px 0 10px' }}>
-                    <div style={{ width: '40px', height: '12px', background: '#ef4444', borderRadius: '2px' }} />
-                    <div style={{ width: '40px', height: '12px', background: '#eab308', borderRadius: '2px' }} />
-                    <div style={{ width: '40px', height: '12px', background: '#10b981', borderRadius: '2px' }} />
-                    <div style={{ width: '40px', height: '12px', background: '#3b82f6', borderRadius: '2px' }} />
-                </div>
-                
-                {/* Ball */}
-                <div style={{ position: 'absolute', bottom: '40px', left: `${paddlePos}%`, transform: 'translateX(-50%)', width: '10px', height: '10px', background: 'white', borderRadius: '50%' }} />
-                
-                {/* Paddle */}
-                <div style={{ position: 'absolute', bottom: '15px', left: `${paddlePos}%`, transform: 'translateX(-50%)', width: '50px', height: '8px', background: '#3b82f6', borderRadius: '4px' }} />
-            </div>
-            
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                <button onClick={() => movePaddle('left')} className="glass-button" style={{ padding: '8px 24px', fontSize: '1.2rem' }}>◀ 왼쪽</button>
-                <button onClick={() => movePaddle('right')} className="glass-button" style={{ padding: '8px 24px', fontSize: '1.2rem' }}>오른쪽 ▶</button>
-            </div>
-        </div>
-    );
-}
+// BrickBreakerGame is imported from ../components/BrickBreakerGame
 
 export function MemoryGame() {
     const [sequence, setSequence] = useState([]);

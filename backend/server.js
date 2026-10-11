@@ -9,10 +9,15 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const compression = require('compression');
+let compression;
+try {
+  compression = require('compression');
+} catch (e) {}
 
 const app = express();
-app.use(compression());
+if (compression) {
+  app.use(compression());
+}
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -59,6 +64,7 @@ let cloudflaredProc = null;
 let cloudflaredConsecutiveFails = 0;
 let cloudflaredRestartTimer = null;
 let isCloudflaredDisabledDueToErrors = false;
+let isCloudflaredIntentionalKill = false;
 
 let localtunnelInstance = null;
 let localtunnelConsecutiveFails = 0;
@@ -147,7 +153,7 @@ function startTunnelHealthMonitor() {
     }
     try {
       const res = await fetch(activeTunnelUrl, {
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(8000),
         headers: { 'Bypass-Tunnel-Reminder': 'true', 'User-Agent': 'Mozilla/5.0 (Quizrun-Tunnel-Check)' }
       });
       if (res.status === 200 || res.status === 304 || res.status < 500) {
@@ -157,22 +163,12 @@ function startTunnelHealthMonitor() {
       }
     } catch (err) {
       tunnelHealthFailCount++;
-      console.log(`[Tunnel HealthCheck] Probe failed (${tunnelHealthFailCount}/3): ${err.message}`);
+      console.log(`[Tunnel HealthCheck] Probe check (${tunnelHealthFailCount}/5): ${err.message}`);
     }
 
-    if (tunnelHealthFailCount >= 3) {
-      console.warn(`\x1b[33m[Tunnel HealthCheck] External Tunnel unresolvable (${activeTunnelUrl}).\x1b[0m`);
+    if (tunnelHealthFailCount >= 5) {
+      console.warn(`\x1b[33m[Tunnel HealthCheck] External Tunnel check warning (${activeTunnelUrl}).\x1b[0m`);
       tunnelHealthFailCount = 0;
-      activeTunnelUrl = null;
-      isTunnelVerifying = false;
-      broadcastTunnelUpdate();
-
-      if (healthCheckRestartCount < 2) {
-        healthCheckRestartCount++;
-        restartAllTunnels(false);
-      } else {
-        console.warn('\x1b[33m[Tunnel HealthCheck] Max auto-restarts reached. Pausing health restarts to conserve data.\x1b[0m');
-      }
     }
   }, 30000);
 }
@@ -180,9 +176,15 @@ function startTunnelHealthMonitor() {
 let localhostRunProc = null;
 let localhostRunConsecutiveFails = 0;
 let localhostRunRestartTimer = null;
+let isLocalhostRunIntentionalKill = false;
 
 function startLocalhostRunTunnel() {
+  if (localhostRunRestartTimer) {
+    clearTimeout(localhostRunRestartTimer);
+    localhostRunRestartTimer = null;
+  }
   if (localhostRunProc) {
+    isLocalhostRunIntentionalKill = true;
     try { localhostRunProc.kill(); } catch (e) {}
   }
 
@@ -224,13 +226,17 @@ function startLocalhostRunTunnel() {
 
     localhostRunProc.on('close', (code) => {
       console.log(`[Tunnel] localhost.run process exited with code ${code}`);
+      if (isLocalhostRunIntentionalKill || code === null) {
+        isLocalhostRunIntentionalKill = false;
+        return; // Intentionally killed, break the restart cascade loop
+      }
       if (activeTunnelUrl && activeTunnelUrl.includes('lhr.life')) {
         activeTunnelUrl = null;
         broadcastTunnelUpdate();
       }
       localhostRunConsecutiveFails++;
-      if (localhostRunConsecutiveFails < 5) {
-        const delay = Math.min(3000 * Math.pow(2, localhostRunConsecutiveFails), 30000);
+      if (localhostRunConsecutiveFails < 3) {
+        const delay = Math.min(5000 * Math.pow(2, localhostRunConsecutiveFails), 30000);
         if (localhostRunRestartTimer) clearTimeout(localhostRunRestartTimer);
         localhostRunRestartTimer = setTimeout(startLocalhostRunTunnel, delay);
       }
@@ -253,7 +259,13 @@ function startCloudflaredTunnel() {
     return;
   }
 
+  if (cloudflaredRestartTimer) {
+    clearTimeout(cloudflaredRestartTimer);
+    cloudflaredRestartTimer = null;
+  }
+
   if (cloudflaredProc) {
+    isCloudflaredIntentionalKill = true;
     try { cloudflaredProc.kill(); } catch (e) {}
   }
 
@@ -288,6 +300,11 @@ function startCloudflaredTunnel() {
     cloudflaredProc.on('close', (code) => {
       console.log(`[Tunnel] cloudflared exited with code ${code}`);
       currentVerifyingUrl = null; // abort any ongoing 20-attempt verify loop
+
+      if (isCloudflaredIntentionalKill || code === null) {
+        isCloudflaredIntentionalKill = false;
+        return; // Intentionally killed, break the restart cascade loop
+      }
 
       if (activeTunnelUrl && activeTunnelUrl.includes('trycloudflare.com')) {
         activeTunnelUrl = null;
@@ -608,8 +625,8 @@ const io = new Server(server, {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  pingInterval: 10000,
-  pingTimeout: 5000,
+  pingInterval: 25000,
+  pingTimeout: 30000,
   maxHttpBufferSize: 1e8,
   transports: ['websocket', 'polling']
 });
@@ -888,7 +905,7 @@ io.on('connection', (socket) => {
 
     const isGameMode = data.mode === 'game' || Boolean(data.quizId && !data.quizId.startsWith('custom_') && !MOCK_QUIZZES[data.quizId]);
     const gameId = isGameMode ? data.quizId : null;
-    const isLobbyMultiplayer = ['word_bomb', 'ox_run', 'catch_mind'].includes(gameId);
+    const isLobbyMultiplayer = ['ox_run', 'catch_mind'].includes(gameId);
     const initialRoomState = (isGameMode && !isLobbyMultiplayer) ? 'game_active' : 'lobby';
 
     console.log(`Setting up room: Pin=${pin} (reused=${isReused}), Mode=${data.mode}, isGameMode=${isGameMode}, gameId=${gameId}, Questions=${finalQuiz.questions.length}, quizType=${quizType}`);
@@ -979,8 +996,11 @@ io.on('connection', (socket) => {
   socket.on('screen:joinRoom', ({ pin }, callback) => {
     if (pin) {
       const cleanPin = String(pin).trim();
+      const isAlreadyInRoom = socket.rooms.has(cleanPin);
       socket.join(cleanPin);
-      console.log(`[ScreenView] Socket ${socket.id} joined screen room ${cleanPin}`);
+      if (!isAlreadyInRoom) {
+        console.log(`[ScreenView] Socket ${socket.id} joined screen room ${cleanPin}`);
+      }
       const room = rooms[cleanPin];
       if (room) {
         socket.emit('host:participantsUpdated', room.participants);
@@ -1496,7 +1516,8 @@ io.on('connection', (socket) => {
   // --- MULTIPLAYER GAME GENERIC MESSAGES ---
   socket.on('room:message', (data) => {
     if (data && data.pin) {
-      const room = rooms[data.pin];
+      const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
       // Track game lifecycle for score accumulation
       if (room && data.event === 'game:start') {
         if (room.participants) {
@@ -1518,7 +1539,7 @@ io.on('connection', (socket) => {
       if (room && data.event === 'game:player_stream' && data.payload) {
         const { nickname, score, roundScore, isPractice, isFinished } = data.payload;
         if (nickname) {
-          const p = room.participants?.find(part => part.nickname === nickname);
+          const p = room.participants?.find(part => part.nickname === nickname || part.id === socket.id);
           if (p) {
             if (p.gameBaseScore === undefined) {
               p.gameBaseScore = p.score || 0;
@@ -1540,20 +1561,20 @@ io.on('connection', (socket) => {
               if (p.score !== newScore) {
                 p.score = newScore;
                 if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-                io.to(data.pin).emit('host:participantsUpdated', room.participants);
+                io.to(cleanPin).emit('host:participantsUpdated', room.participants);
               }
             }
           }
         }
       }
-      io.to(data.pin).emit('room:message', {
+      io.to(cleanPin).emit('room:message', {
         sender: socket.id,
         event: data.event,
         payload: data.payload
       });
       // Direct relay for stock_game events
       if (data.event && data.event.startsWith('stock_game:')) {
-        io.to(data.pin).emit(data.event, data.payload || data);
+        io.to(cleanPin).emit(data.event, data.payload || data);
       }
     }
   });
@@ -1700,8 +1721,8 @@ io.on('connection', (socket) => {
   });
 
   // --- DISCONNECT ---
-  socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`User disconnected: ${socket.id} (Reason: ${reason})`);
 
     for (const [pin, room] of Object.entries(rooms)) {
       if (room.hostId === socket.id) {
@@ -1753,6 +1774,10 @@ if (fs.existsSync(FRONTEND_DIST)) {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      } else if (filePath.includes(path.sep + 'assets' + path.sep)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else if (filePath.match(/\.(jpg|jpeg|png|gif|svg|webp|mp3|wav|ogg|ico|woff|woff2)$/i)) {
+        res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
       }
     }
   }));

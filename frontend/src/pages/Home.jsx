@@ -48,7 +48,8 @@ const ICON_MAP = {
     '주식 게임': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
     '미니 테트리스': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9333ea" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h6v6H3zM9 9h6v6H9zM15 3h6v6h-6zM3 15h6v6H3z"/></svg>,
     '벽돌깨기': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="18" width="16" height="3" rx="1"/><circle cx="12" cy="10" r="3"/><path d="m14 7-4-4"/></svg>,
-    '타임어택': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M12 2v3M9 2h6"/></svg>,
+    '비행기게임': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0284c7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L9 9H3L7 14L5 21L12 17L19 21L17 14L21 9H15L12 2Z"/></svg>,
+    '타임어택': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0284c7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L9 9H3L7 14L5 21L12 17L19 21L17 14L21 9H15L12 2Z"/></svg>,
     '숨은 그림 찾기': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6M8 11h6"/></svg>,
     '운세': <Sparkles size={24} color="#d946ef" />
 };
@@ -62,7 +63,7 @@ const MULTIPLAYER_GAMES = [
     { id: 'fortune', title: '운세', bg: '#fdf4ff', count: 0 },
     { id: 'spot_difference', title: '숨은 그림 찾기', bg: '#fef3c7', count: 0 },
     { id: 'ladder', title: '사다리 타기', bg: '#ffedd5', count: 0 },
-    { id: 'timeattack', title: '타임어택', bg: '#fee2e2', count: 0 },
+    { id: 'timeattack', title: '비행기게임', bg: '#e0f2fe', count: 0 },
     { id: 'word_bomb', title: '단어 폭탄', bg: '#ffe4e6', count: 0 },
     { id: 'ox_run', title: 'OX 런', bg: '#d1fae5', count: 0 },
     { id: 'catch_mind', title: '그림 퀴즈', bg: '#fef9c3', count: 0 },
@@ -237,7 +238,11 @@ export default function Home({ socket }) {
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                const remapped = Array.isArray(parsed) ? parsed.map(g => (g.id === 'card_poker' || g.title === '포커 카드') ? { ...g, id: 'card_game', title: '카드 게임' } : g) : [];
+                const remapped = Array.isArray(parsed) ? parsed.map(g => {
+                    if (g.id === 'card_poker' || g.title === '포커 카드') return { ...g, id: 'card_game', title: '카드 게임' };
+                    if (g.id === 'timeattack' || g.title === '타임어택') return { ...g, id: 'timeattack', title: '비행기게임', bg: '#e0f2fe' };
+                    return g;
+                }) : [];
                 const validIds = new Set(MULTIPLAYER_GAMES.map(g => g.id));
                 const filteredParsed = remapped.filter(g => validIds.has(g.id));
                 const currentIds = filteredParsed.map(g => g.id);
@@ -1196,7 +1201,7 @@ export default function Home({ socket }) {
                                     handleNavWithSync('/ladder');
                                 } else if (quiz.id === 'spot_difference') {
                                     handleNavWithSync('/spot-difference');
-                                } else if (quiz.id === 'timeattack') {
+                                } else if (quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택') {
                                     handleNavWithSync('/timeattack');
                                 } else if (quiz.id === 'card_game' || quiz.id === 'card_poker' || quiz.title === '카드 게임') {
                                     handleNavWithSync('/card-game');
@@ -1220,7 +1225,7 @@ export default function Home({ socket }) {
                                         handleNavWithSync('/ladder');
                                     } else if (quiz.id === 'spot_difference' || quiz.title === '숨은 그림 찾기') {
                                         handleNavWithSync('/spot-difference');
-                                    } else if (quiz.id === 'timeattack' || quiz.title === '타임어택') {
+                                    } else if (quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택') {
                                         handleNavWithSync('/timeattack');
                                     } else {
                                         handleNavWithSync(`/topic/${quiz.id}`);

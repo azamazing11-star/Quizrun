@@ -4,6 +4,7 @@ import { playSound } from '../utils/audio';
 import { DEFAULT_CARD_THEMES, getSavedCardThemes, saveCardThemes } from '../data/cardThemes';
 import { getCardCoordinate } from './MultiplayerLiveSpectator';
 import CardThemeBar from './CardThemeBar';
+import { preloadGameAssets } from '../utils/assetPreloader';
 
 export default function CardMatchGame({
     socket,
@@ -11,7 +12,8 @@ export default function CardMatchGame({
     isHost = false,
     nickname = '호스트',
     groupId = null,
-    baseScore = 0
+    baseScore = 0,
+    onScoreUpdate = null
 }) {
     const [themes, setThemes] = useState(getSavedCardThemes);
     const [activeThemeId, setActiveThemeId] = useState('flag');
@@ -94,6 +96,7 @@ export default function CardMatchGame({
 
     // Initialize IMMEDIATELY on mount for ALL clients (host AND participants)
     useEffect(() => {
+        preloadGameAssets();
         initGame(currentTheme);
     }, [activeThemeId]);
 
@@ -147,25 +150,16 @@ export default function CardMatchGame({
                 }
             }
 
-            // 4. SHARED PAIR MATCH OPEN: "한 명이라도 먼저 짝을 맞추면 카드 패가 실시간 오픈"
+            // 4. Toast notification when another player matches a pair
             if (event === 'card_match:pair_matched' && payload) {
-                const { pair, matchedBy, itemName } = payload;
-                if (pair && Array.isArray(pair)) {
-                    setMatched(prev => {
-                        const next = Array.from(new Set([...prev, ...pair]));
-                        return next;
+                const { matchedBy, itemName } = payload;
+                if (matchedBy && matchedBy !== nickname) {
+                    setMatchBanner({
+                        matchedBy,
+                        itemName: itemName || '짝'
                     });
-                    setFlipped(prev => prev.filter(idx => !pair.includes(idx)));
-
-                    // Show notification banner if matched by another player
-                    if (matchedBy && matchedBy !== nickname) {
-                        setMatchBanner({
-                            matchedBy,
-                            itemName: itemName || '짝'
-                        });
-                        playSound('correct');
-                        setTimeout(() => setMatchBanner(null), 3000);
-                    }
+                    playSound('correct');
+                    setTimeout(() => setMatchBanner(null), 3000);
                 }
             }
         };
@@ -179,24 +173,33 @@ export default function CardMatchGame({
     // Stream participant game progress to Host & Spectator
     const notifyPlayerStream = (curCards = cards, curFlipped = flipped, curMatched = matched, curMoves = moves, finished = false, forcePractice = false) => {
         if (!socket || !pin) return;
-        const currentRoundScore = Math.max(0, curMatched.length * 50 - (curMoves * 2));
+        // 10 points per card pair matched (한 쌍당 10점)
+        const matchedPairs = Math.floor(curMatched.length / 2);
+        const currentRoundScore = matchedPairs * 10;
         const inPractice = forcePractice || isPracticeMode || hasOfficiallyFinishedRef.current;
+        const totalScore = (officialBaseScoreRef.current || 0) + currentRoundScore;
+
+        if (typeof onScoreUpdate === 'function') {
+            onScoreUpdate(totalScore);
+        }
+
+        const safePin = String(pin).trim();
 
         if (inPractice) {
             // Early finisher in practice mode: keep official cumulative score securely locked!
             const lockedScore = officialLockedTotalScoreRef.current !== null
                 ? officialLockedTotalScoreRef.current
-                : (officialBaseScoreRef.current + 500);
+                : ((officialBaseScoreRef.current || 0) + 100);
 
             socket.emit('room:message', {
-                pin,
+                pin: safePin,
                 event: 'game:player_stream',
                 payload: {
                     nickname,
                     groupId,
                     gameId: 'card_match',
                     score: lockedScore,
-                    roundScore: 500,
+                    roundScore: 100,
                     baseScore: officialBaseScoreRef.current,
                     isPractice: true,
                     isAlive: true,
@@ -213,14 +216,13 @@ export default function CardMatchGame({
             });
         } else {
             // Official round:
-            const totalScore = officialBaseScoreRef.current + currentRoundScore;
             if (finished) {
                 hasOfficiallyFinishedRef.current = true;
                 officialLockedTotalScoreRef.current = totalScore;
             }
 
             socket.emit('room:message', {
-                pin,
+                pin: safePin,
                 event: 'game:player_stream',
                 payload: {
                     nickname,
@@ -266,20 +268,23 @@ export default function CardMatchGame({
                 setFlipped([]);
 
                 const finished = nextMatched.length === cards.length;
+                const matchedPairs = Math.floor(nextMatched.length / 2);
+                const currentRoundScore = matchedPairs * 10;
+
                 if (finished) {
                     playSound('fanfare');
                     if (!isPracticeMode && !hasOfficiallyFinishedRef.current) {
                         hasOfficiallyFinishedRef.current = true;
-                        officialLockedTotalScoreRef.current = officialBaseScoreRef.current + Math.max(0, nextMatched.length * 50 - (nextMoves * 2));
+                        officialLockedTotalScoreRef.current = (officialBaseScoreRef.current || 0) + currentRoundScore;
                     }
                 } else {
                     playSound('correct');
                 }
 
-                // Broadcast shared pair match to ALL players in the room
+                // Broadcast toast notification to other players in the room
                 if (socket && pin) {
                     socket.emit('room:message', {
-                        pin,
+                        pin: String(pin).trim(),
                         event: 'card_match:pair_matched',
                         payload: {
                             matchedBy: nickname,
@@ -411,9 +416,10 @@ export default function CardMatchGame({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>테마: <strong style={{ color: '#0f172a' }}>{currentTheme.icon} {currentTheme.title}</strong></span>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <span>시도: <strong style={{ color: '#2563eb' }}>{moves}회</strong></span>
-                    <span>매칭: <strong style={{ color: '#16a34a' }}>{matched.length / 2} / 10쌍</strong></span>
+                    <span>매칭: <strong style={{ color: '#16a34a' }}>{Math.floor(matched.length / 2)} / 10쌍</strong></span>
+                    <span>점수: <strong style={{ color: '#ea580c' }}>{Math.floor(matched.length / 2) * 10}점</strong></span>
                 </div>
             </div>
 
