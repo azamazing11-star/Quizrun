@@ -512,6 +512,59 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                 </div>
                             )}
 
+                            {/* ============================================================ */}
+                            {/* CASE 5: FETCH_FAILED (Network / GitHub connection issue)     */}
+                            {/* ============================================================ */}
+                            {comparison === 'FETCH_FAILED' && (
+                                <div style={{
+                                    background: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)',
+                                    borderRadius: '22px',
+                                    border: '2px solid #f43f5e',
+                                    padding: '1.4rem',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '12px'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                        <AlertTriangle size={24} color="#e11d48" style={{ flexShrink: 0, marginTop: '2px' }} />
+                                        <div style={{ flex: 1 }}>
+                                            <span style={{ fontSize: '0.98rem', fontWeight: '900', color: '#be123c' }}>
+                                                깃허브 원격 저장소와 연결을 확인하지 못했습니다
+                                            </span>
+                                            <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#9f1239', fontWeight: '600', lineHeight: '1.4' }}>
+                                                인터넷 연결 상태를 확인하시거나 잠시 후 [다시 비교] 버튼을 눌러주세요.
+                                                {gitStatus?.fetchError && (
+                                                    <span style={{ display: 'block', marginTop: '4px', opacity: 0.8, fontFamily: 'monospace', fontSize: '0.72rem' }}>
+                                                        ({gitStatus.fetchError.slice(0, 90)}...)
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={fetchGitStatus}
+                                        disabled={isLoadingStatus}
+                                        style={{
+                                            padding: '8px 14px',
+                                            borderRadius: '12px',
+                                            border: 'none',
+                                            background: '#e11d48',
+                                            color: 'white',
+                                            fontWeight: '800',
+                                            fontSize: '0.84rem',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '5px'
+                                        }}
+                                    >
+                                        <RefreshCw size={14} className={isLoadingStatus ? 'animate-spin' : ''} />
+                                        <span>깃허브 연결 다시 시도</span>
+                                    </button>
+                                </div>
+                            )}
+
                             {/* Current Commit Details Box */}
                             <div style={{
                                 background: '#f8fafc',

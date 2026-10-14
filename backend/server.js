@@ -458,21 +458,61 @@ app.get('/api/network-info', (req, res) => {
 });
 
 // --- GIT MANAGEMENT & DEPLOYMENT SYNC ENDPOINTS ---
-const { exec: gitExec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(gitExec);
+const { execFile } = require('child_process');
 const ROOT_DIR = path.resolve(__dirname, '..');
 const FRONTEND_DIR = path.join(ROOT_DIR, 'frontend');
 
 let isGitOperating = false;
 
+// Direct execution of git.exe without cmd.exe shell wrapper (prevents EPERM and quoting issues)
+function runGit(args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const gitBin = process.platform === 'win32' ? 'git.exe' : 'git';
+    const opts = {
+      cwd: ROOT_DIR,
+      timeout: 35000,
+      windowsHide: false,
+      ...options
+    };
+    execFile(gitBin, args, opts, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        return reject(error);
+      }
+      resolve({ stdout: stdout || '', stderr: stderr || '' });
+    });
+  });
+}
+
+// Direct execution of npm without cmd.exe shell wrapper
+function runNpm(args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const opts = {
+      cwd: FRONTEND_DIR,
+      timeout: 90000,
+      windowsHide: false,
+      ...options
+    };
+    execFile(npmBin, args, opts, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        return reject(error);
+      }
+      resolve({ stdout: stdout || '', stderr: stderr || '' });
+    });
+  });
+}
+
 // 1. Get Git Status & Current Commit (Compare Local vs GitHub Remote)
 app.get('/api/git/status', async (req, res) => {
   try {
-    const logRes = await execPromise('git log -1 --format="%h|%s|%an|%ad" --date=short', { cwd: ROOT_DIR });
+    const logRes = await runGit(['log', '-1', '--format=%h|%s|%an|%ad', '--date=short'], { timeout: 10000 });
     const [hash, message, author, date] = (logRes.stdout || '').trim().split('|');
     
-    const statusRes = await execPromise('git status --porcelain', { cwd: ROOT_DIR });
+    const statusRes = await runGit(['status', '--porcelain'], { timeout: 10000 });
     const rawStatus = (statusRes.stdout || '').trim();
     const changedFiles = rawStatus ? rawStatus.split('\n').map(l => l.trim()) : [];
     const hasUncommittedChanges = changedFiles.length > 0;
@@ -483,16 +523,17 @@ app.get('/api/git/status', async (req, res) => {
     let fetchError = null;
 
     try {
-      await execPromise('git fetch origin main', { cwd: ROOT_DIR, timeout: 8000 });
+      // Fetch latest remote commits from origin main (timeout 15s)
+      await runGit(['fetch', 'origin', 'main'], { timeout: 15000 });
       
-      const behindRes = await execPromise('git rev-list --count HEAD..origin/main', { cwd: ROOT_DIR });
+      const behindRes = await runGit(['rev-list', '--count', 'HEAD..origin/main'], { timeout: 10000 });
       behindCount = parseInt(behindRes.stdout.trim(), 10) || 0;
 
-      const aheadRes = await execPromise('git rev-list --count origin/main..HEAD', { cwd: ROOT_DIR });
+      const aheadRes = await runGit(['rev-list', '--count', 'origin/main..HEAD'], { timeout: 10000 });
       aheadCount = parseInt(aheadRes.stdout.trim(), 10) || 0;
 
       if (behindCount > 0) {
-        const remoteLogRes = await execPromise('git log -1 origin/main --format="%h|%s|%an|%ad" --date=short', { cwd: ROOT_DIR });
+        const remoteLogRes = await runGit(['log', '-1', 'origin/main', '--format=%h|%s|%an|%ad', '--date=short'], { timeout: 10000 });
         const [rHash, rMessage, rAuthor, rDate] = (remoteLogRes.stdout || '').trim().split('|');
         remoteLatestCommit = {
           hash: rHash || 'origin/main',
@@ -502,11 +543,14 @@ app.get('/api/git/status', async (req, res) => {
         };
       }
     } catch (e) {
-      fetchError = e.message;
+      console.warn('[Git Status] Remote fetch warning/error:', e.message || e);
+      fetchError = e.message || String(e);
     }
 
     let comparison = 'UP_TO_DATE';
-    if (behindCount > 0 && (hasUncommittedChanges || aheadCount > 0)) {
+    if (fetchError && behindCount === 0 && aheadCount === 0 && !hasUncommittedChanges) {
+      comparison = 'FETCH_FAILED';
+    } else if (behindCount > 0 && (hasUncommittedChanges || aheadCount > 0)) {
       comparison = 'DIVERGED';
     } else if (behindCount > 0) {
       comparison = 'NEED_PULL';
@@ -533,6 +577,7 @@ app.get('/api/git/status', async (req, res) => {
       isBusy: isGitOperating
     });
   } catch (err) {
+    console.error('[Git Status] Status check error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -546,32 +591,38 @@ app.post('/api/git/push', async (req, res) => {
   try {
     const customMessage = req.body?.message || `Auto-backup: Quizrun data & settings (${new Date().toLocaleString('ko-KR')})`;
     console.log('[Git Sync] Staging all files...');
-    await execPromise('git add .', { cwd: ROOT_DIR });
+    await runGit(['add', '-A']);
 
-    const statusRes = await execPromise('git status --porcelain', { cwd: ROOT_DIR });
+    const statusRes = await runGit(['status', '--porcelain']);
     let didCommit = false;
     if (statusRes.stdout && statusRes.stdout.trim().length > 0) {
       console.log(`[Git Sync] Committing changes: ${customMessage}`);
-      await execPromise(`git commit -m "${customMessage.replace(/"/g, '\\"')}"`, { cwd: ROOT_DIR });
+      await runGit(['commit', '-m', customMessage]);
       didCommit = true;
     }
 
     console.log('[Git Sync] Pushing to GitHub (origin/main)...');
-    const pushRes = await execPromise('git push origin main', { cwd: ROOT_DIR, timeout: 30000 });
-    console.log('[Git Sync] Push successful:', pushRes.stdout);
+    const pushRes = await runGit(['push', 'origin', 'main'], { timeout: 45000 });
+    console.log('[Git Sync] Push successful:', pushRes.stdout, pushRes.stderr);
 
     isGitOperating = false;
     res.json({
       success: true,
-      message: didCommit ? '변경된 데이터가 깃허브에 성공적으로 백업(Push)되었습니다!' : '이미 깃허브와 최신 상태로 동일합니다.',
+      message: didCommit 
+        ? '변경된 모든 데이터가 깃허브에 성공적으로 백업(Push)되었습니다!' 
+        : '이미 깃허브 원격 저장소와 완벽하게 일치하며 최신 상태입니다.',
       didCommit
     });
   } catch (err) {
     isGitOperating = false;
     console.error('[Git Sync] Push error:', err);
+    let errMsg = `깃허브 업로드 중 오류가 발생했습니다: ${err.message || err}`;
+    if (err.stderr && (err.stderr.includes('fetch first') || err.stderr.includes('non-fast-forward'))) {
+      errMsg = '깃허브 원격 저장소에 새로운 업데이트가 먼저 존재합니다. [최신 버전으로 업데이트(Pull)]를 먼저 진행해주세요.';
+    }
     res.status(500).json({
       success: false,
-      message: `깃허브 업로드 중 오류가 발생했습니다: ${err.message}`
+      message: errMsg
     });
   }
 });
@@ -584,12 +635,12 @@ app.post('/api/git/pull', async (req, res) => {
   isGitOperating = true;
   try {
     console.log('[Git Update] Pulling latest changes from GitHub...');
-    const pullRes = await execPromise('git pull origin main', { cwd: ROOT_DIR, timeout: 30000 });
-    console.log('[Git Update] Pull output:', pullRes.stdout);
+    const pullRes = await runGit(['pull', 'origin', 'main'], { timeout: 45000 });
+    console.log('[Git Update] Pull output:', pullRes.stdout, pullRes.stderr);
 
     // Rebuild frontend production bundle so web UI reflects updates
     console.log('[Git Update] Rebuilding frontend production bundle...');
-    await execPromise('npm run build', { cwd: FRONTEND_DIR, timeout: 60000 });
+    await runNpm(['run', 'build']);
     console.log('[Git Update] Frontend build completed.');
 
     // Reload persisted quizzes and config into memory
@@ -608,9 +659,9 @@ app.post('/api/git/pull', async (req, res) => {
   } catch (err) {
     isGitOperating = false;
     console.error('[Git Update] Pull error:', err);
-    let errMsg = `깃허브 업데이트 중 오류가 발생했습니다: ${err.message}`;
-    if (err.message && err.message.includes('spawn EPERM')) {
-      errMsg = '윈도우 보안(백신/권한) 정책에 의해 웹에서의 직접 쉘 실행이 차단되었습니다 (spawn EPERM). AI(Antigravity)에게 "업데이트해줘"라고 말씀해 주시면 터미널에서 즉시 안전하게 최신 버전으로 업데이트해 드립니다!';
+    let errMsg = `깃허브 업데이트 중 오류가 발생했습니다: ${err.message || err}`;
+    if (err.stderr && err.stderr.includes('local changes')) {
+      errMsg = '로컬에 커밋되지 않은 수정사항이 있어 충돌 방지를 위해 중단되었습니다. 먼저 [강제 백업(Push)]을 진행하시거나 수정사항을 정리해주세요.';
     }
     res.status(500).json({
       success: false,
