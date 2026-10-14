@@ -485,24 +485,40 @@ function runGit(args, options = {}) {
   });
 }
 
-// Direct execution of npm without cmd.exe shell wrapper
+// Direct execution of npm without cmd.exe shell wrapper (prevents EINVAL on Windows)
 function runNpm(args, options = {}) {
   return new Promise((resolve, reject) => {
-    const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const opts = {
       cwd: FRONTEND_DIR,
       timeout: 90000,
       windowsHide: false,
       ...options
     };
-    execFile(npmBin, args, opts, (error, stdout, stderr) => {
-      if (error) {
-        error.stdout = stdout;
-        error.stderr = stderr;
-        return reject(error);
-      }
-      resolve({ stdout: stdout || '', stderr: stderr || '' });
-    });
+
+    // On Windows, executing npm.cmd directly with execFile causes spawn EINVAL in Node v18+/v20+/v22+/v24+.
+    // Executing node.exe with npm-cli.js directly is clean, reliable, and does not require cmd.exe shell wrapper.
+    const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    if (fs.existsSync(npmCli)) {
+      execFile(process.execPath, [npmCli, ...args], opts, (error, stdout, stderr) => {
+        if (error) {
+          error.stdout = stdout;
+          error.stderr = stderr;
+          return reject(error);
+        }
+        resolve({ stdout: stdout || '', stderr: stderr || '' });
+      });
+    } else {
+      // Fallback for non-standard node environments
+      const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      execFile(npmBin, args, { ...opts, shell: process.platform === 'win32' }, (error, stdout, stderr) => {
+        if (error) {
+          error.stdout = stdout;
+          error.stderr = stderr;
+          return reject(error);
+        }
+        resolve({ stdout: stdout || '', stderr: stderr || '' });
+      });
+    }
   });
 }
 
@@ -650,10 +666,14 @@ app.post('/api/git/pull', async (req, res) => {
       io.emit('config:updated', APP_CONFIG);
     }
 
+    const isAlreadyUpToDate = pullRes.stdout && pullRes.stdout.includes('Already up to date');
+
     isGitOperating = false;
     res.json({
       success: true,
-      message: '깃허브 최신 코드로 업데이트 및 빌드가 완료되었습니다! 화면을 새로고침합니다.',
+      message: isAlreadyUpToDate
+        ? '이미 깃허브 최신 버전입니다 (변경사항 없음). 프론트엔드 최신 빌드가 완료되었습니다!'
+        : '깃허브 최신 코드로 성공적으로 업데이트 및 빌드가 완료되었습니다! 화면을 새로고침합니다.',
       output: pullRes.stdout
     });
   } catch (err) {
