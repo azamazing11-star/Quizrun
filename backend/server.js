@@ -976,8 +976,7 @@ io.on('connection', (socket) => {
 
     const isGameMode = data.mode === 'game' || Boolean(data.quizId && !data.quizId.startsWith('custom_') && !MOCK_QUIZZES[data.quizId]);
     const gameId = isGameMode ? data.quizId : null;
-    const isLobbyMultiplayer = ['ox_run', 'catch_mind'].includes(gameId);
-    const initialRoomState = (isGameMode && !isLobbyMultiplayer) ? 'game_active' : 'lobby';
+    const initialRoomState = isGameMode ? 'game_active' : 'lobby';
 
     console.log(`Setting up room: Pin=${pin} (reused=${isReused}), Mode=${data.mode}, isGameMode=${isGameMode}, gameId=${gameId}, Questions=${finalQuiz.questions.length}, quizType=${quizType}`);
 
@@ -1638,84 +1637,97 @@ io.on('connection', (socket) => {
           }
         }
       }
-      io.to(cleanPin).emit('room:message', {
-        sender: socket.id,
-        event: data.event,
-        payload: data.payload
-      });
-      // Direct relay for stock_game events
-      if (data.event && data.event.startsWith('stock_game:')) {
-        io.to(cleanPin).emit(data.event, data.payload || data);
+      const isHostOnlyStockEvent = data.event && [
+        'stock_game:execute_order',
+        'stock_game:predict',
+        'stock_game:vip_hint_selected',
+        'stock_game:participant_activity',
+        'stock_game:request_sync'
+      ].includes(data.event);
+
+      if (isHostOnlyStockEvent) {
+        if (room && room.hostId) {
+          io.to(room.hostId).emit('room:message', {
+            sender: socket.id,
+            event: data.event,
+            payload: data.payload
+          });
+          io.to(room.hostId).emit(data.event, data.payload || data);
+        }
+      } else {
+        io.to(cleanPin).emit('room:message', {
+          sender: socket.id,
+          event: data.event,
+          payload: data.payload
+        });
+        if (data.event && data.event.startsWith('stock_game:')) {
+          io.to(cleanPin).emit(data.event, data.payload || data);
+        }
       }
     }
   });
 
-  // --- STOCK GAME DIRECT SOCKET RELAYS ---
+  // --- STOCK GAME DIRECT SOCKET RELAYS (Participant -> Host ONLY) ---
   socket.on('stock_game:execute_order', (data) => {
     if (data && data.pin) {
-      const room = rooms[data.pin];
+      const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
       if (room && room.hostId) {
         io.to(room.hostId).emit('stock_game:execute_order', data);
+        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:execute_order', payload: data });
       }
-      io.to(data.pin).emit('stock_game:execute_order', data);
-      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:execute_order', payload: data });
     }
   });
 
   socket.on('stock_game:predict', (data) => {
     if (data && data.pin) {
-      const room = rooms[data.pin];
+      const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
       if (room && room.hostId) {
         io.to(room.hostId).emit('stock_game:predict', data);
+        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:predict', payload: data });
       }
-      io.to(data.pin).emit('stock_game:predict', data);
-      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:predict', payload: data });
     }
   });
 
   socket.on('stock_game:vip_hint_selected', (data) => {
     if (data && data.pin) {
-      const room = rooms[data.pin];
+      const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
       if (room && room.hostId) {
         io.to(room.hostId).emit('stock_game:vip_hint_selected', data);
+        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:vip_hint_selected', payload: data });
       }
-      io.to(data.pin).emit('stock_game:vip_hint_selected', data);
-      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:vip_hint_selected', payload: data });
     }
   });
 
   socket.on('stock_game:participant_activity', (data) => {
     if (data && data.pin) {
-      const room = rooms[data.pin];
+      const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
       if (room && room.hostId) {
         io.to(room.hostId).emit('stock_game:participant_activity', data);
+        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:participant_activity', payload: data });
       }
-      io.to(data.pin).emit('stock_game:participant_activity', data);
-      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:participant_activity', payload: data });
-    }
-  });
-
-  socket.on('stock_game:state_sync', (data) => {
-    if (data && data.pin) {
-      io.to(data.pin).emit('stock_game:state_sync', data);
     }
   });
 
   socket.on('stock_game:request_sync', (data) => {
     if (data && data.pin) {
-      const room = rooms[data.pin];
+      const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
       if (room && room.hostId) {
         io.to(room.hostId).emit('stock_game:request_sync', data);
+        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:request_sync', payload: data });
       }
-      io.to(data.pin).emit('stock_game:request_sync', data);
-      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:request_sync', payload: data });
     }
   });
 
   socket.on('stock_game:state_sync', (data) => {
     if (data && data.pin) {
-      io.to(data.pin).emit('stock_game:state_sync', data);
-      io.to(data.pin).emit('room:message', { sender: socket.id, event: 'stock_game:state_sync', payload: data });
+      const cleanPin = String(data.pin).trim();
+      io.to(cleanPin).emit('stock_game:state_sync', data);
+      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:state_sync', payload: data });
     }
   });
 

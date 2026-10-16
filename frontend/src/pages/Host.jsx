@@ -185,7 +185,7 @@ export default function Host({ socket }) {
     const isGame = Boolean(location.state?.isGame ?? savedHostState?.isGame);
     const initialGameId = location.state?.gameId || savedHostState?.gameId || '';
     const initialGameTitle = location.state?.gameTitle || savedHostState?.gameTitle || '';
-    const isLobbyMultiplayer = ['ox_run', 'catch_mind'].includes(initialGameId);
+    const isLobbyMultiplayer = false;
 
     const quizId = location.state?.quizId || 'general';
 
@@ -311,13 +311,25 @@ export default function Host({ socket }) {
         const handleRoomMsg = (msg) => {
             const { event, payload } = msg || {};
             if (event === 'game:player_stream' && payload && payload.nickname) {
+                const streamObj = {
+                    ...payload,
+                    lastUpdated: Date.now()
+                };
                 setPlayerStreams(prev => ({
                     ...prev,
-                    [payload.nickname]: {
-                        ...payload,
-                        lastUpdated: Date.now()
-                    }
+                    [payload.nickname]: streamObj
                 }));
+                if (screenChannelRef.current) {
+                    try {
+                        screenChannelRef.current.postMessage({
+                            type: 'PLAYER_STREAM_UPDATE',
+                            payload: {
+                                nickname: payload.nickname,
+                                stream: streamObj
+                            }
+                        });
+                    } catch (e) {}
+                }
             }
         };
         socket.on('room:message', handleRoomMsg);
@@ -335,7 +347,7 @@ export default function Host({ socket }) {
         const total = list.length;
         const ox = list.filter(q => q.type === 'ox' || (q.options && q.options.length === 2)).length;
         const mcq = list.filter(q => q.type === 'mcq' || (q.options && q.options.length > 2 && q.options.some(opt => opt && String(opt).trim() !== ''))).length;
-        const short = list.filter(q => q.type === 'short' || ((!q.options || q.options.length === 0 || q.options.every(opt => !opt || String(opt).trim() === '')) && Boolean(q.answer && String(q.answer).trim() !== ''))).length;
+        const short = list.filter(q => q.type === 'short' || ((!q.options || q.options.length === 0 || q.options.every(opt => !opt || String(opt).trim() !== '')) && Boolean(q.answer && String(q.answer).trim() !== ''))).length;
         return { total, mcq, ox, short };
     }, [allQuizQuestions]);
 
@@ -384,6 +396,7 @@ export default function Host({ socket }) {
             isGame,
             gameId,
             playerStreams,
+            cardMatchThemeId,
             scores: offlineScores,
             gameState: overrides.gameState || gameState,
             isOffline,
@@ -409,9 +422,11 @@ export default function Host({ socket }) {
             judgeResult,
             groupScores,
             participants,
+            answeredCount,
+            firstCorrectInfo,
             pin,
             serverIp,
-            publicUrl: location.state?.publicUrl || '',
+            publicUrl: location.state?.publicUrl || publicUrl || '',
             confetti: offlineConfetti,
             offlineWinnerList: offlineScores?.slice()?.sort((a, b) => b.score - a.score) || [],
             isMediaMutedOnScreen: isScreenConnected ? (audioOutputTarget === 'host' || audioOutputTarget === 'none') : false,
@@ -421,7 +436,15 @@ export default function Host({ socket }) {
             gameUsedWords: overrides.gameUsedWords !== undefined ? overrides.gameUsedWords : gameUsedWords,
             gameWinner: overrides.gameWinner !== undefined ? overrides.gameWinner : gameWinner,
             activePlayerIndex: overrides.activePlayerIndex !== undefined ? overrides.activePlayerIndex : activePlayerIndex,
-            rankings: overrides.rankings !== undefined ? overrides.rankings : gameRankings
+            rankings: overrides.rankings !== undefined ? overrides.rankings : gameRankings,
+            oxQuestionIndex: overrides.oxQuestionIndex !== undefined ? overrides.oxQuestionIndex : oxQuestionIndex,
+            oxChoices: overrides.oxChoices !== undefined ? overrides.oxChoices : oxChoices,
+            oxReveal: overrides.oxReveal !== undefined ? overrides.oxReveal : oxReveal,
+            painterId: overrides.painterId !== undefined ? overrides.painterId : painterId,
+            painterNickname: overrides.painterNickname !== undefined ? overrides.painterNickname : painterNickname,
+            catchMindSecretWord: overrides.catchMindSecretWord !== undefined ? overrides.catchMindSecretWord : catchMindSecretWord,
+            catchMindWinner: overrides.catchMindWinner !== undefined ? overrides.catchMindWinner : catchMindWinner,
+            canvasLines: overrides.canvasLines !== undefined ? overrides.canvasLines : canvasLines
         };
     };
 
@@ -534,7 +557,9 @@ export default function Host({ socket }) {
         currentExplanation, offlineShowAnswer, showAnswer, currentQuestionIndex, 
         totalQuestions, currentPoints, currentMediaUrl, buzzedInfo, judgeResult, 
         groupScores, participants, offlineScores, offlineConfetti, audioOutputTarget, isScreenConnected,
-        gameId, gameSyllable, gameTimeLeft, gameEliminated, gameUsedWords, gameWinner, activePlayerIndex, gameRankings
+        gameId, gameSyllable, gameTimeLeft, gameEliminated, gameUsedWords, gameWinner, activePlayerIndex, gameRankings,
+        playerStreams, cardMatchThemeId, answeredCount, firstCorrectInfo,
+        oxQuestionIndex, oxChoices, oxReveal, painterId, painterNickname, catchMindSecretWord, catchMindWinner, canvasLines
     ]);
 
     const handleBackToSetupClick = () => {
@@ -566,25 +591,23 @@ export default function Host({ socket }) {
                 if (data.publicUrl) setPublicUrl(data.publicUrl);
             }
         };
-        socket.on('tunnel:updated', handleTunnelUpdate);
-        socket.on('network:updated', handleNetworkUpdate);
-        socket.on('host:participantsUpdated', (updated) => {
+        const handleParticipantsUpdated = (updated) => {
             setParticipants(updated);
             try {
                 const bc = new BroadcastChannel('quizrun_screen_sync');
                 bc.postMessage({ type: 'PARTICIPANTS_UPDATE', payload: { participants: updated } });
                 setTimeout(() => bc.close(), 200);
             } catch (e) {}
-        });
-        socket.on('host:participantAnswered', ({ answeredCount, groupScores }) => {
+        };
+        const handleParticipantAnswered = ({ answeredCount, groupScores }) => {
             setAnsweredCount(answeredCount);
             if (groupScores) {
                 setGroupScores(groupScores);
                 const top = Math.max(...Object.values(groupScores), 10);
                 setMaxScore(top);
             }
-        });
-        socket.on('room:stateUpdate', (data) => {
+        };
+        const handleRoomStateUpdate = (data) => {
             setGameState(data.state);
             setIsBuzzerMode(!!data.isBuzzerMode);
             const currentOpts = data.options || [];
@@ -615,6 +638,8 @@ export default function Host({ socket }) {
                 setOfflineShowAnswer(false);
                 setJudgeResult(null);
                 setFirstCorrectInfo(null);
+                setAnsweredCount(0);
+                setParticipants(prev => prev.map(p => ({ ...p, hasAnswered: false, currentAnswer: null })));
             } else if (data.state === 'leaderboard') {
                 setGameState('leaderboard');
                 document.querySelectorAll('audio, video').forEach(el => {
@@ -639,22 +664,22 @@ export default function Host({ socket }) {
                 setCurrentMediaUrl('');
                 playSound('fanfare');
             }
-        });
-        socket.on('room:buzzed', (data) => {
+        };
+        const handleRoomBuzzed = (data) => {
             setBuzzedInfo(data);
             playSound('reveal');
-        });
-        socket.on('room:firstCorrect', (data) => {
+        };
+        const handleFirstCorrect = (data) => {
             setFirstCorrectInfo(data);
             playSound('correct');
-        });
-        socket.on('room:buzzerJudge', (data) => {
+        };
+        const handleBuzzerJudge = (data) => {
             setGroupScores(data.groupScores || {});
             const top = Math.max(...Object.values(data.groupScores || {}), 1000);
             setMaxScore(top);
             setJudgeResult(data.isCorrect ? 'correct' : 'incorrect');
-        });
-        socket.on('room:message', (data) => {
+        };
+        const handleMultiplayerRoomMsg = (data) => {
             if (data && data.event) {
                 if (data.event === 'game:submit_word') {
                     handleWordSubmit(data.sender, data.payload.word);
@@ -680,16 +705,28 @@ export default function Host({ socket }) {
                     });
                 }
             }
-        });
+        };
+
+        socket.on('tunnel:updated', handleTunnelUpdate);
+        socket.on('network:updated', handleNetworkUpdate);
+        socket.on('host:participantsUpdated', handleParticipantsUpdated);
+        socket.on('host:participantAnswered', handleParticipantAnswered);
+        socket.on('room:stateUpdate', handleRoomStateUpdate);
+        socket.on('room:buzzed', handleRoomBuzzed);
+        socket.on('room:firstCorrect', handleFirstCorrect);
+        socket.on('room:buzzerJudge', handleBuzzerJudge);
+        socket.on('room:message', handleMultiplayerRoomMsg);
 
         return () => {
             socket.off('tunnel:updated', handleTunnelUpdate);
             socket.off('network:updated', handleNetworkUpdate);
-            socket.off('room:message');
-            socket.off('host:participantsUpdated');
-            socket.off('host:participantAnswered');
-            socket.off('room:stateUpdate');
-            socket.off('room:buzzed');
+            socket.off('room:message', handleMultiplayerRoomMsg);
+            socket.off('host:participantsUpdated', handleParticipantsUpdated);
+            socket.off('host:participantAnswered', handleParticipantAnswered);
+            socket.off('room:stateUpdate', handleRoomStateUpdate);
+            socket.off('room:buzzed', handleRoomBuzzed);
+            socket.off('room:firstCorrect', handleFirstCorrect);
+            socket.off('room:buzzerJudge', handleBuzzerJudge);
         };
     }, [socket]);
 
@@ -765,8 +802,9 @@ export default function Host({ socket }) {
                 if (res.questions && Array.isArray(res.questions)) {
                     setAllQuizQuestions(res.questions);
                 }
-                if (isOffline) {
-                    // Skip lobby for offline mode — start game immediately
+                const hasOnlinePlayers = (res.participants && res.participants.length > 0) || (participants && participants.length > 0);
+                if (isOffline || hasOnlinePlayers) {
+                    // Start quiz immediately when offline or when online participants have already joined!
                     socket.emit('host:startGame', res.pin);
                     setAnsweredCount(0);
                 } else {
@@ -978,7 +1016,7 @@ export default function Host({ socket }) {
                     if (currentParticipants.length > 0) {
                         setParticipants(currentParticipants);
                     }
-                    if (gameId === 'word_bomb') {
+                    if (['word_bomb', 'ox_run', 'catch_mind'].includes(gameId)) {
                         startMultiplayerGame(res.pin || targetPin, currentParticipants);
                     } else if (isLobbyMultiplayer && !isOffline) {
                         setGameState('lobby');
@@ -1172,7 +1210,7 @@ export default function Host({ socket }) {
             setCanvasLines([]);
             setGameTimeLeft(45);
             
-            const firstPainter = participants[0];
+            const firstPainter = currentParticipants[0];
             const secret = CATCH_MIND_WORDS[Math.floor(Math.random() * CATCH_MIND_WORDS.length)];
             setPainterId(firstPainter?.id || 'host');
             setPainterNickname(firstPainter?.nickname || '호스트');
@@ -2224,6 +2262,19 @@ export default function Host({ socket }) {
                         </div>
                     </div>
                 )}
+
+                {/* Top 1, 2, 3 Live Spectating for Word Bomb, OX Run, and Catch Mind */}
+                {!isOffline && participants.length > 0 && (
+                    <div style={{ marginTop: '24px', width: '100%' }}>
+                        <MultiplayerLiveSpectator
+                            gameId={gameId}
+                            participants={participants}
+                            playerStreams={playerStreams}
+                            isHost={true}
+                            onEndGame={endGeneralMultiplayerGame}
+                        />
+                    </div>
+                )}
             </div>
         );
     };
@@ -3042,9 +3093,79 @@ export default function Host({ socket }) {
                                 </div>
                             )}
 
-                            {/* Online: existing buzzer / MCQ display */}
+                            {/* Online: existing buzzer / MCQ display + Top 1-2-3 Live Progress */}
                             {!isOffline && (
-                                isBuzzerMode ? (
+                                <>
+                                    {participants.length > 0 && (
+                                        <div style={{
+                                            width: '100%',
+                                            marginTop: '1.5rem',
+                                            background: 'linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)',
+                                            borderRadius: '20px',
+                                            padding: '18px 20px',
+                                            border: '2px solid #bfdbfe',
+                                            boxShadow: '0 8px 24px rgba(37, 99, 235, 0.08)'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.05rem', fontWeight: '900', color: '#1e3a8a' }}>
+                                                    <span>🏆 상위 1 · 2 · 3위 실시간 퀴즈 진행 현황</span>
+                                                </div>
+                                                <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#2563eb', background: '#dbeafe', padding: '4px 10px', borderRadius: '999px' }}>
+                                                    전체 {participants.length}명 중 {answeredCount}명 제출 완료
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                                                {[...participants]
+                                                    .sort((a, b) => (b.score || 0) - (a.score || 0))
+                                                    .slice(0, 3)
+                                                    .map((p, idx) => {
+                                                        const rankBadge = ['🥇 1위', '🥈 2위', '🥉 3위'][idx];
+                                                        const rankBg = idx === 0 ? '#fef3c7' : idx === 1 ? '#f1f5f9' : '#ffedd5';
+                                                        const rankBorder = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : '#f97316';
+                                                        const isBuzzedPlayer = buzzedInfo && (buzzedInfo.participantId === p.id || buzzedInfo.nickname === p.nickname);
+                                                        const hasSubmitted = Boolean(p.hasAnswered);
+                                                        return (
+                                                            <div key={p.id || p.nickname || idx} style={{
+                                                                background: 'white',
+                                                                borderRadius: '16px',
+                                                                padding: '12px 14px',
+                                                                border: `2.5px solid ${rankBorder}`,
+                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                gap: '6px',
+                                                                textAlign: 'left'
+                                                            }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                                                    <span style={{ background: rankBg, color: '#0f172a', fontWeight: '900', fontSize: '0.78rem', padding: '3px 8px', borderRadius: '8px' }}>
+                                                                        {rankBadge}
+                                                                    </span>
+                                                                    <span style={{ fontWeight: '900', fontSize: '0.95rem', color: '#2563eb' }}>
+                                                                        {(p.score || 0).toLocaleString()}점
+                                                                    </span>
+                                                                </div>
+                                                                <div style={{ fontWeight: '900', fontSize: '1.05rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                    {p.nickname} {p.groupId ? `(${p.groupId}조)` : ''}
+                                                                </div>
+                                                                <div style={{
+                                                                    fontSize: '0.8rem',
+                                                                    fontWeight: '800',
+                                                                    padding: '5px 8px',
+                                                                    borderRadius: '8px',
+                                                                    textAlign: 'center',
+                                                                    background: isBuzzedPlayer ? '#fef3c7' : (hasSubmitted ? '#dcfce7' : '#f1f5f9'),
+                                                                    color: isBuzzedPlayer ? '#b45309' : (hasSubmitted ? '#15803d' : '#64748b')
+                                                                }}>
+                                                                    {isBuzzedPlayer ? '🔔 버저 정답 도전 중!' : (hasSubmitted ? '✅ 답안 제출 완료' : '⏳ 문제 풀이 중...')}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {isBuzzerMode ? (
                                     <div>
                                         {/* Judge result overlay */}
                                         {judgeResult && (
@@ -3111,17 +3232,17 @@ export default function Host({ socket }) {
                                                         <button onClick={() => updatePoints(currentPoints + 5)} style={{ width: '30px', height: '30px', borderRadius: '50%', border: 'none', background: '#f1f5f9', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
                                                     </div>
                                                 </div>
-                                                {Object.keys(groupScores).length > 0 && <RaceTrack groupScores={groupScores} participants={participants} totalScore={totalScore} />}
+                                                {(Object.keys(groupScores).length > 0 || participants.length > 0) && <RaceTrack groupScores={groupScores} participants={participants} totalScore={totalScore} />}
                                             </div>
                                         )}
                                     </div>
                                 ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '3rem 0', width: '100%' }}>
-                                        <div style={{ fontSize: '7rem', fontWeight: '800', color: 'var(--primary)', lineHeight: '1' }}>{answeredCount}</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '2rem 0', width: '100%' }}>
+                                        <div style={{ fontSize: '6rem', fontWeight: '800', color: 'var(--primary)', lineHeight: '1' }}>{answeredCount}</div>
                                         <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem', fontWeight: 'bold', letterSpacing: '2px' }}>명 제출 완료</p>
                                         
-                                        {Object.keys(groupScores).length > 0 && (
-                                            <div style={{ width: '100%', marginTop: '2rem' }}>
+                                        {(Object.keys(groupScores).length > 0 || participants.length > 0) && (
+                                            <div style={{ width: '100%', marginTop: '1.5rem' }}>
                                                 <RaceTrack groupScores={groupScores} participants={participants} totalScore={totalScore} />
                                             </div>
                                         )}
@@ -3148,7 +3269,8 @@ export default function Host({ socket }) {
                                             결과 보기 <ChevronRight />
                                         </button>
                                     </div>
-                                )
+                                )}
+                                </>
                             )}
 
                             {/* Presenter Next Question Preview */}

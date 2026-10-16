@@ -235,12 +235,19 @@ export default function ScreenView({ socket }) {
                 setIsConnectedToHost(true);
 
                 if (type === 'MODE_CHANGE') {
-                    if (payload && payload.mode === 'fortune') {
+                    if (payload && payload.mode === 'fortune' && isOfflineMode) {
                         navigate('/fortune?subscreen=true');
-                    } else if (payload && payload.mode === 'card_game') {
+                    } else if (payload && payload.mode === 'card_game' && isOfflineMode) {
                         navigate('/card-game?subscreen=true');
                     } else if (payload && payload.mode) {
                         setViewMode(payload.mode);
+                    }
+                } else if (type === 'PLAYER_STREAM_UPDATE') {
+                    if (payload && payload.nickname && payload.stream) {
+                        setPlayerStreams(prev => ({
+                            ...prev,
+                            [payload.nickname]: payload.stream
+                        }));
                     }
                 } else if (type === 'STOCK_GAME_SCREEN_UPDATE') {
                     setViewMode('stock_game');
@@ -268,6 +275,13 @@ export default function ScreenView({ socket }) {
                         if (payload.mode) setViewMode(payload.mode);
                         else if (payload.gameState === 'question') setViewMode('quizrun');
                         else if (payload.gameState === 'waiting') setViewMode('home');
+
+                        if (payload.playerStreams && typeof payload.playerStreams === 'object') {
+                            setPlayerStreams(prev => ({
+                                ...prev,
+                                ...payload.playerStreams
+                            }));
+                        }
 
                         if (payload.scores && payload.scores.length > 0) {
                             setLiveScores(payload.scores);
@@ -318,7 +332,7 @@ export default function ScreenView({ socket }) {
                 channel.close();
             }
         };
-    }, [screenData.currentQuestionIndex]);
+    }, [screenData.currentQuestionIndex, isOfflineMode]);
 
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {
@@ -482,6 +496,10 @@ export default function ScreenView({ socket }) {
     const activeParticipants = (participants && participants.length > 0)
         ? participants
         : (contextOnlineParticipants || []);
+    const mergedPlayerStreams = {
+        ...(screenData.playerStreams || {}),
+        ...playerStreams
+    };
     const activeLiveScores = !isOfflineMode
         ? activeParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true }))
         : liveScores.map(s => ({ num: s.num, score: s.score || 0, isOnline: false }));
@@ -523,8 +541,8 @@ export default function ScreenView({ socket }) {
         }
     };
 
-    // --- CASE 1: LADDER GAME RUN MIRROR MODE ---
-    if (viewMode === 'ladder') {
+    // --- CASE 1: LADDER GAME RUN MIRROR MODE (Offline only; Online uses Top 1-2-3 Spectator) ---
+    if (viewMode === 'ladder' && isOfflineMode) {
         return (
             <div style={{ width: '100%', minHeight: '100vh', background: '#f8fafc', position: 'relative' }}>
                 <Ladder socket={socket} isMirrorProp={true} />
@@ -557,7 +575,14 @@ export default function ScreenView({ socket }) {
         );
     }
 
-    // --- CASE 2: NORMAL SCREEN VIEW (Home / Quizrun with Live Scoreboard) ---
+    const isActiveMultiplayerSpectator =
+        screenData.gameId !== 'word_bomb' &&
+        screenData.gameId !== 'stock_game' &&
+        (viewMode === 'multiplayer_game' ||
+         (viewMode === 'ladder' && !isOfflineMode) ||
+         (screenData.isGame && screenData.gameState === 'game_active' && Boolean(screenData.gameId)));
+
+    // --- CASE 3: NORMAL SCREEN VIEW (Home / Quizrun / GameRun Live Spectator) ---
     return (
         <div style={{
             minHeight: '100vh',
@@ -671,10 +696,11 @@ export default function ScreenView({ socket }) {
                     <div style={{
                         flex: 1,
                         width: '100%',
-                        maxWidth: '1000px',
+                        maxWidth: '1150px',
                         display: 'flex',
                         flexDirection: 'column',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        gap: '20px'
                     }}>
                         <WordBombArena
                             syllable={screenData.gameSyllable || '가'}
@@ -703,30 +729,41 @@ export default function ScreenView({ socket }) {
                                 }
                             }}
                         />
+                        {!isOfflineMode && activeParticipants.length > 0 && (
+                            <div style={{ width: '100%' }}>
+                                <MultiplayerLiveSpectator
+                                    gameId="word_bomb"
+                                    participants={activeParticipants}
+                                    playerStreams={mergedPlayerStreams}
+                                    isHost={false}
+                                />
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* --- SUB-VIEW 0-B: MULTIPLAYER MINI GAME LIVE SPECTATOR (Arcade games) --- */}
-                {screenData.gameId !== 'word_bomb' && (viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game' && screenData.gameId !== 'ox_run' && screenData.gameId !== 'catch_mind')) && (
+                {/* --- SUB-VIEW 0-B: MULTIPLAYER MINI GAME LIVE SPECTATOR (All GameRun Games) --- */}
+                {isActiveMultiplayerSpectator && (
                     <div style={{
                         flex: 1,
                         width: '100%',
                         height: '100%',
-                        minHeight: '520px',
+                        minHeight: '540px',
                         display: 'flex',
                         flexDirection: 'column'
                     }}>
                         <MultiplayerLiveSpectator
-                            gameId={screenData.gameId}
-                            participants={screenData.participants || []}
-                            playerStreams={playerStreams}
+                            gameId={screenData.gameId || (viewMode === 'ladder' ? 'ladder' : '')}
+                            participants={activeParticipants}
+                            playerStreams={mergedPlayerStreams}
+                            activeTheme={screenData.cardMatchThemeId || 'flag'}
                             isHost={false}
                         />
                     </div>
                 )}
 
                 {/* --- SUB-VIEW A: HOME WAITING (Robots Visual) --- */}
-                {screenData.gameId !== 'word_bomb' && !((viewMode === 'multiplayer_game' || (screenData.isGame && screenData.gameState === 'game_active' && screenData.gameId && screenData.gameId !== 'stock_game' && screenData.gameId !== 'ox_run' && screenData.gameId !== 'catch_mind'))) && (viewMode === 'home' || gameState === 'waiting' || gameState === 'setup' || gameState === 'lobby') && (
+                {screenData.gameId !== 'word_bomb' && !isActiveMultiplayerSpectator && (viewMode === 'home' || gameState === 'waiting' || gameState === 'setup' || gameState === 'lobby') && (
                     <div style={{
                         flex: 1,
                         textAlign: 'center',
@@ -1205,11 +1242,79 @@ export default function ScreenView({ socket }) {
                                 </div>
                             )}
 
-                            {/* Group Race Track (Online Mode) */}
-                            {Object.keys(groupScores || {}).length > 0 && (
+                            {/* Top 1, 2, 3 Live Quiz Progress on Sub Monitor */}
+                            {!isOfflineMode && activeParticipants.length > 0 && (
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.96)',
+                                    borderRadius: '26px',
+                                    padding: '20px 26px',
+                                    border: '3px solid #bfdbfe',
+                                    boxShadow: '0 12px 32px rgba(37, 99, 235, 0.08)'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                                        <div style={{ fontSize: '1.35rem', fontWeight: '900', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span>🏆 상위 1 · 2 · 3위 실시간 퀴즈 진행 현황</span>
+                                        </div>
+                                        <span style={{ fontSize: '1rem', fontWeight: '800', color: '#2563eb', background: '#dbeafe', padding: '5px 14px', borderRadius: '999px' }}>
+                                            참여자 {activeParticipants.length}명 중 {screenData.answeredCount ?? activeParticipants.filter(p => p.hasAnswered).length}명 제출 완료
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+                                        {[...activeParticipants]
+                                            .sort((a, b) => (b.score || 0) - (a.score || 0))
+                                            .slice(0, 3)
+                                            .map((p, idx) => {
+                                                const rankBadge = ['🥇 1위', '🥈 2위', '🥉 3위'][idx];
+                                                const rankBg = idx === 0 ? '#fef3c7' : idx === 1 ? '#f1f5f9' : '#ffedd5';
+                                                const rankBorder = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : '#f97316';
+                                                const isBuzzedPlayer = buzzedInfo && (buzzedInfo.participantId === p.id || buzzedInfo.nickname === p.nickname);
+                                                const hasSubmitted = Boolean(p.hasAnswered);
+                                                return (
+                                                    <div key={p.id || p.nickname || idx} style={{
+                                                        background: '#f8fafc',
+                                                        borderRadius: '18px',
+                                                        padding: '14px 18px',
+                                                        border: `3px solid ${rankBorder}`,
+                                                        boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: '8px',
+                                                        textAlign: 'left'
+                                                    }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                                            <span style={{ background: rankBg, color: '#0f172a', fontWeight: '900', fontSize: '0.95rem', padding: '4px 10px', borderRadius: '10px' }}>
+                                                                {rankBadge}
+                                                            </span>
+                                                            <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#2563eb' }}>
+                                                                {(p.score || 0).toLocaleString()}점
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontWeight: '900', fontSize: '1.3rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {p.nickname} {p.groupId ? `(${p.groupId}조)` : ''}
+                                                        </div>
+                                                        <div style={{
+                                                            fontSize: '0.95rem',
+                                                            fontWeight: '800',
+                                                            padding: '6px 10px',
+                                                            borderRadius: '10px',
+                                                            textAlign: 'center',
+                                                            background: isBuzzedPlayer ? '#fef3c7' : (hasSubmitted ? '#dcfce7' : '#e2e8f0'),
+                                                            color: isBuzzedPlayer ? '#b45309' : (hasSubmitted ? '#15803d' : '#475569')
+                                                        }}>
+                                                            {isBuzzedPlayer ? '🔔 버저 정답 도전 중!' : (hasSubmitted ? '✅ 답안 제출 완료' : '⏳ 문제 풀이 중...')}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Group / Individual Race Track (Online Mode) */}
+                            {(Object.keys(groupScores || {}).length > 0 || activeParticipants.length > 0) && (
                                 <ScreenRaceTrack
                                     groupScores={groupScores}
-                                    participants={participants}
+                                    participants={activeParticipants}
                                     totalScore={totalPoints}
                                 />
                             )}
@@ -1235,7 +1340,7 @@ export default function ScreenView({ socket }) {
 
                         <ScreenRaceTrack
                             groupScores={groupScores}
-                            participants={participants}
+                            participants={activeParticipants}
                             totalScore={totalPoints}
                         />
                     </div>

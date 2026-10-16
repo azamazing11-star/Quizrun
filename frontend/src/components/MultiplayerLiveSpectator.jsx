@@ -278,63 +278,215 @@ function SpectatorAirplaneView({ gameData }) {
     const shield = gameData?.shield !== undefined ? gameData.shield : 100;
     const bombs = gameData?.bombs !== undefined ? gameData.bombs : 3;
     const lives = gameData?.lives !== undefined ? gameData.lives : 3;
-    const stage = gameData?.stage || 'SECTOR 1';
+    const weaponLevel = gameData?.weaponLevel || 1;
+    const stage = gameData?.stageName || (gameData?.stage ? `SECTOR ${gameData.stage}` : 'SECTOR 1');
     const score = gameData?.score || 0;
+    const playerX = (gameData?.playerX !== undefined ? gameData.playerX : 0.5) * 100;
+    const playerY = (gameData?.playerY !== undefined ? gameData.playerY : 0.82) * 100;
+    const enemies = Array.isArray(gameData?.enemies) ? gameData.enemies : [];
+    const bullets = Array.isArray(gameData?.bullets) ? gameData.bullets : [];
+    const bossHp = gameData?.bossHp || 0;
+    const bossMaxHp = gameData?.bossMaxHp || 100;
 
     return (
         <div style={{
             width: '100%',
             height: '100%',
+            minHeight: '190px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'space-between',
             background: 'radial-gradient(circle at center, #0f172a 0%, #020617 100%)',
             borderRadius: '12px',
-            padding: '12px',
+            padding: '10px 12px',
             color: '#f8fafc',
             border: '1.5px solid #334155',
-            boxSizing: 'border-box'
+            boxSizing: 'border-box',
+            gap: '6px'
         }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                <span style={{ color: '#38bdf8' }}>🚀 {stage}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.76rem', fontWeight: 'bold' }}>
+                <span style={{ color: '#38bdf8' }}>🚀 {stage} · Lv.{weaponLevel}</span>
+                <span style={{ color: '#f43f5e' }}>{'❤️'.repeat(Math.max(0, Math.min(3, lives)))}</span>
                 <span style={{ color: '#fbbf24' }}>🏆 {score.toLocaleString()}점</span>
             </div>
 
-            {/* Fighter Plane Graphic */}
-            <div style={{ position: 'relative', width: '80px', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ fontSize: '3.2rem', filter: 'drop-shadow(0 0 10px rgba(56, 189, 248, 0.6))', animation: 'levitate 1.5s ease-in-out infinite' }}>
+            {bossHp > 0 && (
+                <div style={{ width: '100%', background: '#1e293b', borderRadius: '6px', padding: '2px 6px', border: '1px solid #ef4444' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#fca5a5', fontWeight: '800' }}>
+                        <span>👾 BOSS</span>
+                        <span>{bossHp} / {bossMaxHp}</span>
+                    </div>
+                    <div style={{ width: '100%', height: '4px', background: '#334155', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }}>
+                        <div style={{ width: `${Math.min(100, Math.round((bossHp / Math.max(1, bossMaxHp)) * 100))}%`, height: '100%', background: '#ef4444' }} />
+                    </div>
+                </div>
+            )}
+
+            {/* Live Battlefield Radar */}
+            <div style={{
+                position: 'relative',
+                width: '100%',
+                flex: 1,
+                minHeight: '115px',
+                background: 'linear-gradient(180deg, #020617 0%, #090d16 100%)',
+                borderRadius: '8px',
+                border: '1px solid #1e293b',
+                overflow: 'hidden'
+            }}>
+                {/* Bullets */}
+                {bullets.map((b, i) => (
+                    <div
+                        key={`b-${i}`}
+                        style={{
+                            position: 'absolute',
+                            left: `${(b.x ?? 0.5) * 100}%`,
+                            top: `${(b.y ?? 0.5) * 100}%`,
+                            width: '4px',
+                            height: '10px',
+                            background: '#38bdf8',
+                            borderRadius: '2px',
+                            boxShadow: '0 0 6px #38bdf8',
+                            transform: 'translate(-50%, -50%)'
+                        }}
+                    />
+                ))}
+                {/* Enemies */}
+                {enemies.map((e, i) => (
+                    <div
+                        key={`e-${i}`}
+                        style={{
+                            position: 'absolute',
+                            left: `${(e.x ?? 0.5) * 100}%`,
+                            top: `${(e.y ?? 0.2) * 100}%`,
+                            fontSize: e.isBoss ? '1.6rem' : '1rem',
+                            transform: 'translate(-50%, -50%)',
+                            filter: 'drop-shadow(0 0 6px rgba(244,63,94,0.7))'
+                        }}
+                    >
+                        {e.isBoss ? '👾' : '🛸'}
+                    </div>
+                ))}
+                {/* Player Fighter */}
+                <div style={{
+                    position: 'absolute',
+                    left: `${playerX}%`,
+                    top: `${playerY}%`,
+                    transform: 'translate(-50%, -50%)',
+                    fontSize: '1.55rem',
+                    filter: 'drop-shadow(0 0 10px rgba(56, 189, 248, 0.85))',
+                    transition: 'left 0.18s linear, top 0.18s linear'
+                }}>
                     🚀
                 </div>
             </div>
 
             {/* Shield and Bombs */}
-            <div style={{ width: '100%', maxWidth: '240px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#94a3b8', marginBottom: '3px' }}>
-                    <span>🛡️ SHIELD {shield}%</span>
-                    <span>💣 폭탄: {bombs}개</span>
+            <div style={{ width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8', marginBottom: '3px' }}>
+                    <span>🛡️ SHIELD {Math.max(0, shield)}%</span>
+                    <span>💣 MEGABLAST: {bombs}</span>
                 </div>
-                <div style={{ width: '100%', height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${shield}%`, height: '100%', background: shield > 30 ? 'linear-gradient(90deg, #06b6d4, #3b82f6)' : '#ef4444' }} />
+                <div style={{ width: '100%', height: '5px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.max(0, Math.min(100, shield))}%`, height: '100%', background: shield > 30 ? 'linear-gradient(90deg, #06b6d4, #3b82f6)' : '#ef4444' }} />
                 </div>
             </div>
         </div>
     );
 }
 
-// 5. Mini Generic / Fallback Game Spectator
-function SpectatorGenericView({ gameData, gameId }) {
+// 5. Mini Generic / Universal Game & Quiz Spectator
+function SpectatorGenericView({ gameData, gameId, playerScore = 0 }) {
+    const GAME_META = {
+        yutnori: { icon: '🎲', label: '윷놀이 실시간 진행' },
+        rock_paper_scissors: { icon: '✊✌️🖐️', label: '가위바위보 실시간 대결' },
+        whack_mole: { icon: '🐹', label: '두더지 잡기 실시간 사냥' },
+        omok: { icon: '⚫⚪', label: '오목 실시간 대국' },
+        minesweeper: { icon: '💣', label: '지뢰찾기 실시간 탐색' },
+        speed_numbers: { icon: '🔢', label: '숫자 순서 실시간 터치' },
+        janggi: { icon: '♟️', label: '장기 실시간 대국' },
+        chess: { icon: '♔', label: '체스 실시간 대국' },
+        card_poker: { icon: '🃏', label: '럭키 카드 배틀 진행' },
+        card_game: { icon: '🃏', label: '럭키 카드 배틀 진행' },
+        gostop: { icon: '🎴', label: '화투 패 뒤집기 진행' },
+        othello: { icon: '🟢', label: '오셀로 실시간 대국' },
+        memory_game: { icon: '🧠', label: '기억력 패턴 게임 진행' },
+        pass_bomb: { icon: '💣', label: '폭탄 돌리기 실시간 진행' },
+        spot_difference: { icon: '🔍', label: '숨은 그림 찾기 탐색' },
+        fortune: { icon: '🥠', label: '행운의 포춘 쿠키' },
+        ladder: { icon: '🪜', label: '사다리 타기 실시간 선택' },
+        word_bomb: { icon: '💣', label: '단어 폭탄 실시간 서바이벌' },
+        ox_run: { icon: '⭕❌', label: 'OX 서바이벌 실시간 선택' },
+        catch_mind: { icon: '🎨', label: '캐치마인드 실시간 추리' },
+        quiz: { icon: '📝', label: '퀴즈런 실시간 풀이 현황' }
+    };
+    const meta = GAME_META[gameId] || { icon: '🎮', label: '실시간 게임 플레이 진행 중' };
+    const statusText = gameData?.statusText || `${meta.label} 중...`;
+    const progressPct = typeof gameData?.progressPct === 'number'
+        ? Math.max(8, Math.min(100, gameData.progressPct))
+        : (playerScore > 0 ? Math.min(100, Math.max(15, playerScore)) : 15);
+
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0', minHeight: '160px' }}>
-            <span style={{ fontSize: '2.2rem', marginBottom: '6px', animation: 'bounce 1.5s infinite' }}>🎮</span>
-            <div style={{ fontSize: '0.92rem', fontWeight: '900', color: '#1e293b' }}>
-                실시간 게임 플레이 진행 중
+        <div style={{
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 16px',
+            background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
+            borderRadius: '14px',
+            border: '1.5px solid #cbd5e1',
+            minHeight: '155px',
+            boxSizing: 'border-box',
+            gap: '8px'
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '2rem' }}>{meta.icon}</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: '900', color: '#475569' }}>{meta.label}</span>
             </div>
-            {gameData?.score !== undefined && (
-                <div style={{ marginTop: '6px', fontSize: '1.15rem', fontWeight: '900', color: '#2563eb' }}>
-                    {gameData.score.toLocaleString()}점
+
+            <div style={{
+                width: '100%',
+                background: '#ffffff',
+                border: '1.5px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '10px 12px',
+                textAlign: 'center',
+                fontSize: '0.92rem',
+                fontWeight: '900',
+                color: '#0f172a',
+                wordBreak: 'keep-all',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
+            }}>
+                {statusText}
+            </div>
+
+            {Array.isArray(gameData?.history) && gameData.history.length > 0 && (
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    {gameData.history.slice(0, 5).map((h, i) => (
+                        <span key={i} style={{ fontSize: '0.72rem', background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b', padding: '2px 7px', borderRadius: '6px', fontWeight: '800' }}>
+                            {h}
+                        </span>
+                    ))}
                 </div>
             )}
+
+            <div style={{ width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#64748b', fontWeight: '800', marginBottom: '4px' }}>
+                    <span>실시간 달성률</span>
+                    <span style={{ color: '#2563eb' }}>{progressPct}%</span>
+                </div>
+                <div style={{ width: '100%', height: '8px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
+                    <div style={{
+                        width: `${progressPct}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #3b82f6 0%, #10b981 100%)',
+                        borderRadius: '999px',
+                        transition: 'width 0.3s ease'
+                    }} />
+                </div>
+            </div>
         </div>
     );
 }
@@ -346,7 +498,8 @@ export default function MultiplayerLiveSpectator({
     playerStreams = {},
     activeTheme = null,
     onEndGame,
-    isHost = false
+    isHost = false,
+    compact = false
 }) {
     const [lastWinnerAnnounced, setLastWinnerAnnounced] = useState(null);
     const [confettiActive, setConfettiActive] = useState(false);
@@ -395,30 +548,26 @@ export default function MultiplayerLiveSpectator({
     // 1. Rank players by Score (Descending)
     const rankedPlayers = [...playerList].sort((a, b) => b.score - a.score);
 
-    // 2. Filter Alive Players vs Dead/Eliminated Players
-    const alivePlayers = rankedPlayers.filter(p => p.isAlive && !p.isFinished);
+    // 2. Filter Alive Players vs Eliminated Players
+    const isEliminationGame = ['tetris', 'brick_breaker', 'timeattack', 'airplane_game', 'word_bomb'].includes(gameId);
+    const alivePlayers = rankedPlayers.filter(p => isEliminationGame ? (p.isAlive && !p.isFinished) : (p.isAlive !== false));
     const totalParticipantCount = rankedPlayers.length;
 
-    // 3. Dynamic Screen Layout:
-    // - 3+ alive: 3 screens (1st, 2nd, 3rd)
-    // - 2 alive (3rd died or 2 participants): 2 screens (1st, 2nd)
-    // - 1 alive (2nd died or 1 participant): 1 full screen (1st)
+    // 3. Dynamic Screen Layout (Top 1, 2, 3)
     let displayPlayers = [];
     if (alivePlayers.length >= 3) {
         displayPlayers = alivePlayers.slice(0, 3);
     } else if (alivePlayers.length === 2) {
         displayPlayers = alivePlayers.slice(0, 2);
     } else if (alivePlayers.length === 1) {
-        displayPlayers = alivePlayers.slice(0, 1);
+        displayPlayers = isEliminationGame ? alivePlayers.slice(0, 1) : rankedPlayers.slice(0, 3);
     } else if (rankedPlayers.length > 0) {
-        // If all died/finished, display top 3 finished results
         displayPlayers = rankedPlayers.slice(0, 3);
     }
 
-    // 4. Check automatic victory / game completion condition:
-    // "2위가 죽으면 그 순간의 1위 점수로 게임이 끝나게 해줘."
+    // 4. Check automatic victory / game completion condition for elimination survival games:
     useEffect(() => {
-        if (totalParticipantCount >= 2 && alivePlayers.length === 1 && !hasTriggeredEndRef.current) {
+        if (isEliminationGame && totalParticipantCount >= 2 && alivePlayers.length === 1 && !hasTriggeredEndRef.current) {
             const winner = alivePlayers[0];
             hasTriggeredEndRef.current = true;
             setLastWinnerAnnounced(winner);
@@ -432,7 +581,7 @@ export default function MultiplayerLiveSpectator({
                 }, 2500);
             }
         }
-    }, [alivePlayers.length, totalParticipantCount]);
+    }, [alivePlayers.length, totalParticipantCount, isEliminationGame]);
 
     const rankBadges = [
         { rank: 1, title: '1위 👑', bg: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', border: '#f59e0b', ring: 'rgba(245, 158, 11, 0.4)' },
@@ -557,13 +706,17 @@ export default function MultiplayerLiveSpectator({
                                 </div>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    {isAlive ? (
-                                        <span style={{ fontSize: '0.7rem', background: '#15803d', padding: '2px 7px', borderRadius: '8px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#4ade80' }} /> 생존
-                                        </span>
-                                    ) : (
+                                    {player.isAlive === false ? (
                                         <span style={{ fontSize: '0.7rem', background: '#991b1b', padding: '2px 7px', borderRadius: '8px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '3px' }}>
                                             <Skull size={11} /> 탈락
+                                        </span>
+                                    ) : player.isFinished ? (
+                                        <span style={{ fontSize: '0.7rem', background: '#0369a1', padding: '2px 7px', borderRadius: '8px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                            🏆 완료
+                                        </span>
+                                    ) : (
+                                        <span style={{ fontSize: '0.7rem', background: '#15803d', padding: '2px 7px', borderRadius: '8px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#4ade80' }} /> 진행 중
                                         </span>
                                     )}
                                 </div>
@@ -605,7 +758,7 @@ export default function MultiplayerLiveSpectator({
                                 ) : (gameId === 'timeattack' || gameId === 'airplane_game') ? (
                                     <SpectatorAirplaneView gameData={player.gameData} />
                                 ) : (
-                                    <SpectatorGenericView gameData={player.gameData} gameId={gameId} />
+                                    <SpectatorGenericView gameData={player.gameData} gameId={gameId} playerScore={player.score} />
                                 )}
                             </div>
                         </div>
