@@ -598,7 +598,7 @@ app.get('/api/git/status', async (req, res) => {
   }
 });
 
-// 2. Sync / Backup to GitHub (Push)
+// 2. Sync / Backup to GitHub (Push with Smart Auto-Merge)
 app.post('/api/git/push', async (req, res) => {
   if (isGitOperating) {
     return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
@@ -617,17 +617,49 @@ app.post('/api/git/push', async (req, res) => {
       didCommit = true;
     }
 
+    // Check if remote has new updates from another PC and auto-merge keeping local latest data
+    let didMergeRemote = false;
+    try {
+      await runGit(['fetch', 'origin', 'main'], { timeout: 15000 });
+      const behindRes = await runGit(['rev-list', '--count', 'HEAD..origin/main'], { timeout: 10000 });
+      const behindCount = parseInt(behindRes.stdout.trim(), 10) || 0;
+      if (behindCount > 0) {
+        console.log(`[Git Sync] Remote has ${behindCount} new commit(s). Auto-merging with local priority (-X ours)...`);
+        await runGit(['merge', 'origin/main', '--no-edit', '-X', 'ours'], { timeout: 35000 });
+        didMergeRemote = true;
+      }
+    } catch (mergeErr) {
+      console.warn('[Git Sync] Auto-merge check warning:', mergeErr.message || mergeErr);
+    }
+
     console.log('[Git Sync] Pushing to GitHub (origin/main)...');
     const pushRes = await runGit(['push', 'origin', 'main'], { timeout: 45000 });
     console.log('[Git Sync] Push successful:', pushRes.stdout, pushRes.stderr);
 
+    if (didMergeRemote) {
+      try {
+        console.log('[Git Sync] Rebuilding frontend after remote merge...');
+        await runNpm(['run', 'build']);
+      } catch (buildErr) {
+        console.warn('[Git Sync] Post-merge build warning:', buildErr.message);
+      }
+      PERSISTED_QUIZZES = loadPersistedData(QUIZ_DATA_PATH);
+      APP_CONFIG = loadPersistedData(APP_CONFIG_PATH, DEFAULT_APP_CONFIG);
+      if (typeof io !== 'undefined' && io) {
+        io.emit('config:updated', APP_CONFIG);
+      }
+    }
+
     isGitOperating = false;
     res.json({
       success: true,
-      message: didCommit 
-        ? '변경된 모든 데이터가 깃허브에 성공적으로 백업(Push)되었습니다!' 
-        : '이미 깃허브 원격 저장소와 완벽하게 일치하며 최신 상태입니다.',
-      didCommit
+      message: didMergeRemote
+        ? '다른 컴퓨터의 최신 업데이트와 현재 로컬 데이터를 자동으로 병합하여 깃허브에 백업(Push) 완료했습니다!'
+        : didCommit 
+          ? '변경된 모든 데이터가 깃허브에 성공적으로 백업(Push)되었습니다!' 
+          : '이미 깃허브 원격 저장소와 완벽하게 일치하며 최신 상태입니다.',
+      didCommit,
+      didMergeRemote
     });
   } catch (err) {
     isGitOperating = false;
@@ -643,15 +675,24 @@ app.post('/api/git/push', async (req, res) => {
   }
 });
 
-// 3. Update from GitHub (Pull & Rebuild)
+// 3. Update from GitHub (Pull & Smart Merge & Rebuild)
 app.post('/api/git/pull', async (req, res) => {
   if (isGitOperating) {
     return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
   }
   isGitOperating = true;
   try {
+    // Auto-save any uncommitted local changes before pulling so local updates are never lost
+    const statusRes = await runGit(['status', '--porcelain']);
+    if (statusRes.stdout && statusRes.stdout.trim().length > 0) {
+      const autoMsg = `Auto-backup before pull (${new Date().toLocaleString('ko-KR')})`;
+      console.log(`[Git Update] Committing local changes before pull: ${autoMsg}`);
+      await runGit(['add', '-A']);
+      await runGit(['commit', '-m', autoMsg]);
+    }
+
     console.log('[Git Update] Pulling latest changes from GitHub...');
-    const pullRes = await runGit(['pull', 'origin', 'main'], { timeout: 45000 });
+    const pullRes = await runGit(['pull', '--no-rebase', '-X', 'theirs', 'origin', 'main'], { timeout: 45000 });
     console.log('[Git Update] Pull output:', pullRes.stdout, pullRes.stderr);
 
     // Rebuild frontend production bundle so web UI reflects updates
@@ -673,16 +714,13 @@ app.post('/api/git/pull', async (req, res) => {
       success: true,
       message: isAlreadyUpToDate
         ? '이미 깃허브 최신 버전입니다 (변경사항 없음). 프론트엔드 최신 빌드가 완료되었습니다!'
-        : '깃허브 최신 코드로 성공적으로 업데이트 및 빌드가 완료되었습니다! 화면을 새로고침합니다.',
+        : '깃허브 최신 코드로 성공적으로 병합 및 빌드가 완료되었습니다! 화면을 새로고침합니다.',
       output: pullRes.stdout
     });
   } catch (err) {
     isGitOperating = false;
     console.error('[Git Update] Pull error:', err);
     let errMsg = `깃허브 업데이트 중 오류가 발생했습니다: ${err.message || err}`;
-    if (err.stderr && err.stderr.includes('local changes')) {
-      errMsg = '로컬에 커밋되지 않은 수정사항이 있어 충돌 방지를 위해 중단되었습니다. 먼저 [강제 백업(Push)]을 진행하시거나 수정사항을 정리해주세요.';
-    }
     res.status(500).json({
       success: false,
       message: errMsg
@@ -804,6 +842,40 @@ let APP_CONFIG = loadPersistedData(APP_CONFIG_PATH, DEFAULT_APP_CONFIG);
 if (!fs.existsSync(APP_CONFIG_PATH)) {
     savePersistedData(APP_CONFIG_PATH, APP_CONFIG);
 }
+
+// REST endpoints for Cloud / JSON Data Sync (used by cloudSync.js)
+app.get('/api/quizzes', (req, res) => {
+  res.json({
+    quizzes: PERSISTED_QUIZZES,
+    appConfig: APP_CONFIG
+  });
+});
+
+app.post('/api/quizzes', (req, res) => {
+  try {
+    const body = req.body;
+    if (body && typeof body === 'object') {
+      if (body.quizzes && typeof body.quizzes === 'object') {
+        PERSISTED_QUIZZES = { ...PERSISTED_QUIZZES, ...body.quizzes };
+        savePersistedData(QUIZ_DATA_PATH, PERSISTED_QUIZZES);
+      } else if (!body.appConfig) {
+        PERSISTED_QUIZZES = { ...PERSISTED_QUIZZES, ...body };
+        savePersistedData(QUIZ_DATA_PATH, PERSISTED_QUIZZES);
+      }
+      if (body.appConfig && typeof body.appConfig === 'object') {
+        APP_CONFIG = { ...APP_CONFIG, ...body.appConfig };
+        savePersistedData(APP_CONFIG_PATH, APP_CONFIG);
+        if (typeof io !== 'undefined' && io) {
+          io.emit('config:updated', APP_CONFIG);
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Quizzes API] Error restoring quizzes:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 const rooms = {};
 
