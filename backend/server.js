@@ -728,6 +728,70 @@ app.post('/api/git/pull', async (req, res) => {
   }
 });
 
+// 4. One-Click All-in-One Git & Render Sync (Pull -> Auto-Commit & Push -> Rebuild)
+app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
+  if (isGitOperating) {
+    return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
+  }
+  isGitOperating = true;
+  try {
+    const customMessage = req.body?.message || `원클릭 동기화: Quizrun (${new Date().toLocaleString('ko-KR')})`;
+    console.log('[Git One-Click Sync] Step 1: Pulling latest changes from GitHub...');
+    let pullOutput = '';
+    try {
+      const pullRes = await runGit(['pull', '--no-rebase', 'origin', 'main'], { timeout: 45000 });
+      pullOutput = pullRes.stdout || '';
+      console.log('[Git One-Click Sync] Pull result:', pullOutput);
+    } catch (pullErr) {
+      console.warn('[Git One-Click Sync] Pull warning (proceeding):', pullErr.message || pullErr);
+    }
+
+    console.log('[Git One-Click Sync] Step 2: Staging and committing local changes...');
+    await runGit(['add', '-A']);
+    const statusRes = await runGit(['status', '--porcelain']);
+    let didCommit = false;
+    if (statusRes.stdout && statusRes.stdout.trim().length > 0) {
+      await runGit(['commit', '-m', customMessage]);
+      didCommit = true;
+    }
+
+    console.log('[Git One-Click Sync] Step 3: Pushing to GitHub (origin/main)...');
+    const pushRes = await runGit(['push', 'origin', 'main'], { timeout: 45000 });
+    console.log('[Git One-Click Sync] Push result:', pushRes.stdout);
+
+    console.log('[Git One-Click Sync] Step 4: Rebuilding frontend bundle...');
+    try {
+      await runNpm(['run', 'build']);
+      console.log('[Git One-Click Sync] Frontend build finished.');
+    } catch (buildErr) {
+      console.warn('[Git One-Click Sync] Build warning:', buildErr.message);
+    }
+
+    // Reload persisted quizzes and config into memory
+    PERSISTED_QUIZZES = loadPersistedData(QUIZ_DATA_PATH);
+    APP_CONFIG = loadPersistedData(APP_CONFIG_PATH, DEFAULT_APP_CONFIG);
+    if (typeof io !== 'undefined' && io) {
+      io.emit('config:updated', APP_CONFIG);
+    }
+
+    isGitOperating = false;
+    res.json({
+      success: true,
+      message: 'GitHub 및 Render 웹사이트 동기화가 성공적으로 완료되었습니다! (Render는 약 1분 뒤 자동 배포 완료됩니다)',
+      didCommit,
+      pull: pullOutput,
+      push: pushRes.stdout
+    });
+  } catch (err) {
+    isGitOperating = false;
+    console.error('[Git One-Click Sync] Error:', err);
+    res.status(500).json({
+      success: false,
+      message: `동기화 실패: ${err.message || err}`
+    });
+  }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {

@@ -67,6 +67,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
     const [customMessage, setCustomMessage] = useState('');
     const [statusMessage, setStatusMessage] = useState(null);
     const [showManualOptions, setShowManualOptions] = useState(false);
+    const [isSyncingAll, setIsSyncingAll] = useState(false);
 
     const jsonFileInputRef = useRef(null);
 
@@ -75,6 +76,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
         window.location.hostname === 'localhost' || 
         window.location.hostname === '127.0.0.1'
     );
+    const apiBase = typeof window !== 'undefined' && window.location.protocol === 'file:' ? 'http://localhost:5173' : '';
 
     // 모달 오픈 시 초기화
     useEffect(() => {
@@ -209,7 +211,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
         if (!isLocal) return;
         setIsLoadingStatus(true);
         try {
-            const res = await fetch('/api/git/status');
+            const res = await fetch(`${apiBase}/api/git/status`);
             const data = await res.json();
             if (data.success) {
                 setGitStatus(data);
@@ -221,14 +223,44 @@ export default function GitSyncModal({ isOpen, onClose }) {
         }
     };
 
-    // GitHub Push
+    // GitHub & Render 원클릭 최신화 (Pull -> Auto-Commit & Push -> Rebuild)
+    const handleOneClickSync = async () => {
+        if (isSyncingAll || isPushing || isPulling) return;
+        setIsSyncingAll(true);
+        setStatusMessage({ type: 'info', text: 'GitHub 및 Render 배포 동기화 진행 중입니다 (내려받기 ➔ 백업 ➔ 빌드 최신화)...' });
+
+        try {
+            const res = await fetch(`${apiBase}/api/git/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: customMessage || undefined })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setStatusMessage({ type: 'success', text: '✅ ' + (data.message || 'GitHub 및 Render 웹사이트 동기화가 성공적으로 완료되었습니다!') });
+                setCustomMessage('');
+                fetchGitStatus();
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                setStatusMessage({ type: 'error', text: data.message || '동기화 중 오류가 발생했습니다.' });
+            }
+        } catch (err) {
+            setStatusMessage({ type: 'error', text: `동기화 실패: ${err.message} (Quizrun_Start.bat 실행 창이 켜져 있는지 확인해주세요)` });
+        } finally {
+            setIsSyncingAll(false);
+        }
+    };
+
+    // GitHub Push (수동)
     const handlePush = async () => {
-        if (isPushing || isPulling) return;
+        if (isSyncingAll || isPushing || isPulling) return;
         setIsPushing(true);
         setStatusMessage({ type: 'info', text: '로컬 코드를 깃허브로 안전하게 백업(Push)하는 중입니다...' });
 
         try {
-            const res = await fetch('/api/git/push', {
+            const res = await fetch(`${apiBase}/api/git/push`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: customMessage || undefined })
@@ -249,9 +281,9 @@ export default function GitSyncModal({ isOpen, onClose }) {
         }
     };
 
-    // GitHub Pull & Build
+    // GitHub Pull & Build (수동)
     const handlePull = async () => {
-        if (isPushing || isPulling) return;
+        if (isSyncingAll || isPushing || isPulling) return;
         if (!window.confirm('깃허브에서 최신 코드를 다운로드하고 적용하시겠습니까?\n업데이트 후 페이지가 자동으로 새로고침됩니다.')) {
             return;
         }
@@ -260,7 +292,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
         setStatusMessage({ type: 'info', text: '깃허브 최신 코드를 다운로드하고 프론트엔드를 빌드 중입니다 (약 5~8초 소요)...' });
 
         try {
-            const res = await fetch('/api/git/pull', {
+            const res = await fetch(`${apiBase}/api/git/pull`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -720,7 +752,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
 
                             {isLocal ? (
                                 <>
-                                    {/* 화면 버튼 클릭 카드 */}
+                                    {/* 화면 원클릭 최신화 카드 */}
                                     <div style={{
                                         background: 'linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%)',
                                         color: 'white',
@@ -737,55 +769,140 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                                 <span>화면에서 바로 GitHub & Render 동기화</span>
                                             </h4>
                                             <p style={{ margin: '3px 0 0', fontSize: '0.75rem', color: '#c7d2fe' }}>
-                                                버튼 클릭 한 번으로 최신 코드 내려받기(pull)와 웹 배포 올리기(push)를 자동 실행합니다.
+                                                버튼 클릭 한 번으로 최신 코드 받기(pull), 변경사항 올리기(push), 프론트엔드 최신 빌드까지 자동 완료합니다.
                                             </p>
                                         </div>
 
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                                            <button
-                                                onClick={handlePull}
-                                                disabled={isPulling || isPushing}
-                                                style={{
-                                                    padding: '12px',
-                                                    background: '#0284c7',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '12px',
-                                                    fontWeight: '900',
-                                                    fontSize: '0.82rem',
-                                                    cursor: (isPulling || isPushing) ? 'not-allowed' : 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    gap: '6px'
-                                                }}
-                                            >
-                                                <ArrowDownCircle size={16} />
-                                                <span>{isPulling ? '업데이트 중...' : '깃허브에서 최신 코드 받기'}</span>
-                                            </button>
+                                        <button
+                                            onClick={handleOneClickSync}
+                                            disabled={isSyncingAll || isPulling || isPushing}
+                                            style={{
+                                                padding: '14px',
+                                                background: '#4f46e5',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '12px',
+                                                fontWeight: '900',
+                                                fontSize: '0.85rem',
+                                                cursor: (isSyncingAll || isPulling || isPushing) ? 'not-allowed' : 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '8px',
+                                                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)'
+                                            }}
+                                        >
+                                            {isSyncingAll ? (
+                                                <>
+                                                    <RefreshCw size={16} className="animate-spin" />
+                                                    <span>GitHub 및 Render 동기화 진행 중...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Zap size={16} color="#fbbf24" />
+                                                    <span>⚡ GitHub & Render 원클릭 최신화 실행하기</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8', textAlign: 'center' }}>
+                                            * 프로그램 백엔드를 실행하는 Quizrun_Start.bat 창이 열려 있어야 합니다.
+                                        </p>
+                                    </div>
 
-                                            <button
-                                                onClick={handlePush}
-                                                disabled={isPulling || isPushing}
-                                                style={{
-                                                    padding: '12px',
-                                                    background: '#4f46e5',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '12px',
-                                                    fontWeight: '900',
-                                                    fontSize: '0.82rem',
-                                                    cursor: (isPulling || isPushing) ? 'not-allowed' : 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    gap: '6px'
-                                                }}
-                                            >
-                                                <ArrowUpCircle size={16} />
-                                                <span>{isPushing ? '올리는 중...' : '깃허브로 백업 올리기 (Push)'}</span>
-                                            </button>
+                                    {/* Git 상태 정보 카드 */}
+                                    {gitStatus && (
+                                        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '0.9rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.75rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <GitBranch size={14} color="#6366f1" />
+                                                    <span>GitHub 커밋 상태</span>
+                                                </span>
+                                                <button
+                                                    onClick={fetchGitStatus}
+                                                    disabled={isLoadingStatus}
+                                                    style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', fontWeight: '700' }}
+                                                >
+                                                    <RefreshCw size={12} className={isLoadingStatus ? "animate-spin" : ""} />
+                                                    <span>새로고침</span>
+                                                </button>
+                                            </div>
+                                            {gitStatus.currentCommit && (
+                                                <div style={{ color: '#475569' }}>
+                                                    <strong>최신 커밋:</strong> {gitStatus.currentCommit.hash} - {gitStatus.currentCommit.subject} ({gitStatus.currentCommit.date})
+                                                </div>
+                                            )}
                                         </div>
+                                    )}
+
+                                    {/* 수동 / 개별 동기화 접기/펼치기 */}
+                                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
+                                        <button
+                                            onClick={() => setShowManualOptions(!showManualOptions)}
+                                            style={{
+                                                width: '100%',
+                                                padding: '10px 14px',
+                                                background: '#f8fafc',
+                                                border: 'none',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                cursor: 'pointer',
+                                                fontSize: '0.78rem',
+                                                fontWeight: '800',
+                                                color: '#475569'
+                                            }}
+                                        >
+                                            <span>고급: 개별 수동 동기화 (Pull / Push 개별 실행)</span>
+                                            {showManualOptions ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                        </button>
+                                        {showManualOptions && (
+                                            <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', background: 'white' }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                                    <button
+                                                        onClick={handlePull}
+                                                        disabled={isPulling || isPushing || isSyncingAll}
+                                                        style={{
+                                                            padding: '10px',
+                                                            background: '#0284c7',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '10px',
+                                                            fontWeight: '800',
+                                                            fontSize: '0.78rem',
+                                                            cursor: (isPulling || isPushing || isSyncingAll) ? 'not-allowed' : 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            gap: '6px'
+                                                        }}
+                                                    >
+                                                        <ArrowDownCircle size={14} />
+                                                        <span>{isPulling ? '업데이트 중...' : '코드만 내려받기 (Pull)'}</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={handlePush}
+                                                        disabled={isPulling || isPushing || isSyncingAll}
+                                                        style={{
+                                                            padding: '10px',
+                                                            background: '#059669',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '10px',
+                                                            fontWeight: '800',
+                                                            fontSize: '0.78rem',
+                                                            cursor: (isPulling || isPushing || isSyncingAll) ? 'not-allowed' : 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            gap: '6px'
+                                                        }}
+                                                    >
+                                                        <ArrowUpCircle size={14} />
+                                                        <span>{isPushing ? '올리는 중...' : '코드만 백업하기 (Push)'}</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* 보조 실행 파일 카드 */}
