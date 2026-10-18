@@ -669,6 +669,24 @@ export default function Participant({ socket }) {
             event: 'game:submit_word',
             payload: { word: clean }
         });
+        emitLiveGameStream({
+            socket,
+            pin,
+            gameId: 'word_bomb',
+            nickname,
+            groupId,
+            baseScore: myScore + 10,
+            roundScore: 10,
+            isAlive: !gameEliminated.includes(socket.id),
+            isFinished: false,
+            updateRoomScore: false,
+            gameData: {
+                statusText: `💣 '${clean}' 제출 완료! (+10점)`,
+                lastWord: clean,
+                syllable: gameSyllable,
+                progressPct: Math.min(100, ((gameUsedWords?.length || 0) + 1) * 10)
+            }
+        });
         setWordInput('');
     };
 
@@ -681,16 +699,51 @@ export default function Participant({ socket }) {
             event: 'game:submit_ox',
             payload: { choice }
         });
+        emitLiveGameStream({
+            socket,
+            pin,
+            gameId: 'ox_run',
+            nickname,
+            groupId,
+            baseScore: myScore,
+            roundScore: 0,
+            isAlive: true,
+            isFinished: false,
+            updateRoomScore: false,
+            gameData: {
+                statusText: `⭕❌ '${choice}' 선택 완료!`,
+                oxChoice: choice,
+                progressPct: 100
+            }
+        });
     };
 
     const submitGuess = (e) => {
         e.preventDefault();
         if (!guessInput.trim()) return;
+        const cleanGuess = guessInput.trim();
         playSound('submit');
         socket.emit('room:message', {
             pin,
             event: 'game:submit_guess',
-            payload: { guess: guessInput }
+            payload: { guess: cleanGuess }
+        });
+        emitLiveGameStream({
+            socket,
+            pin,
+            gameId: 'catch_mind',
+            nickname,
+            groupId,
+            baseScore: myScore,
+            roundScore: 0,
+            isAlive: true,
+            isFinished: false,
+            updateRoomScore: false,
+            gameData: {
+                statusText: `🎨 정답 추리: '${cleanGuess}'`,
+                lastGuess: cleanGuess,
+                progressPct: 75
+            }
         });
         setGuessInput('');
     };
@@ -1216,7 +1269,10 @@ export default function Participant({ socket }) {
                             {gameId === 'pass_bomb' && '폭탄 돌리기'}
                             {gameId === 'rock_paper_scissors' && '가위바위보'}
                             {gameId === 'whack_mole' && '두더지 잡기'}
+                            {gameId === 'omok' && '오목'}
                             {gameId === 'ladder' && '사다리 타기'}
+                            {gameId === 'fortune' && '포춘 쿠키'}
+                            {gameId === 'spot_difference' && '숨은 그림 찾기'}
                             {gameId === 'janggi' && '장기'}
                             {gameId === 'chess' && '체스'}
                             {(gameId === 'card_game' || gameId === 'card_poker') && '카드 게임'}
@@ -1230,29 +1286,27 @@ export default function Participant({ socket }) {
                             {(gameId === 'timeattack' || gameId === 'airplane_game') && '비행기게임 (Xenon 2)'}
                         </h2>
 
-                        {gameId === 'yutnori' && <YutnoriGame />}
+                        {gameId === 'yutnori' && <YutnoriGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} onScoreUpdate={(newScore) => setMyScore(newScore)} />}
-                        {gameId === 'rock_paper_scissors' && <RpsGame />}
-                        {gameId === 'whack_mole' && <WhackMoleGame />}
-                        {gameId === 'omok' && <OmokGame />}
-                        {gameId === 'minesweeper' && <MinesweeperGame />}
+                        {gameId === 'rock_paper_scissors' && <RpsGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'whack_mole' && <WhackMoleGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'omok' && <OmokGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'minesweeper' && <MinesweeperGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'stock_game' && <StockGame socket={socket} pin={pin} isHost={false} groupId={groupId} nickname={nickname} myScore={myScore} />}
-                        {gameId === 'speed_numbers' && <SpeedNumbersGame />}
-                        {gameId === 'janggi' && <JanggiGame />}
-                        {gameId === 'chess' && <ChessGame />}
-                        {(gameId === 'card_game' || gameId === 'card_poker') && <PokerGame />}
-                        {gameId === 'gostop' && <GoStopGame />}
-                        {gameId === 'othello' && <OthelloGame />}
+                        {gameId === 'speed_numbers' && <SpeedNumbersGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'janggi' && <JanggiGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'chess' && <ChessGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {(gameId === 'card_game' || gameId === 'card_poker') && <PokerGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'gostop' && <GoStopGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'othello' && <OthelloGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'memory_game' && <MemoryGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'pass_bomb' && <PassBombGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'spot_difference' && <SpotDifferenceMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'fortune' && <FortuneMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'ladder' && <LadderMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'tetris' && <TetrisGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
                         {gameId === 'brick_breaker' && <BrickBreakerGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
                         {(gameId === 'timeattack' || gameId === 'airplane_game') && <AirplaneGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
-                        {['memory_game', 'pass_bomb', 'ladder'].includes(gameId) && (
-                            <div style={{ padding: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
-                                <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '1.1rem' }}>
-                                    호스트 화면을 참고하여 게임을 지켜봐 주세요!
-                                </p>
-                            </div>
-                        )}
                     </div>
                 )}
             </div>
@@ -2131,11 +2185,60 @@ export default function Participant({ socket }) {
 // SUB-COMPONENTS FOR MINI GAMES (PARTICIPANT)
 // ==========================================
 
-export function YutnoriGame() {
+export function emitLiveGameStream({
+    socket,
+    pin,
+    gameId,
+    nickname,
+    groupId = null,
+    baseScore = 0,
+    roundScore = 0,
+    isAlive = true,
+    isFinished = false,
+    gameData = {},
+    updateRoomScore = true,
+    onScoreUpdate
+}) {
+    const totalScore = (baseScore || 0) + (roundScore || 0);
+    if (onScoreUpdate) {
+        onScoreUpdate(totalScore);
+    }
+    if (!socket || !pin || !nickname) return;
+    socket.emit('room:message', {
+        pin,
+        event: 'game:player_stream',
+        payload: {
+            gameId,
+            nickname,
+            groupId,
+            score: totalScore,
+            roundScore: roundScore || 0,
+            isAlive: isAlive !== false,
+            isFinished: !!isFinished,
+            gameData
+        }
+    });
+    if (updateRoomScore) {
+        socket.emit('participant:updateScore', { pin, score: totalScore });
+    }
+}
+
+export function YutnoriGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [result, setResult] = useState(null);
     const [yuts, setYuts] = useState([0, 0, 0, 0]); // 0 = flat, 1 = round
     const [history, setHistory] = useState([]);
     const [isRolling, setIsRolling] = useState(false);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
+
+    useEffect(() => {
+        emitLiveGameStream({
+            socket, pin, gameId: 'yutnori', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '🎲 윷 던지기 대기 중', progressPct: 5, yuts: [0, 0, 0, 0], history: [] }
+        });
+    }, []);
     
     const throwYut = () => {
         setIsRolling(true);
@@ -2150,21 +2253,44 @@ export function YutnoriGame() {
                 
                 const flats = finalYuts.filter(y => y === 1).length;
                 let res = '';
+                let pts = 10;
                 if (flats === 1) {
-                    res = Math.random() < 0.25 ? '뒷도(빽도)' : '도';
+                    const isBack = Math.random() < 0.25;
+                    res = isBack ? '뒷도(빽도)' : '도';
+                    pts = isBack ? 5 : 10;
                 } else if (flats === 2) {
                     res = '개';
+                    pts = 20;
                 } else if (flats === 3) {
                     res = '걸';
+                    pts = 30;
                 } else if (flats === 4) {
                     res = '윷';
+                    pts = 40;
                 } else if (flats === 0) {
                     res = '모';
+                    pts = 50;
                 }
                 
+                const nextRoundScore = roundScore + pts;
+                const nextHistory = [res, ...history].slice(0, 10);
                 setResult(res);
-                setHistory(prev => [res, ...prev].slice(0, 10));
+                setRoundScore(nextRoundScore);
+                setHistory(nextHistory);
                 setIsRolling(false);
+
+                emitLiveGameStream({
+                    socket, pin, gameId: 'yutnori', nickname, groupId,
+                    baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                    isAlive: true, isFinished: false, onScoreUpdate,
+                    gameData: {
+                        statusText: `🎲 윷 결과: ${res} (+${pts}점, 총 ${nextHistory.length}회)`,
+                        progressPct: Math.min(100, nextHistory.length * 10),
+                        lastYut: res,
+                        yuts: finalYuts,
+                        history: nextHistory
+                    }
+                });
             }
         }, 80);
     };
@@ -2214,7 +2340,7 @@ export function YutnoriGame() {
             
             {result && (
                 <div style={{ marginTop: '1.5rem', background: '#fef3c7', border: '2px solid #f59e0b', borderRadius: '16px', padding: '1rem' }}>
-                    <span style={{ fontSize: '0.9rem', color: '#b45309' }}>결과</span>
+                    <span style={{ fontSize: '0.9rem', color: '#b45309' }}>결과 (획득 점수: +{roundScore}점)</span>
                     <h1 style={{ margin: '5px 0 0 0', color: '#92400e', fontSize: '2.5rem', fontWeight: '950' }}>{result}</h1>
                 </div>
             )}
@@ -2235,18 +2361,81 @@ export function YutnoriGame() {
 
 // CardMatchGame is imported from ../components/CardMatchGame
 
-export function RpsGame() {
+export function RpsGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [choice, setChoice] = useState(null);
+    const [aiChoice, setAiChoice] = useState(null);
+    const [battleText, setBattleText] = useState('');
+    const [wins, setWins] = useState(0);
+    const [rounds, setRounds] = useState(0);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
     
     const options = [
-        { id: 'rock', label: '✊ 주먹' },
-        { id: 'scissors', label: '✌️ 가위' },
-        { id: 'paper', label: '🖐️ 보' }
+        { id: 'rock', label: '✊ 주먹', emoji: '✊' },
+        { id: 'scissors', label: '✌️ 가위', emoji: '✌️' },
+        { id: 'paper', label: '🖐️ 보', emoji: '🖐️' }
     ];
+
+    useEffect(() => {
+        emitLiveGameStream({
+            socket, pin, gameId: 'rock_paper_scissors', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '✊✌️🖐️ 선택 대기 중', progressPct: 5, wins: 0, rounds: 0 }
+        });
+    }, []);
+
+    const handlePick = (opt) => {
+        setChoice(opt.id);
+        const ai = options[Math.floor(Math.random() * options.length)];
+        setAiChoice(ai);
+        const nextRounds = rounds + 1;
+        setRounds(nextRounds);
+
+        let outcome = '무승부';
+        let delta = 5;
+        let nextWins = wins;
+        if (
+            (opt.id === 'rock' && ai.id === 'scissors') ||
+            (opt.id === 'scissors' && ai.id === 'paper') ||
+            (opt.id === 'paper' && ai.id === 'rock')
+        ) {
+            outcome = '승리! 🎉';
+            delta = 20;
+            nextWins = wins + 1;
+            setWins(nextWins);
+            playSound('correct');
+        } else if (opt.id !== ai.id) {
+            outcome = '패배 😢';
+            delta = 0;
+            playSound('wrong');
+        } else {
+            playSound('submit');
+        }
+
+        const nextRoundScore = roundScore + delta;
+        setRoundScore(nextRoundScore);
+        setBattleText(`${opt.label} vs ${ai.label} → ${outcome}`);
+
+        emitLiveGameStream({
+            socket, pin, gameId: 'rock_paper_scissors', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+            isAlive: true, isFinished: false, onScoreUpdate,
+            gameData: {
+                statusText: `${opt.emoji} vs ${ai.emoji} ${outcome} (${nextWins}승 / ${nextRounds}판)`,
+                progressPct: Math.min(100, nextRounds * 10),
+                choice: opt.label,
+                wins: nextWins,
+                rounds: nextRounds
+            }
+        });
+    };
     
     return (
         <div style={{ padding: '1rem' }}>
-            <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>하나를 선택하고 호스트 화면을 기다리세요!</p>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontWeight: '700' }}>
+                가위·바위·보를 선택해 연승 점수를 쌓으세요! (현재 {wins}승 / +{roundScore}점)
+            </p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {options.map(opt => {
@@ -2254,7 +2443,7 @@ export function RpsGame() {
                     return (
                         <button
                             key={opt.id}
-                            onClick={() => setChoice(opt.id)}
+                            onClick={() => handlePick(opt)}
                             style={{
                                 padding: '16px',
                                 fontSize: '1.3rem',
@@ -2276,30 +2465,56 @@ export function RpsGame() {
             
             {choice && (
                 <div style={{ marginTop: '1.5rem', background: '#eff6ff', border: '2px solid #3b82f6', borderRadius: '12px', padding: '1rem' }}>
-                    <span style={{ color: '#2563eb', fontWeight: 'bold' }}>선택 완료! 호스트 대기 중...</span>
+                    <span style={{ color: '#2563eb', fontWeight: 'bold', fontSize: '1.05rem' }}>{battleText}</span>
                 </div>
             )}
         </div>
     );
 }
 
-export function WhackMoleGame() {
+export function WhackMoleGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [score, setScore] = useState(0);
     const [activeMole, setActiveMole] = useState(null);
     const [timeLeft, setTimeLeft] = useState(20);
-    const [isPlaying, setIsPlaying] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(true);
+    const initialBaseRef = useRef(baseScore);
+    const scoreRef = useRef(0);
+
+    useEffect(() => {
+        setActiveMole(Math.floor(Math.random() * 9));
+        emitLiveGameStream({
+            socket, pin, gameId: 'whack_mole', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '🐹 두더지 사냥 시작! (20초)', progressPct: 5, hits: 0, timeLeft: 20 }
+        });
+    }, []);
     
     useEffect(() => {
         let gameTimer;
         let moleTimer;
         if (isPlaying && timeLeft > 0) {
             gameTimer = setInterval(() => {
-                setTimeLeft(prev => prev - 1);
+                setTimeLeft(prev => {
+                    const nextT = prev - 1;
+                    emitLiveGameStream({
+                        socket, pin, gameId: 'whack_mole', nickname, groupId,
+                        baseScore: initialBaseRef.current, roundScore: scoreRef.current * 10,
+                        isAlive: nextT > 0, isFinished: nextT <= 0, updateRoomScore: nextT <= 0, onScoreUpdate,
+                        gameData: {
+                            statusText: nextT > 0 ? `🐹 ${scoreRef.current}마리 포획! (${nextT}초 남음)` : `🏆 최종 ${scoreRef.current}마리 포획!`,
+                            progressPct: Math.min(100, Math.round(((20 - nextT) / 20) * 100)),
+                            hits: scoreRef.current,
+                            timeLeft: nextT
+                        }
+                    });
+                    return nextT;
+                });
             }, 1000);
             
             moleTimer = setInterval(() => {
                 setActiveMole(Math.floor(Math.random() * 9));
-            }, 750);
+            }, 700);
         } else if (timeLeft === 0) {
             setIsPlaying(false);
             setActiveMole(null);
@@ -2312,24 +2527,45 @@ export function WhackMoleGame() {
     }, [isPlaying, timeLeft]);
     
     const startGame = () => {
+        scoreRef.current = 0;
         setScore(0);
         setTimeLeft(20);
         setIsPlaying(true);
         setActiveMole(Math.floor(Math.random() * 9));
+        emitLiveGameStream({
+            socket, pin, gameId: 'whack_mole', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, onScoreUpdate,
+            gameData: { statusText: '🐹 재도전 시작! (20초)', progressPct: 5, hits: 0, timeLeft: 20 }
+        });
     };
     
     const handleMoleClick = (idx) => {
         if (!isPlaying) return;
         if (activeMole === idx) {
-            setScore(prev => prev + 1);
+            const nextHits = scoreRef.current + 1;
+            scoreRef.current = nextHits;
+            setScore(nextHits);
             setActiveMole(null);
+            playSound('correct');
+            emitLiveGameStream({
+                socket, pin, gameId: 'whack_mole', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextHits * 10,
+                isAlive: true, isFinished: false, onScoreUpdate,
+                gameData: {
+                    statusText: `🐹 ${nextHits}마리 포획! (${timeLeft}초 남음)`,
+                    progressPct: Math.min(100, Math.round(((20 - timeLeft) / 20) * 100)),
+                    hits: nextHits,
+                    timeLeft
+                }
+            });
         }
     };
     
     return (
         <div style={{ padding: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontSize: '1rem', fontWeight: 'bold' }}>
-                <span>점수: <span style={{ color: '#10b981' }}>{score}점</span></span>
+                <span>포획: <span style={{ color: '#10b981' }}>{score}마리 (+{score * 10}점)</span></span>
                 <span>시간: <span style={{ color: '#ef4444' }}>{timeLeft}초</span></span>
             </div>
             
@@ -2365,7 +2601,7 @@ export function WhackMoleGame() {
                     {timeLeft === 0 ? (
                         <div>
                             <h3 style={{ margin: 0, color: 'var(--primary)' }}>게임 종료!</h3>
-                            <h1 style={{ fontSize: '3rem', margin: '0.5rem 0' }}>{score}점</h1>
+                            <h1 style={{ fontSize: '2.6rem', margin: '0.5rem 0' }}>{score}마리 (+{score * 10}점)</h1>
                         </div>
                     ) : (
                         <p style={{ color: 'var(--text-muted)', margin: 0 }}>제한 시간 20초 동안 팝업되는 두더지를 때려 점수를 획득하세요!</p>
@@ -2379,10 +2615,21 @@ export function WhackMoleGame() {
     );
 }
 
-export function OmokGame() {
+export function OmokGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [board, setBoard] = useState(Array(49).fill(null)); // 7x7 board
     const [isBlackTurn, setIsBlackTurn] = useState(true);
     const [winner, setWinner] = useState(null);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
+
+    useEffect(() => {
+        emitLiveGameStream({
+            socket, pin, gameId: 'omok', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '⚫⚪ 오목 대국 시작 (7x7)', progressPct: 5, moves: 0 }
+        });
+    }, []);
     
     const handleCellClick = (idx) => {
         if (board[idx] || winner) return;
@@ -2391,7 +2638,6 @@ export function OmokGame() {
         nextBoard[idx] = stone;
         setBoard(nextBoard);
         
-        // Simple 3-stone check for Gomoku grid size (4 in a row to win)
         const checkLine = (start, step, count) => {
             const token = nextBoard[start];
             if (!token) return false;
@@ -2402,35 +2648,58 @@ export function OmokGame() {
         };
         
         let won = false;
-        // Horizontal check
         for (let r = 0; r < 7; r++) {
             for (let c = 0; c <= 3; c++) {
                 if (checkLine(r * 7 + c, 1, 4)) won = true;
             }
         }
-        // Vertical check
         for (let c = 0; c < 7; c++) {
             for (let r = 0; r <= 3; r++) {
                 if (checkLine(r * 7 + c, 7, 4)) won = true;
             }
         }
-        // Diagonal check (right-down)
         for (let r = 0; r <= 3; r++) {
             for (let c = 0; c <= 3; c++) {
                 if (checkLine(r * 7 + c, 8, 4)) won = true;
             }
         }
-        // Diagonal check (left-down)
         for (let r = 0; r <= 3; r++) {
             for (let c = 3; c < 7; c++) {
                 if (checkLine(r * 7 + c, 6, 4)) won = true;
             }
         }
         
+        const movesCount = nextBoard.filter(Boolean).length;
+        const nextRoundScore = roundScore + (won ? 40 : 5);
+        setRoundScore(nextRoundScore);
+
         if (won) {
-            setWinner(isBlackTurn ? '흑돌(⚫)' : '백돌(⚪)');
+            const winText = isBlackTurn ? '흑돌(⚫)' : '백돌(⚪)';
+            setWinner(winText);
+            playSound('correct');
+            emitLiveGameStream({
+                socket, pin, gameId: 'omok', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                isAlive: true, isFinished: true, onScoreUpdate,
+                gameData: {
+                    statusText: `🎉 ${winText} 4목 승리! (${movesCount}수)`,
+                    progressPct: 100,
+                    moves: movesCount,
+                    winner: winText
+                }
+            });
         } else {
             setIsBlackTurn(!isBlackTurn);
+            emitLiveGameStream({
+                socket, pin, gameId: 'omok', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                isAlive: true, isFinished: false, onScoreUpdate,
+                gameData: {
+                    statusText: `⚫⚪ ${movesCount}수 진행 중 (${isBlackTurn ? '흑돌' : '백돌'} 착수)`,
+                    progressPct: Math.min(95, Math.round((movesCount / 20) * 100)),
+                    moves: movesCount
+                }
+            });
         }
     };
     
@@ -2471,13 +2740,15 @@ export function OmokGame() {
     );
 }
 
-export function MinesweeperGame() {
+export function MinesweeperGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const GRID_SIZE = 25; // 5x5
     const [grid, setGrid] = useState([]); 
     const [revealed, setRevealed] = useState(Array(GRID_SIZE).fill(false));
     const [gameOver, setGameOver] = useState(false);
     const [win, setWin] = useState(false);
     const [score, setScore] = useState(0);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
     
     const initialize = () => {
         const nextGrid = Array(GRID_SIZE).fill('empty');
@@ -2494,6 +2765,12 @@ export function MinesweeperGame() {
         setGameOver(false);
         setWin(false);
         setScore(0);
+        emitLiveGameStream({
+            socket, pin, gameId: 'minesweeper', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '💣 지뢰찾기 탐색 중 (0 / 21칸)', progressPct: 5, safeCount: 0 }
+        });
     };
     
     useEffect(() => {
@@ -2508,21 +2785,48 @@ export function MinesweeperGame() {
         
         if (grid[idx] === 'mine') {
             setGameOver(true);
+            playSound('wrong');
+            emitLiveGameStream({
+                socket, pin, gameId: 'minesweeper', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore,
+                isAlive: false, isFinished: true, onScoreUpdate,
+                gameData: {
+                    statusText: `💥 지뢰 폭발! (안전 구역 ${score}칸 확보)`,
+                    progressPct: Math.round((score / 21) * 100),
+                    safeCount: score
+                }
+            });
         } else {
             const nextScore = score + 1;
             setScore(nextScore);
             const emptyCount = grid.filter(c => c === 'empty').length;
             const revealedEmptyCount = nextRevealed.filter((r, i) => r && grid[i] === 'empty').length;
-            if (revealedEmptyCount === emptyCount) {
+            const won = revealedEmptyCount === emptyCount;
+            const nextRoundScore = roundScore + (won ? 50 : 10);
+            setRoundScore(nextRoundScore);
+            if (won) {
                 setWin(true);
+                playSound('correct');
+            } else {
+                playSound('submit');
             }
+            emitLiveGameStream({
+                socket, pin, gameId: 'minesweeper', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                isAlive: true, isFinished: won, onScoreUpdate,
+                gameData: {
+                    statusText: won ? `🎉 지뢰찾기 완벽 클리어! (21/21칸)` : `🍀 안전 구역 ${nextScore} / 21칸 확보`,
+                    progressPct: Math.min(100, Math.round((nextScore / 21) * 100)),
+                    safeCount: nextScore
+                }
+            });
         }
     };
     
     return (
         <div style={{ padding: '0.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                <span>안전 구역 확보: {score}점</span>
+                <span>안전 구역 확보: {score}칸 (+{roundScore}점)</span>
                 {gameOver && <span style={{ color: '#ef4444' }}>💥 지뢰 발견 (패배)</span>}
                 {win && <span style={{ color: '#10b981' }}>🎉 탈출 성공 (승리)</span>}
             </div>
@@ -2555,12 +2859,14 @@ export function MinesweeperGame() {
     );
 }
 
-export function SpeedNumbersGame() {
+export function SpeedNumbersGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [numbers, setNumbers] = useState([]);
     const [nextNum, setNextNum] = useState(1);
     const [win, setWin] = useState(false);
     const [startTime, setStartTime] = useState(null);
     const [timeTaken, setTimeTaken] = useState(null);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
     
     const shuffle = () => {
         const arr = Array.from({ length: 16 }, (_, i) => i + 1).sort(() => Math.random() - 0.5);
@@ -2569,6 +2875,12 @@ export function SpeedNumbersGame() {
         setWin(false);
         setStartTime(Date.now());
         setTimeTaken(null);
+        emitLiveGameStream({
+            socket, pin, gameId: 'speed_numbers', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '🔢 숫자 1~16 순서 터치 시작!', progressPct: 5, currentNum: 1 }
+        });
     };
     
     useEffect(() => {
@@ -2578,10 +2890,40 @@ export function SpeedNumbersGame() {
     const clickNum = (num) => {
         if (num === nextNum) {
             if (num === 16) {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+                const speedBonus = Math.max(20, Math.round(100 - parseFloat(elapsed) * 4));
+                const nextRoundScore = roundScore + speedBonus;
                 setWin(true);
-                setTimeTaken(((Date.now() - startTime) / 1000).toFixed(2));
+                setTimeTaken(elapsed);
+                setRoundScore(nextRoundScore);
+                playSound('correct');
+                emitLiveGameStream({
+                    socket, pin, gameId: 'speed_numbers', nickname, groupId,
+                    baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                    isAlive: true, isFinished: true, onScoreUpdate,
+                    gameData: {
+                        statusText: `🎉 1~16 완주 성공! (${elapsed}초)`,
+                        progressPct: 100,
+                        currentNum: 16,
+                        timeTaken: elapsed
+                    }
+                });
             } else {
-                setNextNum(prev => prev + 1);
+                const nextN = nextNum + 1;
+                const nextRoundScore = roundScore + 5;
+                setNextNum(nextN);
+                setRoundScore(nextRoundScore);
+                playSound('submit');
+                emitLiveGameStream({
+                    socket, pin, gameId: 'speed_numbers', nickname, groupId,
+                    baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                    isAlive: true, isFinished: false, onScoreUpdate,
+                    gameData: {
+                        statusText: `🔢 숫자 ${num} / 16 터치 완료!`,
+                        progressPct: Math.round((num / 16) * 100),
+                        currentNum: num
+                    }
+                });
             }
         }
     };
@@ -2589,7 +2931,7 @@ export function SpeedNumbersGame() {
     return (
         <div style={{ padding: '0.5rem' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                {win ? `🎉 성공! 기록: ${timeTaken}초` : `다음에 누를 숫자: ${nextNum}`}
+                {win ? `🎉 성공! 기록: ${timeTaken}초 (+${roundScore}점)` : `다음에 누를 숫자: ${nextNum} (+${roundScore}점)`}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                 {numbers.map((num) => {
@@ -2623,9 +2965,12 @@ export function SpeedNumbersGame() {
     );
 }
 
-export function JanggiGame() {
+export function JanggiGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [board, setBoard] = useState(Array(25).fill(null)); // 5x5 Grid Janggi
     const [selectedPiece, setSelectedPiece] = useState(null);
+    const [moves, setMoves] = useState(0);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
     
     const initialPieces = {
         0: '漢 (楚)', 4: '漢 (車)', 20: '楚 (將)', 24: '楚 (車)'
@@ -2637,15 +2982,39 @@ export function JanggiGame() {
             nextBoard[parseInt(k)] = v;
         });
         setBoard(nextBoard);
+        emitLiveGameStream({
+            socket, pin, gameId: 'janggi', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '♟️ 장기 대국 시작', progressPct: 10, moves: 0 }
+        });
     }, []);
     
     const handleCellClick = (idx) => {
-        if (selectedPiece !== null) {
+        if (selectedPiece !== null && selectedPiece !== idx) {
+            const movedPiece = board[selectedPiece];
+            const captured = board[idx];
             const nextBoard = [...board];
-            nextBoard[idx] = board[selectedPiece];
+            nextBoard[idx] = movedPiece;
             nextBoard[selectedPiece] = null;
+            const nextMoves = moves + 1;
+            const pts = captured ? 25 : 10;
+            const nextRoundScore = roundScore + pts;
             setBoard(nextBoard);
             setSelectedPiece(null);
+            setMoves(nextMoves);
+            setRoundScore(nextRoundScore);
+            playSound(captured ? 'correct' : 'submit');
+            emitLiveGameStream({
+                socket, pin, gameId: 'janggi', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                isAlive: true, isFinished: false, onScoreUpdate,
+                gameData: {
+                    statusText: captured ? `⚔️ ${movedPiece} → ${captured} 포획! (${nextMoves}수)` : `♟️ ${movedPiece} 이동 (${nextMoves}수)`,
+                    progressPct: Math.min(100, nextMoves * 10),
+                    moves: nextMoves
+                }
+            });
         } else if (board[idx]) {
             setSelectedPiece(idx);
         }
@@ -2654,7 +3023,7 @@ export function JanggiGame() {
     return (
         <div style={{ padding: '0.5rem' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                {selectedPiece !== null ? '이동할 위치를 터치하세요!' : '장기 말(楚/漢)을 터치하여 선택하세요!'}
+                {selectedPiece !== null ? '이동할 위치를 터치하세요!' : `장기 말(楚/漢)을 터치하여 이동하세요! (${moves}수 / +${roundScore}점)`}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', background: '#ffe4b5', padding: '6px', borderRadius: '12px', border: '3px solid #8b4513' }}>
                 {board.map((cell, idx) => {
@@ -2693,9 +3062,12 @@ export function JanggiGame() {
     );
 }
 
-export function ChessGame() {
+export function ChessGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [board, setBoard] = useState(Array(25).fill(null)); // 5x5 board
     const [selectedPiece, setSelectedPiece] = useState(null);
+    const [moves, setMoves] = useState(0);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
     
     const initialPieces = {
         2: '♚', 0: '♜', 4: '♞', 22: '♔', 20: '♖', 24: '♘'
@@ -2707,15 +3079,39 @@ export function ChessGame() {
             nextBoard[parseInt(k)] = v;
         });
         setBoard(nextBoard);
+        emitLiveGameStream({
+            socket, pin, gameId: 'chess', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '♔♚ 체스 대국 시작', progressPct: 10, moves: 0 }
+        });
     }, []);
     
     const handleCellClick = (idx) => {
-        if (selectedPiece !== null) {
+        if (selectedPiece !== null && selectedPiece !== idx) {
+            const movedPiece = board[selectedPiece];
+            const captured = board[idx];
             const nextBoard = [...board];
-            nextBoard[idx] = board[selectedPiece];
+            nextBoard[idx] = movedPiece;
             nextBoard[selectedPiece] = null;
+            const nextMoves = moves + 1;
+            const pts = captured ? 25 : 10;
+            const nextRoundScore = roundScore + pts;
             setBoard(nextBoard);
             setSelectedPiece(null);
+            setMoves(nextMoves);
+            setRoundScore(nextRoundScore);
+            playSound(captured ? 'correct' : 'submit');
+            emitLiveGameStream({
+                socket, pin, gameId: 'chess', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                isAlive: true, isFinished: false, onScoreUpdate,
+                gameData: {
+                    statusText: captured ? `⚔️ ${movedPiece} → ${captured} 포획! (${nextMoves}수)` : `♟️ ${movedPiece} 이동 (${nextMoves}수)`,
+                    progressPct: Math.min(100, nextMoves * 10),
+                    moves: nextMoves
+                }
+            });
         } else if (board[idx]) {
             setSelectedPiece(idx);
         }
@@ -2724,7 +3120,7 @@ export function ChessGame() {
     return (
         <div style={{ padding: '0.5rem' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                {selectedPiece !== null ? '기물을 놓을 칸을 선택하세요!' : '기물(♔/♚/♞)을 터치하여 이동하세요!'}
+                {selectedPiece !== null ? '기물을 놓을 칸을 선택하세요!' : `기물(♔/♚/♞)을 터치하여 이동하세요! (${moves}수 / +${roundScore}점)`}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '2px', background: '#e2e8f0', padding: '4px', borderRadius: '12px', border: '3px solid #475569' }}>
                 {board.map((cell, idx) => {
@@ -2762,7 +3158,7 @@ export function ChessGame() {
     );
 }
 
-export function PokerGame() {
+export function PokerGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const SUITS = [
         { symbol: '♠', color: '#1e293b' },
         { symbol: '♥', color: '#dc2626' },
@@ -2776,6 +3172,9 @@ export function PokerGame() {
     const [isFolded, setIsFolded] = useState(false);
     const [bet, setBet] = useState(10);
     const [evalResult, setEvalResult] = useState(null);
+    const [roundScore, setRoundScore] = useState(0);
+    const [handsPlayed, setHandsPlayed] = useState(0);
+    const initialBaseRef = useRef(baseScore);
 
     const dealNewHand = () => {
         const v1 = Math.floor(Math.random() * 10) + 1;
@@ -2789,38 +3188,71 @@ export function PokerGame() {
         setIsFolded(false);
         setBet(10);
 
-        // Evaluate Hand (Student-Friendly Sum & Lucky Pair)
         let res = {};
         const sum = v1 + v2;
         if (v1 === v2) {
             if (v1 === 10) {
-                res = { text: '10 럭키 페어 (슈퍼 쌍둥이)', multiplier: 3, isPair: true, color: '#f59e0b' };
+                res = { text: '10 럭키 페어 (슈퍼 쌍둥이)', multiplier: 3, isPair: true, color: '#f59e0b', pts: 60 };
             } else {
                 const mult = v1 >= 7 ? 2 : 1.5;
-                res = { text: `${v1} 럭키 페어 (쌍둥이)`, multiplier: mult, isPair: true, color: '#ec4899' };
+                res = { text: `${v1} 럭키 페어 (쌍둥이)`, multiplier: mult, isPair: true, color: '#ec4899', pts: 40 };
             }
         } else {
-            if (sum >= 17) res = { text: `🌟 최고 합산 ${sum}점!`, multiplier: 1, isPair: false, color: '#10b981' };
-            else if (sum >= 13) res = { text: `✨ 높은 합산 ${sum}점`, multiplier: 1, isPair: false, color: '#38bdf8' };
-            else res = { text: `합산 ${sum}점`, multiplier: 1, isPair: false, color: '#94a3b8' };
+            if (sum >= 17) res = { text: `🌟 최고 합산 ${sum}점!`, multiplier: 1, isPair: false, color: '#10b981', pts: 30 };
+            else if (sum >= 13) res = { text: `✨ 높은 합산 ${sum}점`, multiplier: 1, isPair: false, color: '#38bdf8', pts: 20 };
+            else res = { text: `합산 ${sum}점`, multiplier: 1, isPair: false, color: '#94a3b8', pts: 10 };
         }
         setEvalResult(res);
+
+        emitLiveGameStream({
+            socket, pin, gameId: 'card_poker', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: {
+                statusText: `🃏 1번 카드 [${s1.symbol}${v1}] 확인 · 오픈 대기 중`,
+                progressPct: Math.min(95, Math.max(10, handsPlayed * 15)),
+                card1: `${s1.symbol}${v1}`,
+                handsPlayed
+            }
+        });
     };
 
     useEffect(() => {
         dealNewHand();
     }, []);
 
+    const handleOpenCard2 = () => {
+        if (isCard2Open || !evalResult || !card1 || !card2) return;
+        setIsCard2Open(true);
+        const nextHands = handsPlayed + 1;
+        setHandsPlayed(nextHands);
+        const earned = Math.round((evalResult.pts || 15) * (bet / 10));
+        const nextRoundScore = roundScore + earned;
+        setRoundScore(nextRoundScore);
+        playSound(evalResult.isPair ? 'correct' : 'submit');
+
+        emitLiveGameStream({
+            socket, pin, gameId: 'card_poker', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+            isAlive: true, isFinished: false, onScoreUpdate,
+            gameData: {
+                statusText: `🃏 [${card1.suit.symbol}${card1.val} + ${card2.suit.symbol}${card2.val}] ${evalResult.text} (+${earned}점)`,
+                progressPct: Math.min(100, nextHands * 15),
+                handText: evalResult.text,
+                handsPlayed: nextHands
+            }
+        });
+    };
+
     return (
         <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
             <div style={{ background: '#1e1b4b', borderRadius: '24px', padding: '20px 24px', width: '100%', maxWidth: '380px', color: 'white', textAlign: 'center', border: '3px solid #6366f1', boxShadow: '0 8px 25px rgba(0,0,0,0.3)' }}>
                 <div style={{ fontSize: '0.85rem', color: '#c7d2fe', fontWeight: 'bold', marginBottom: '8px' }}>
-                    ⭐ 럭키 카드 배틀 (숫자 합산 & 럭키 페어)
+                    ⭐ 럭키 카드 배틀 (획득 점수: +{roundScore}점)
                 </div>
 
                 {/* Cards View */}
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '16px' }}>
-                    {/* Card 1: Open */}
                     {card1 && (
                         <div style={{
                             width: '75px',
@@ -2845,7 +3277,6 @@ export function PokerGame() {
                         </div>
                     )}
 
-                    {/* Card 2: Secret / Revealed */}
                     {card2 && (
                         isCard2Open ? (
                             <div className="card-flip-open" style={{
@@ -2871,7 +3302,7 @@ export function PokerGame() {
                             </div>
                         ) : (
                             <div
-                                onClick={() => setIsCard2Open(true)}
+                                onClick={handleOpenCard2}
                                 style={{
                                     width: '75px',
                                     height: '110px',
@@ -2893,7 +3324,6 @@ export function PokerGame() {
                     )}
                 </div>
 
-                {/* Hand Result Tag */}
                 {isCard2Open && evalResult && (
                     <div style={{
                         background: 'rgba(0,0,0,0.7)',
@@ -2909,23 +3339,22 @@ export function PokerGame() {
                     </div>
                 )}
 
-                {/* Actions */}
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                     <button
-                        onClick={() => { setBet(prev => prev + 10); }}
-                        disabled={isFolded}
+                        onClick={() => { setBet(prev => Math.min(30, prev + 10)); }}
+                        disabled={isFolded || isCard2Open}
                         style={{ padding: '8px 16px', borderRadius: '10px', background: '#10b981', border: 'none', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
                     >
                         ⭐ 도전 (+10)
                     </button>
                     <button
-                        onClick={() => setIsCard2Open(true)}
+                        onClick={handleOpenCard2}
                         style={{ padding: '8px 16px', borderRadius: '10px', background: '#3b82f6', border: 'none', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
                     >
                         👀 카드 오픈
                     </button>
                     <button
-                        onClick={() => { setIsFolded(true); }}
+                        onClick={() => { setIsFolded(true); dealNewHand(); }}
                         disabled={isFolded}
                         style={{ padding: '8px 16px', borderRadius: '10px', background: '#64748b', border: 'none', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
                     >
@@ -2944,28 +3373,54 @@ export function PokerGame() {
     );
 }
 
-export function GoStopGame() {
+export function GoStopGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const HWATU = [
-        { name: '송학 (일광)', type: '광', points: 3 },
-        { name: '매조 (홍단)', type: '홍단', points: 2 },
-        { name: '사쿠라 (벚꽃)', type: '광', points: 3 },
-        { name: '등나무 (초단)', type: '초단', points: 1 },
-        { name: '창포 (열끗)', type: '멍텅구리', points: 1 },
-        { name: '장미 (피)', type: '피', points: 1 },
-        { name: '홍싸리 (홍단)', type: '홍단', points: 2 },
-        { name: '공산 (팔광)', type: '광', points: 3 },
-        { name: '국진 (쌍피)', type: '피', points: 2 },
-        { name: '단풍 (청단)', type: '청단', points: 2 },
-        { name: '오동 (똥광)', type: '광', points: 3 },
-        { name: '비 (비광)', type: '광', points: 2 }
+        { name: '송학 (일광)', type: '광', points: 30 },
+        { name: '매조 (홍단)', type: '홍단', points: 20 },
+        { name: '사쿠라 (벚꽃)', type: '광', points: 30 },
+        { name: '등나무 (초단)', type: '초단', points: 10 },
+        { name: '창포 (열끗)', type: '멍텅구리', points: 15 },
+        { name: '장미 (피)', type: '피', points: 10 },
+        { name: '홍싸리 (홍단)', type: '홍단', points: 20 },
+        { name: '공산 (팔광)', type: '광', points: 30 },
+        { name: '국진 (쌍피)', type: '피', points: 20 },
+        { name: '단풍 (청단)', type: '청단', points: 20 },
+        { name: '오동 (똥광)', type: '광', points: 30 },
+        { name: '비 (비광)', type: '광', points: 25 }
     ];
     const [card, setCard] = useState(null);
     const [totalScore, setTotalScore] = useState(0);
+    const [draws, setDraws] = useState(0);
+    const initialBaseRef = useRef(baseScore);
+
+    useEffect(() => {
+        emitLiveGameStream({
+            socket, pin, gameId: 'gostop', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '🎴 화투 패 뒤집기 대기 중', progressPct: 5, draws: 0 }
+        });
+    }, []);
     
     const drawCard = () => {
         const picked = HWATU[Math.floor(Math.random() * HWATU.length)];
+        const nextTotal = totalScore + picked.points;
+        const nextDraws = draws + 1;
         setCard(picked);
-        setTotalScore(prev => prev + picked.points);
+        setTotalScore(nextTotal);
+        setDraws(nextDraws);
+        playSound(picked.type === '광' ? 'correct' : 'submit');
+        emitLiveGameStream({
+            socket, pin, gameId: 'gostop', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: nextTotal,
+            isAlive: true, isFinished: false, onScoreUpdate,
+            gameData: {
+                statusText: `🎴 [${picked.type}] ${picked.name} 획득! (+${picked.points}점)`,
+                progressPct: Math.min(100, nextDraws * 10),
+                lastCard: picked.name,
+                draws: nextDraws
+            }
+        });
     };
     
     return (
@@ -2975,8 +3430,8 @@ export function GoStopGame() {
                     <div 
                         className="animate-pop-in"
                         style={{
-                            width: '80px',
-                            height: '130px',
+                            width: '90px',
+                            height: '140px',
                             background: '#dc2626',
                             border: '3px solid #7f1d1d',
                             borderRadius: '8px',
@@ -2990,11 +3445,11 @@ export function GoStopGame() {
                         }}
                     >
                         <span style={{ fontSize: '0.8rem', textAlign: 'left' }}>{card.type}</span>
-                        <span style={{ fontSize: '1.2rem', textAlign: 'center', margin: 'auto 0' }}>{card.name}</span>
+                        <span style={{ fontSize: '1.1rem', textAlign: 'center', margin: 'auto 0' }}>{card.name}</span>
                         <span style={{ fontSize: '0.9rem', textAlign: 'right' }}>+{card.points}점</span>
                     </div>
                 ) : (
-                    <div style={{ width: '80px', height: '130px', background: '#cbd5e1', border: '3px dashed #94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 'bold' }}>
+                    <div style={{ width: '90px', height: '140px', background: '#cbd5e1', border: '3px dashed #94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 'bold' }}>
                         화투패
                     </div>
                 )}
@@ -3005,25 +3460,31 @@ export function GoStopGame() {
             </button>
             
             <div style={{ marginTop: '1.5rem', background: '#fff5f5', border: '2px solid #fca5a5', borderRadius: '12px', padding: '1rem' }}>
-                <span>누적 점수: <strong style={{ color: '#dc2626', fontSize: '1.5rem' }}>{totalScore}점</strong></span>
-                <button onClick={() => { setCard(null); setTotalScore(0); }} className="glass-button" style={{ marginTop: '10px', width: '100%' }}>점수 초기화</button>
+                <span>이번 게임 획득 점수: <strong style={{ color: '#dc2626', fontSize: '1.5rem' }}>+{totalScore}점</strong></span>
             </div>
         </div>
     );
 }
 
-export function OthelloGame() {
+export function OthelloGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [board, setBoard] = useState(Array(36).fill(null)); // 6x6 board
     const [isBlack, setIsBlack] = useState(true);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
     
     useEffect(() => {
-        // Setup initial 4 pieces
         const nextBoard = Array(36).fill(null);
         nextBoard[14] = '⚪';
         nextBoard[15] = '⚫';
         nextBoard[20] = '⚫';
         nextBoard[21] = '⚪';
         setBoard(nextBoard);
+        emitLiveGameStream({
+            socket, pin, gameId: 'othello', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '⚫⚪ 오셀로 대국 시작 (6x6)', progressPct: 10, pieces: 4 }
+        });
     }, []);
     
     const clickCell = (idx) => {
@@ -3032,12 +3493,29 @@ export function OthelloGame() {
         nextBoard[idx] = isBlack ? '⚫' : '⚪';
         setBoard(nextBoard);
         setIsBlack(!isBlack);
+        const pieces = nextBoard.filter(Boolean).length;
+        const blackCnt = nextBoard.filter(c => c === '⚫').length;
+        const whiteCnt = nextBoard.filter(c => c === '⚪').length;
+        const nextRoundScore = roundScore + 10;
+        setRoundScore(nextRoundScore);
+        playSound('submit');
+        emitLiveGameStream({
+            socket, pin, gameId: 'othello', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+            isAlive: true, isFinished: pieces >= 36, onScoreUpdate,
+            gameData: {
+                statusText: `⚫${blackCnt} : ⚪${whiteCnt} (${pieces}/36칸 착수)`,
+                progressPct: Math.min(100, Math.round((pieces / 36) * 100)),
+                blackCnt,
+                whiteCnt
+            }
+        });
     };
     
     return (
         <div style={{ padding: '0.5rem' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                차례: {isBlack ? '⚫ 흑돌' : '⚪ 백돌'}
+                차례: {isBlack ? '⚫ 흑돌' : '⚪ 백돌'} (+{roundScore}점)
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px', background: '#16a34a', padding: '8px', borderRadius: '12px', border: '3px solid #14532d' }}>
                 {board.map((cell, idx) => (
@@ -3072,12 +3550,13 @@ export function OthelloGame() {
 
 // BrickBreakerGame is imported from ../components/BrickBreakerGame
 
-export function MemoryGame() {
+export function MemoryGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [sequence, setSequence] = useState([]);
     const [userSequence, setUserSequence] = useState([]);
     const [gameState, setGameState] = useState('idle'); // 'idle', 'showing', 'playing', 'gameover'
     const [activeColor, setActiveColor] = useState(null);
     const [score, setScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
 
     const colors = ['red', 'green', 'blue', 'yellow'];
     const colorStyles = {
@@ -3092,10 +3571,10 @@ export function MemoryGame() {
         for (let i = 0; i < seq.length; i++) {
             const color = seq[i];
             setActiveColor(color);
-            playSound('submit'); // Beep sound
-            await new Promise(r => setTimeout(r, 600));
+            playSound('submit');
+            await new Promise(r => setTimeout(r, 550));
             setActiveColor(null);
-            await new Promise(r => setTimeout(r, 200));
+            await new Promise(r => setTimeout(r, 180));
         }
         setGameState('playing');
     };
@@ -3107,53 +3586,77 @@ export function MemoryGame() {
         setSequence(newSeq);
         setUserSequence([]);
         setScore(0);
+        emitLiveGameStream({
+            socket, pin, gameId: 'memory_game', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '🧠 1단계 색상 패턴 기억 중...', progressPct: 10, level: 1 }
+        });
         playSequence(newSeq);
     };
+
+    useEffect(() => {
+        startGame();
+    }, []);
 
     const handlePanelClick = (color) => {
         if (gameState !== 'playing') return;
         playSound('submit');
         
-        // Highlight temporarily
         setActiveColor(color);
         setTimeout(() => setActiveColor(null), 250);
 
         const newUserSeq = [...userSequence, color];
         setUserSequence(newUserSeq);
 
-        // Check if correct
         const currentIndex = newUserSeq.length - 1;
         if (newUserSeq[currentIndex] !== sequence[currentIndex]) {
             setGameState('gameover');
             playSound('wrong');
+            emitLiveGameStream({
+                socket, pin, gameId: 'memory_game', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: score * 20,
+                isAlive: false, isFinished: true, onScoreUpdate,
+                gameData: {
+                    statusText: `💥 패턴 실패 (최종 ${score}단계 클리어)`,
+                    progressPct: Math.min(100, score * 12),
+                    level: score
+                }
+            });
             return;
         }
 
-        // Check if finished sequence
         if (newUserSeq.length === sequence.length) {
-            setScore(prev => prev + 1);
+            const nextScore = score + 1;
+            setScore(nextScore);
             playSound('correct');
-            // Go to next level
+            emitLiveGameStream({
+                socket, pin, gameId: 'memory_game', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextScore * 20,
+                isAlive: true, isFinished: false, onScoreUpdate,
+                gameData: {
+                    statusText: `🧠 ${nextScore}단계 패턴 성공! (+${nextScore * 20}점)`,
+                    progressPct: Math.min(100, nextScore * 12),
+                    level: nextScore
+                }
+            });
             setTimeout(() => {
                 const nextColor = colors[Math.floor(Math.random() * 4)];
                 const nextSeq = [...sequence, nextColor];
                 setSequence(nextSeq);
                 setUserSequence([]);
                 playSequence(nextSeq);
-            }, 1000);
+            }, 900);
         }
     };
 
     return (
         <div style={{ textAlign: 'center', width: '100%', maxWidth: '400px', margin: '0 auto' }}>
-            <h3 style={{ fontFamily: 'Jua, sans-serif', color: 'var(--primary)', fontSize: '1.8rem', margin: '0 0 1rem 0' }}>
-                기억력 테스트 (Simon Says)
-            </h3>
-            <p style={{ margin: '0 0 1.5rem 0', color: 'var(--text-muted)' }}>
+            <p style={{ margin: '0 0 1.2rem 0', color: 'var(--text-muted)', fontWeight: '700' }}>
                 {gameState === 'idle' && '시작 버튼을 누르면 색상 순서가 재생됩니다.'}
-                {gameState === 'showing' && '순서를 잘 기억해 주세요!'}
-                {gameState === 'playing' && '기억한 순서대로 패널을 클릭하세요!'}
-                {gameState === 'gameover' && `게임 오버! 점수: ${score}점`}
+                {gameState === 'showing' && `👀 ${sequence.length}단계 순서를 잘 기억해 주세요!`}
+                {gameState === 'playing' && `👆 기억한 순서대로 패널을 터치하세요! (${userSequence.length}/${sequence.length})`}
+                {gameState === 'gameover' && `게임 오버! 클리어 단계: ${score}단계 (+${score * 20}점)`}
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', margin: '0 auto 1.5rem auto', width: '240px', height: '240px' }}>
@@ -3175,10 +3678,10 @@ export function MemoryGame() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', alignItems: 'center' }}>
-                <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>점수: {score}점</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>획득 점수: +{score * 20}점</span>
                 {(gameState === 'idle' || gameState === 'gameover') && (
                     <button onClick={startGame} className="primary-btn" style={{ padding: '10px 20px', borderRadius: '12px' }}>
-                        {gameState === 'gameover' ? '다시 시작' : '게임 시작'}
+                        {gameState === 'gameover' ? '다시 도전' : '게임 시작'}
                     </button>
                 )}
             </div>
@@ -3186,21 +3689,33 @@ export function MemoryGame() {
     );
 }
 
-export function PassBombGame() {
+export function PassBombGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [timeLeft, setTimeLeft] = useState(0);
-    const [holder, setHolder] = useState('참가자 A');
+    const [holder, setHolder] = useState(nickname || '참가자 A');
     const [gameState, setGameState] = useState('idle'); // 'idle', 'running', 'exploded'
+    const [passCount, setPassCount] = useState(0);
+    const [roundScore, setRoundScore] = useState(0);
+    const initialBaseRef = useRef(baseScore);
 
-    const players = ['참가자 A', '참가자 B', '참가자 C', '호스트 (나)'];
+    const players = ['참가자 A', '참가자 B', '참가자 C', nickname || '나'];
 
     const startGame = () => {
         playSound('submit');
         setGameState('running');
-        setHolder(players[Math.floor(Math.random() * players.length)]);
-        
+        setHolder(nickname || '나');
         const seconds = Math.floor(Math.random() * 8) + 8;
         setTimeLeft(seconds);
+        emitLiveGameStream({
+            socket, pin, gameId: 'pass_bomb', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '💣 폭탄 돌리기 시작! 빠르게 패스하세요!', progressPct: 15, passCount }
+        });
     };
+
+    useEffect(() => {
+        startGame();
+    }, []);
 
     useEffect(() => {
         let interval = null;
@@ -3210,16 +3725,29 @@ export function PassBombGame() {
                     if (prev <= 1) {
                         clearInterval(interval);
                         setGameState('exploded');
-                        playSound('wrong'); // Explosion sound
+                        playSound('wrong');
+                        const survived = holder !== (nickname || '나');
+                        const bonus = survived ? 30 : 0;
+                        const finalRound = roundScore + bonus;
+                        setRoundScore(finalRound);
+                        emitLiveGameStream({
+                            socket, pin, gameId: 'pass_bomb', nickname, groupId,
+                            baseScore: initialBaseRef.current, roundScore: finalRound,
+                            isAlive: survived, isFinished: true, onScoreUpdate,
+                            gameData: {
+                                statusText: survived ? `🎉 폭탄 생존 성공! (총 ${passCount}회 패스)` : `💥 폭탄 폭발! (${passCount}회 패스)`,
+                                progressPct: 100,
+                                passCount
+                            }
+                        });
                         return 0;
                     }
-                    playSound('submit'); // Ticking sound
                     return prev - 1;
                 });
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [gameState, timeLeft]);
+    }, [gameState, timeLeft, holder]);
 
     const handlePass = () => {
         if (gameState !== 'running') return;
@@ -3228,18 +3756,28 @@ export function PassBombGame() {
         while (nextHolder === holder) {
             nextHolder = players[Math.floor(Math.random() * players.length)];
         }
+        const nextPasses = passCount + 1;
+        const nextRoundScore = roundScore + 10;
         setHolder(nextHolder);
+        setPassCount(nextPasses);
+        setRoundScore(nextRoundScore);
+        emitLiveGameStream({
+            socket, pin, gameId: 'pass_bomb', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+            isAlive: true, isFinished: false, onScoreUpdate,
+            gameData: {
+                statusText: `💣 폭탄 패스 완료! (${nextPasses}회 성공 · 보유: ${nextHolder})`,
+                progressPct: Math.min(95, nextPasses * 15),
+                passCount: nextPasses
+            }
+        });
     };
 
     return (
         <div style={{ textAlign: 'center', width: '100%', maxWidth: '400px', margin: '0 auto' }}>
-            <h3 style={{ fontFamily: 'Jua, sans-serif', color: 'var(--primary)', fontSize: '1.8rem', margin: '0 0 1rem 0' }}>
-                폭탄 돌리기 (Pass Bomb)
-            </h3>
-            <p style={{ margin: '0 0 1.5rem 0', color: 'var(--text-muted)' }}>
-                {gameState === 'idle' && '게임 시작을 누르면 타이머가 비밀리에 흘러갑니다.'}
-                {gameState === 'running' && '폭탄이 터지기 전에 다른 사람에게 전달하세요!'}
-                {gameState === 'exploded' && `펑! 폭탄이 ${holder}의 손에서 터졌습니다!`}
+            <p style={{ margin: '0 0 1.2rem 0', color: 'var(--text-muted)', fontWeight: '700' }}>
+                {gameState === 'running' && `폭탄이 터지기 전에 빠르게 패스하세요! (+${roundScore}점)`}
+                {gameState === 'exploded' && `펑! 폭탄이 ${holder}의 손에서 터졌습니다! (+${roundScore}점)`}
             </p>
 
             <div style={{ padding: '2rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '24px', marginBottom: '1.5rem' }}>
@@ -3250,37 +3788,313 @@ export function PassBombGame() {
                             {holder} 보유 중!
                         </h2>
                         <button onClick={handlePass} className="primary-btn" style={{ padding: '12px 24px', fontSize: '1.1rem', borderRadius: '12px' }}>
-                            폭탄 패스! ➔
+                            폭탄 패스! (+10점) ➔
                         </button>
                     </div>
                 ) : (
                     <div>
                         <div style={{ fontSize: '5rem' }}>{gameState === 'exploded' ? '💥' : '💣'}</div>
                         <h2 style={{ fontSize: '1.5rem', fontFamily: 'Jua, sans-serif', margin: '1.5rem 0' }}>
-                            {gameState === 'exploded' ? `${holder} 탈락!` : '대기 중'}
+                            {gameState === 'exploded' ? `${holder} 폭발!` : '대기 중'}
                         </h2>
                         <button onClick={startGame} className="primary-btn" style={{ padding: '12px 24px', fontSize: '1.1rem', borderRadius: '12px' }}>
-                            {gameState === 'exploded' ? '다시 시작' : '게임 시작'}
+                            다시 도전하기
                         </button>
                     </div>
                 )}
             </div>
-
-            <style>{`
-                @keyframes shake {
-                    0% { transform: translate(1px, 1px) rotate(0deg); }
-                    10% { transform: translate(-1px, -2px) rotate(-1deg); }
-                    20% { transform: translate(-3px, 0px) rotate(1deg); }
-                    30% { transform: translate(0px, 2px) rotate(0deg); }
-                    40% { transform: translate(1px, -1px) rotate(1deg); }
-                    50% { transform: translate(-1px, 2px) rotate(-1deg); }
-                    60% { transform: translate(-3px, 1px) rotate(0deg); }
-                    70% { transform: translate(2px, 1px) rotate(-1deg); }
-                    80% { transform: translate(-1px, -1px) rotate(1deg); }
-                    90% { transform: translate(2px, 2px) rotate(0deg); }
-                    100% { transform: translate(1px, -2px) rotate(-1deg); }
-                }
-            `}</style>
         </div>
     );
 }
+
+export function SpotDifferenceMiniGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
+    const STAGE_PAIRS = [
+        { title: '우주 탐사선 점검', base: '🚀', diff: '🛸', size: 16 },
+        { title: '보석 광산 탐색', base: '💎', diff: '🔮', size: 16 },
+        { title: '클로버 행운 찾기', base: '☘️', diff: '🍀', size: 20 },
+        { title: '심해 잠수함 레이더', base: '🐟', diff: '🐠', size: 20 },
+        { title: '왕실 보물창고 검수', base: '👑', diff: '🏆', size: 25 }
+    ];
+    const [stageIdx, setStageIdx] = useState(0);
+    const [diffTargets, setDiffTargets] = useState([]);
+    const [found, setFound] = useState([]);
+    const [roundScore, setRoundScore] = useState(0);
+    const [allCleared, setAllCleared] = useState(false);
+    const initialBaseRef = useRef(baseScore);
+
+    const setupStage = (idx, currentScore = roundScore) => {
+        const st = STAGE_PAIRS[idx] || STAGE_PAIRS[0];
+        const targets = [];
+        while (targets.length < 3) {
+            const r = Math.floor(Math.random() * st.size);
+            if (!targets.includes(r)) targets.push(r);
+        }
+        setDiffTargets(targets);
+        setFound([]);
+        emitLiveGameStream({
+            socket, pin, gameId: 'spot_difference', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: currentScore,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: {
+                statusText: `🔍 Stage ${idx + 1} (${st.title}) 탐색 중 (0/3 발견)`,
+                progressPct: Math.round((idx / STAGE_PAIRS.length) * 100),
+                stage: idx + 1,
+                foundCount: 0
+            }
+        });
+    };
+
+    useEffect(() => {
+        setupStage(0, 0);
+    }, []);
+
+    const handleCellTap = (i) => {
+        if (allCleared || found.includes(i)) return;
+        if (diffTargets.includes(i)) {
+            const nextFound = [...found, i];
+            const nextRoundScore = roundScore + 20;
+            setFound(nextFound);
+            setRoundScore(nextRoundScore);
+            playSound('correct');
+
+            if (nextFound.length >= 3) {
+                if (stageIdx + 1 < STAGE_PAIRS.length) {
+                    const nextStage = stageIdx + 1;
+                    setStageIdx(nextStage);
+                    emitLiveGameStream({
+                        socket, pin, gameId: 'spot_difference', nickname, groupId,
+                        baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                        isAlive: true, isFinished: false, onScoreUpdate,
+                        gameData: {
+                            statusText: `✨ Stage ${stageIdx + 1} 클리어! → Stage ${nextStage + 1} 진입`,
+                            progressPct: Math.round(((stageIdx + 1) / STAGE_PAIRS.length) * 100),
+                            stage: nextStage + 1,
+                            foundCount: 3
+                        }
+                    });
+                    setTimeout(() => setupStage(nextStage, nextRoundScore), 450);
+                } else {
+                    setAllCleared(true);
+                    const finalScore = nextRoundScore + 40;
+                    setRoundScore(finalScore);
+                    emitLiveGameStream({
+                        socket, pin, gameId: 'spot_difference', nickname, groupId,
+                        baseScore: initialBaseRef.current, roundScore: finalScore,
+                        isAlive: true, isFinished: true, onScoreUpdate,
+                        gameData: {
+                            statusText: `🏆 전 스테이지(5단계) 숨은 그림 모두 발견!`,
+                            progressPct: 100,
+                            stage: STAGE_PAIRS.length,
+                            foundCount: 3
+                        }
+                    });
+                }
+            } else {
+                emitLiveGameStream({
+                    socket, pin, gameId: 'spot_difference', nickname, groupId,
+                    baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                    isAlive: true, isFinished: false, onScoreUpdate,
+                    gameData: {
+                        statusText: `🔍 Stage ${stageIdx + 1} 숨은 그림 ${nextFound.length}/3 발견!`,
+                        progressPct: Math.round(((stageIdx + nextFound.length / 3) / STAGE_PAIRS.length) * 100),
+                        stage: stageIdx + 1,
+                        foundCount: nextFound.length
+                    }
+                });
+            }
+        } else {
+            playSound('wrong');
+        }
+    };
+
+    const st = STAGE_PAIRS[stageIdx] || STAGE_PAIRS[0];
+    const cols = st.size === 25 ? 5 : 4;
+
+    return (
+        <div style={{ padding: '0.5rem', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontWeight: '800', fontSize: '0.95rem' }}>
+                <span>STAGE {stageIdx + 1} / {STAGE_PAIRS.length} ({st.title})</span>
+                <span style={{ color: '#2563eb' }}>발견: {found.length}/3 (+{roundScore}점)</span>
+            </div>
+            <p style={{ margin: '0 0 12px 0', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                다른 모양(<strong>{st.diff}</strong>) 3개를 빠르게 찾아 터치하세요!
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '8px', marginBottom: '14px' }}>
+                {Array.from({ length: st.size }).map((_, i) => {
+                    const isDiff = diffTargets.includes(i);
+                    const isFound = found.includes(i);
+                    return (
+                        <button
+                            key={i}
+                            type="button"
+                            onClick={() => handleCellTap(i)}
+                            style={{
+                                height: '56px',
+                                borderRadius: '12px',
+                                border: isFound ? '3px solid #10b981' : '2px solid #cbd5e1',
+                                background: isFound ? '#d1fae5' : '#f8fafc',
+                                fontSize: '1.75rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                        >
+                            {isDiff ? st.diff : st.base}
+                        </button>
+                    );
+                })}
+            </div>
+            {allCleared && (
+                <button
+                    type="button"
+                    onClick={() => { setAllCleared(false); setStageIdx(0); setupStage(0, roundScore); }}
+                    className="primary-btn"
+                    style={{ width: '100%', padding: '12px', borderRadius: '12px' }}
+                >
+                    🔄 보너스 라운드 계속 도전하기
+                </button>
+            )}
+        </div>
+    );
+}
+
+export function FortuneMiniGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
+    const FORTUNES = [
+        { msg: '🌟 대길(大吉)! 오늘 모든 퀴즈와 게임에서 행운이 폭발합니다!', pts: 50 },
+        { msg: '💎 황금 행운! 뜻밖의 찬스로 순위가 급상승할 운세입니다!', pts: 40 },
+        { msg: '🍀 행운 가득! 침착하게 선택하면 최고 기록을 달성합니다!', pts: 30 },
+        { msg: '🔥 열정 운세! 끝까지 포기하지 않으면 역전승이 찾아옵니다!', pts: 35 },
+        { msg: '🌈 무지개 행운! 주변 동료들과 함께 기쁨을 나눌 하루입니다!', pts: 45 }
+    ];
+    const [opened, setOpened] = useState(null);
+    const [roundScore, setRoundScore] = useState(0);
+    const [count, setCount] = useState(0);
+    const initialBaseRef = useRef(baseScore);
+
+    useEffect(() => {
+        emitLiveGameStream({
+            socket, pin, gameId: 'fortune', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '🥠 행운의 포춘 쿠키 선택 대기 중', progressPct: 10 }
+        });
+    }, []);
+
+    const crackCookie = () => {
+        const pick = FORTUNES[Math.floor(Math.random() * FORTUNES.length)];
+        const nextCount = count + 1;
+        const nextRoundScore = roundScore + pick.pts;
+        setOpened(pick);
+        setCount(nextCount);
+        setRoundScore(nextRoundScore);
+        playSound('correct');
+        emitLiveGameStream({
+            socket, pin, gameId: 'fortune', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+            isAlive: true, isFinished: false, onScoreUpdate,
+            gameData: {
+                statusText: `🥠 ${pick.msg} (+${pick.pts}점)`,
+                progressPct: Math.min(100, nextCount * 25),
+                fortune: pick.msg
+            }
+        });
+    };
+
+    return (
+        <div style={{ padding: '1rem', textAlign: 'center' }}>
+            <div style={{ fontSize: '4.5rem', marginBottom: '0.8rem', cursor: 'pointer' }} onClick={crackCookie}>
+                🥠
+            </div>
+            <button onClick={crackCookie} className="primary-btn" style={{ width: '100%', padding: '14px', borderRadius: '14px', fontSize: '1.15rem', fontWeight: '800' }}>
+                포춘 쿠키 깨뜨리기! 🥠
+            </button>
+            {opened && (
+                <div style={{ marginTop: '1.2rem', padding: '1.2rem', background: '#fef3c7', border: '2px solid #f59e0b', borderRadius: '16px' }}>
+                    <div style={{ fontWeight: '900', fontSize: '1.15rem', color: '#92400e', marginBottom: '6px' }}>{opened.msg}</div>
+                    <div style={{ fontWeight: '800', color: '#b45309' }}>행운 보너스 +{opened.pts}점 (누적 +{roundScore}점)</div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+export function LadderMiniGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
+    const REWARDS = [
+        { label: '🏆 황금 보물상자 (+50점)', pts: 50 },
+        { label: '💎 다이아몬드 (+40점)', pts: 40 },
+        { label: '🍀 네잎클로버 (+30점)', pts: 30 },
+        { label: '⭐ 스타 보너스 (+20점)', pts: 20 }
+    ];
+    const [selectedLane, setSelectedLane] = useState(null);
+    const [reward, setReward] = useState(null);
+    const [roundScore, setRoundScore] = useState(0);
+    const [climbs, setClimbs] = useState(0);
+    const initialBaseRef = useRef(baseScore);
+
+    useEffect(() => {
+        emitLiveGameStream({
+            socket, pin, gameId: 'ladder', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: 0,
+            isAlive: true, isFinished: false, updateRoomScore: false,
+            gameData: { statusText: '🪜 사다리 출발선 선택 대기 중', progressPct: 10 }
+        });
+    }, []);
+
+    const pickLane = (laneIdx) => {
+        setSelectedLane(laneIdx);
+        const picked = REWARDS[Math.floor(Math.random() * REWARDS.length)];
+        const nextClimbs = climbs + 1;
+        const nextRoundScore = roundScore + picked.pts;
+        setReward(picked);
+        setClimbs(nextClimbs);
+        setRoundScore(nextRoundScore);
+        playSound('correct');
+        emitLiveGameStream({
+            socket, pin, gameId: 'ladder', nickname, groupId,
+            baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+            isAlive: true, isFinished: false, onScoreUpdate,
+            gameData: {
+                statusText: `🪜 ${laneIdx + 1}번 사다리 → ${picked.label}`,
+                progressPct: Math.min(100, nextClimbs * 25),
+                lane: laneIdx + 1,
+                reward: picked.label
+            }
+        });
+    };
+
+    return (
+        <div style={{ padding: '1rem', textAlign: 'center' }}>
+            <p style={{ margin: '0 0 12px 0', color: 'var(--text-muted)', fontWeight: '700' }}>
+                출발할 사다리 번호(1~4번)를 선택하세요! (획득: +{roundScore}점)
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '1.2rem' }}>
+                {[0, 1, 2, 3].map(lane => (
+                    <button
+                        key={lane}
+                        type="button"
+                        onClick={() => pickLane(lane)}
+                        style={{
+                            padding: '16px 8px',
+                            borderRadius: '14px',
+                            border: selectedLane === lane ? '3px solid #2563eb' : '2px solid #cbd5e1',
+                            background: selectedLane === lane ? '#dbeafe' : '#f8fafc',
+                            fontWeight: '900',
+                            fontSize: '1.15rem',
+                            color: '#1e293b',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        🪜 {lane + 1}번
+                    </button>
+                ))}
+            </div>
+            {reward && (
+                <div style={{ padding: '1.2rem', background: '#ecfdf5', border: '2px solid #10b981', borderRadius: '16px' }}>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#065f46' }}>{reward.label}</div>
+                </div>
+            )}
+        </div>
+    );
+}
+

@@ -1193,9 +1193,23 @@ export default function Home({ socket }) {
                         onDragOver={handleDragOver}
                         onDrop={() => handleDrop(quiz.id)}
                         onClick={() => {
+                            const normalizedGameId = (quiz.id === 'card_game' || quiz.title === '카드 게임')
+                                ? 'card_poker'
+                                : ((quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택') ? 'timeattack' : quiz.id);
+
                             if (isGameLobby) {
-                                // Navigate to host multiplayer game screen
-                                if (quiz.id === 'fortune') {
+                                // Online mode: ALL GameRun games launch via /host (like Mini Tetris) so online participants play and Top 1-2-3 show on Main & Sub monitors
+                                if (!isOffline) {
+                                    try {
+                                        sessionStorage.setItem('quizrun_last_host_state', JSON.stringify({ 
+                                            isGame: true, 
+                                            gameId: normalizedGameId, 
+                                            gameTitle: quiz.title, 
+                                            pin: onlinePin 
+                                        }));
+                                    } catch (e) {}
+                                    handleNavWithSync('/host', { isGame: true, gameId: normalizedGameId, gameTitle: quiz.title, pin: onlinePin });
+                                } else if (quiz.id === 'fortune') {
                                     handleNavWithSync('/fortune');
                                 } else if (quiz.id === 'ladder') {
                                     handleNavWithSync('/ladder');
@@ -1209,19 +1223,37 @@ export default function Home({ socket }) {
                                     try {
                                         sessionStorage.setItem('quizrun_last_host_state', JSON.stringify({ 
                                             isGame: true, 
-                                            gameId: quiz.id, 
+                                            gameId: normalizedGameId, 
                                             gameTitle: quiz.title, 
                                             pin: onlinePin 
                                         }));
                                     } catch (e) {}
-                                    handleNavWithSync('/host', { isGame: true, gameId: quiz.id, gameTitle: quiz.title, pin: onlinePin });
+                                    handleNavWithSync('/host', { isGame: true, gameId: normalizedGameId, gameTitle: quiz.title, pin: onlinePin });
                                 }
                             } else {
                                 try {
                                     sessionStorage.removeItem('quizrun_last_host_state');
                                 } catch (e) {}
                                 if (editingId !== quiz.id) {
-                                    if (quiz.id === 'ladder' || quiz.title === '사다리') {
+                                    const isSpecialGameFolder = (
+                                        quiz.id === 'ladder' || quiz.title === '사다리' ||
+                                        quiz.id === 'spot_difference' || quiz.title === '숨은 그림 찾기' ||
+                                        quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택'
+                                    );
+                                    if (isSpecialGameFolder && !isOffline) {
+                                        const specialGameId = (quiz.id === 'ladder' || quiz.title === '사다리')
+                                            ? 'ladder'
+                                            : ((quiz.id === 'spot_difference' || quiz.title === '숨은 그림 찾기') ? 'spot_difference' : 'timeattack');
+                                        try {
+                                            sessionStorage.setItem('quizrun_last_host_state', JSON.stringify({
+                                                isGame: true,
+                                                gameId: specialGameId,
+                                                gameTitle: quiz.title,
+                                                pin: onlinePin
+                                            }));
+                                        } catch (e) {}
+                                        handleNavWithSync('/host', { isGame: true, gameId: specialGameId, gameTitle: quiz.title, pin: onlinePin });
+                                    } else if (quiz.id === 'ladder' || quiz.title === '사다리') {
                                         handleNavWithSync('/ladder');
                                     } else if (quiz.id === 'spot_difference' || quiz.title === '숨은 그림 찾기') {
                                         handleNavWithSync('/spot-difference');

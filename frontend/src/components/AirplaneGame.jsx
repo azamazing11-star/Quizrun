@@ -505,41 +505,89 @@ export default function AirplaneGame({
         };
     }, []);
 
-    // Broadcast live game state to Sub-monitor / Spectators
+    // Broadcast live game state to Sub-monitor / Spectators (Top 1-2-3 Main & Sub Monitors)
     const broadcastGameState = useCallback((extra = {}) => {
-        const payload = {
+        const st = stateRef.current;
+        const canvas = canvasRef.current;
+        const w = (canvas && canvas.width) ? canvas.width : 500;
+        const h = (canvas && canvas.height) ? canvas.height : 700;
+        const isAliveNow = st.lives > 0 && extra.state !== 'gameover';
+        const isFinishedNow = st.lives <= 0 || extra.state === 'gameover' || extra.state === 'victory';
+
+        const gameData = {
             gameId: 'timeattack',
             gameTitle: '비행기게임 (Xenon 2: Megablast)',
-            score: stateRef.current.score,
-            lives: stateRef.current.lives,
-            shield: stateRef.current.shield,
-            bombs: stateRef.current.bombs,
-            weaponLevel: stateRef.current.weaponLevel,
-            stage: STAGES[stateRef.current.stageIdx].name,
-            isAlive: stateRef.current.lives > 0,
-            isFinished: stateRef.current.lives <= 0,
+            score: st.score,
+            lives: st.lives,
+            shield: st.shield,
+            bombs: st.bombs,
+            weaponLevel: st.weaponLevel,
+            stage: st.stageIdx + 1,
+            stageName: STAGES[st.stageIdx]?.name || 'SECTOR 1',
+            playerX: st.player ? Math.max(0.05, Math.min(0.95, st.player.x / w)) : 0.5,
+            playerY: st.player ? Math.max(0.08, Math.min(0.92, st.player.y / h)) : 0.82,
+            enemies: (st.enemies || []).slice(0, 12).map(e => ({
+                x: Math.max(0.05, Math.min(0.95, e.x / w)),
+                y: Math.max(0, Math.min(1, e.y / h)),
+                isBoss: false
+            })),
+            bullets: (st.bullets || []).slice(0, 16).map(b => ({
+                x: Math.max(0.05, Math.min(0.95, b.x / w)),
+                y: Math.max(0, Math.min(1, b.y / h))
+            })),
+            bossHp: st.boss ? Math.max(0, Math.floor(st.boss.hp)) : 0,
+            bossMaxHp: st.boss ? st.boss.maxHp : 100,
+            statusText: isFinishedNow
+                ? (extra.state === 'victory' ? `🏆 전 스테이지 클리어! (${st.score.toLocaleString()}점)` : `💥 작전 종료 (${st.score.toLocaleString()}점)`)
+                : `🚀 STAGE ${st.stageIdx + 1} 교전 중 · 무기 Lv.${st.weaponLevel}`,
+            progressPct: Math.min(100, Math.round(((st.stageIdx * 28 + Math.min(28, st.spawnCount || 0)) / (STAGES.length * 28)) * 100)),
+            isAlive: isAliveNow,
+            isFinished: isFinishedNow,
             ...extra
         };
 
-        if (broadcastChannelRef.current) {
+        if (st.boss && st.boss.hp > 0) {
+            gameData.enemies.unshift({
+                x: Math.max(0.1, Math.min(0.9, st.boss.x / w)),
+                y: Math.max(0.08, Math.min(0.5, st.boss.y / h)),
+                isBoss: true
+            });
+        }
+
+        if (broadcastChannelRef.current && isHost) {
             broadcastChannelRef.current.postMessage({
                 type: 'AIRPLANE_GAME_UPDATE',
-                payload
+                payload: gameData
             });
         }
 
         if (socket && pin) {
+            const streamPayload = {
+                gameId: 'timeattack',
+                nickname,
+                groupId,
+                score: (baseScore || 0) + (st.score || 0),
+                roundScore: st.score || 0,
+                isAlive: isAliveNow,
+                isFinished: isFinishedNow,
+                gameData
+            };
+            socket.emit('room:message', {
+                pin,
+                event: 'game:player_stream',
+                payload: streamPayload
+            });
             socket.emit('game:practice_stream', {
                 pin,
                 nickname,
                 groupId,
-                score: stateRef.current.score,
-                isAlive: stateRef.current.lives > 0,
-                isFinished: stateRef.current.lives <= 0,
-                gameData: payload
+                score: (baseScore || 0) + (st.score || 0),
+                isAlive: isAliveNow,
+                isFinished: isFinishedNow,
+                gameData
             });
         }
-    }, [socket, pin, nickname, groupId]);
+    }, [socket, pin, nickname, groupId, baseScore, isHost]);
 
     // Toggle Mute
     const toggleMute = () => {
@@ -816,6 +864,16 @@ export default function AirplaneGame({
 
         broadcastGameState({ state: 'playing' });
     };
+
+    // Auto-start immediately when online participants enter the game
+    useEffect(() => {
+        if (!isHost && gameState === 'ready') {
+            const timer = setTimeout(() => {
+                startGame(0);
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [isHost]);
 
     // Pause / Resume
     const togglePause = () => {
@@ -1269,6 +1327,9 @@ export default function AirplaneGame({
                             // Final Victory
                             setGameState('victory');
                             xenonAudio.playPowerUp();
+                            if (socket && pin) {
+                                socket.emit('participant:updateScore', { pin, score: (baseScore || 0) + st.score });
+                            }
                             broadcastGameState({ state: 'victory' });
                         }
                     }
@@ -1293,6 +1354,16 @@ export default function AirplaneGame({
                     pt.life--;
                     if (pt.alpha <= 0 || pt.life <= 0) {
                         st.particles.splice(i, 1);
+                    }
+                }
+
+                // Throttled live stream broadcast (every ~220ms) for Top 1-2-3 Main & Sub Monitors
+                if (now - (st.lastStreamTime || 0) > 220) {
+                    st.lastStreamTime = now;
+                    broadcastGameState({ state: 'playing' });
+                    if (socket && pin && st.score !== (st.lastSyncedScore || 0)) {
+                        st.lastSyncedScore = st.score;
+                        socket.emit('participant:updateScore', { pin, score: (baseScore || 0) + st.score });
                     }
                 }
             }
@@ -1675,6 +1746,9 @@ export default function AirplaneGame({
         if (st.lives <= 0) {
             setGameState('gameover');
             xenonAudio.stopBgm();
+            if (socket && pin) {
+                socket.emit('participant:updateScore', { pin, score: (baseScore || 0) + st.score });
+            }
             broadcastGameState({ state: 'gameover' });
         } else {
             // Respawn with full shield
@@ -1683,6 +1757,7 @@ export default function AirplaneGame({
             st.player.x = canvasRef.current.width / 2;
             st.player.y = canvasRef.current.height - 90;
             setShield(100);
+            broadcastGameState({ state: 'playing' });
         }
     };
 

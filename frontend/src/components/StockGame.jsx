@@ -42,29 +42,27 @@ export const getTeamPortfolio = (teamOrKey, portfolios) => {
         const key = String(teamOrKey);
         if (portfolios[key]) return portfolios[key];
         for (const [k, p] of Object.entries(portfolios)) {
-            if (k === key || p?.teamId === key || p?.nickname === key || String(p?.groupId) === key) {
+            if (k === key || p?.nickname === key || p?.teamId === key) {
                 return p;
             }
         }
     } else if (teamOrKey && typeof teamOrKey === 'object') {
         const candidates = [
-            teamOrKey.id,
             teamOrKey.nickname,
             teamOrKey.name,
-            teamOrKey.groupId,
+            teamOrKey.id,
             teamOrKey.socketId,
-            String(teamOrKey.id || ''),
-            String(teamOrKey.groupId || ''),
-            String(teamOrKey.name || '')
+            String(teamOrKey.nickname || ''),
+            String(teamOrKey.name || ''),
+            String(teamOrKey.id || '')
         ].filter(Boolean);
 
         for (const c of candidates) {
             if (portfolios[c]) return portfolios[c];
         }
         for (const p of Object.values(portfolios)) {
-            if (p?.teamId && candidates.includes(String(p.teamId))) return p;
             if (p?.nickname && candidates.includes(String(p.nickname))) return p;
-            if (p?.groupId && candidates.includes(String(p.groupId))) return p;
+            if (p?.teamId && candidates.includes(String(p.teamId))) return p;
         }
     }
     return defaultPortfolio;
@@ -1447,20 +1445,10 @@ export function StockGameScreenView({
     const isAllOrdersOpen = Boolean(allOrdersModalOpen) && !isModalDismissed;
     const isProgressOpen = Boolean(tradingProgressModalOpen) && !isProgressDismissed;
 
-    // 통합 예측 상태 (서브모니터 자체 클릭 or 외부 predictions)
+    // 서브모니터 자체 예측 상태만 유지 (온라인 참여자 개별 예측이 서브모니터에 노출되지 않도록 분리)
     const activePredictions = useMemo(() => {
-        const merged = { ...screenVotes };
-        if (predictions && typeof predictions === 'object') {
-            Object.values(predictions).forEach(teamPred => {
-                if (teamPred && typeof teamPred === 'object') {
-                    Object.entries(teamPred).forEach(([k, v]) => {
-                        if (!merged[k]) merged[k] = v;
-                    });
-                }
-            });
-        }
-        return merged;
-    }, [screenVotes, predictions]);
+        return { ...screenVotes };
+    }, [screenVotes]);
 
     // 등락 예측 버튼 클릭 핸들러
     const handleTogglePrediction = (stockKey, direction) => {
@@ -1469,14 +1457,6 @@ export function StockGameScreenView({
             [stockKey]: screenVotes[stockKey] === direction ? null : direction
         };
         setScreenVotes(nextVotes);
-
-        try {
-            const bc = new BroadcastChannel('quizrun_screen_sync');
-            bc.postMessage({
-                type: 'STOCK_GAME_PREDICT_VOTE',
-                payload: { stockKey, direction: nextVotes[stockKey] }
-            });
-        } catch (e) {}
     };
 
     // 현재 예측 적중 개수 계산 (5개 이상 달성 확인)
@@ -1490,7 +1470,7 @@ export function StockGameScreenView({
         return hits;
     }, [yearNewsList, activePredictions]);
 
-    const isQualifiedForHint = screenHitsCount >= 5 || (predictionResults && Object.values(predictionResults).some(r => r?.qualified));
+    const isQualifiedForHint = screenHitsCount >= 5;
     const totalVotedCount = Object.values(activePredictions).filter(Boolean).length;
 
     return (
@@ -1960,15 +1940,7 @@ export function StockGameScreenView({
                 />
             )}
 
-            <TradingProgressModal
-                isOpen={isProgressOpen}
-                onClose={() => setIsProgressDismissed(true)}
-                currentYear={year}
-                teamList={teamList && teamList.length > 0 ? teamList : Object.entries(portfolios || {}).map(([id, p]) => ({ id, name: p?.nickname || `${id}조` }))}
-                portfolios={portfolios}
-                completedTrades={completedTrades}
-            />
-
+            {/* 서브 모니터에서는 실시간 매매 진행 현황(TradingProgressModal)을 표시하지 않고, 매매 후 정산 결과(AllOrdersResultModal)만 표시 */}
             <AllOrdersResultModal
                 isOpen={isAllOrdersOpen}
                 onClose={() => setIsModalDismissed(true)}
@@ -2609,14 +2581,19 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     // 각 행별 직접 텍스트 수량 입력 상태: { [stockKey]: string }
     const [rowInputValues, setRowInputValues] = useState({});
 
-    // 참여자 리스트 생성 (온라인: liveParticipants, 오프라인: contextScores 기반 동적 인원수)
+    // 참여자 리스트 생성 (온라인: liveParticipants 고유 닉네임 기준, 오프라인: contextScores 기반 동적 인원수)
     const teamList = useMemo(() => {
         if (liveParticipants && liveParticipants.length > 0) {
-            return liveParticipants.map((p, idx) => ({
-                id: String(p.id || p.nickname || p.groupId || idx + 1),
-                name: p.nickname || `${p.groupId || idx + 1}조`,
-                initialSeed: p.score && p.score > 0 ? p.score : 1000000
-            }));
+            return liveParticipants.map((p, idx) => {
+                const uniqueKey = String(p.nickname || p.id || idx + 1).trim();
+                return {
+                    id: uniqueKey,
+                    name: p.nickname || `${p.groupId || idx + 1}조`,
+                    nickname: p.nickname || uniqueKey,
+                    socketId: p.id,
+                    initialSeed: p.score && p.score > 0 ? p.score : 1000000
+                };
+            });
         }
         const offlineCount = (contextScores && contextScores.length > 0) ? contextScores.length : 8;
         return Array.from({ length: offlineCount }, (_, i) => {
@@ -2629,6 +2606,35 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             };
         });
     }, [liveParticipants, contextScores]);
+
+    // 온라인 참여자 입장 시 선택된 대상 조 자동 동기화 및 개별 포트폴리오 초기화
+    useEffect(() => {
+        if (teamList && teamList.length > 0) {
+            if (!teamList.some(t => String(t.id) === String(selectedTeamId))) {
+                setSelectedTeamId(String(teamList[0].id));
+            }
+            setPortfolios(prev => {
+                const next = { ...prev };
+                let modified = false;
+                teamList.forEach(t => {
+                    const key = String(t.id);
+                    if (!next[key]) {
+                        const seed = t.initialSeed && t.initialSeed > 0 ? t.initialSeed : 1000000;
+                        next[key] = {
+                            teamId: key,
+                            nickname: t.name,
+                            seedMoney: seed,
+                            cash: seed,
+                            holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
+                            history: { 2015: { asset: seed, rank: 1, returnRate: 0 } }
+                        };
+                        modified = true;
+                    }
+                });
+                return modified ? next : prev;
+            });
+        }
+    }, [teamList, selectedTeamId]);
 
     // 전체 조별 포트폴리오
     const [portfolios, setPortfolios] = useState(() => {
@@ -2757,7 +2763,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         if (overrides.completedTrades !== undefined) cur.completedTrades = overrides.completedTrades;
         if (overrides.teamList !== undefined) cur.teamList = overrides.teamList;
 
-        const payload = {
+        // 서브 모니터용 페이로드: 매매 중 실시간 진행 상황(tradingProgressModalOpen, predictions)은 숨기고, 매매 후 결과(allOrdersModalOpen)만 전달
+        const screenPayload = {
             pin: cur.pin || pin,
             year: cur.currentYear,
             stocks: cur.activeStocks,
@@ -2766,11 +2773,29 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             permissions: cur.permissions,
             allowAllNews: cur.allowAllNews,
             allowAllVipHint: cur.allowAllVipHint,
-            predictions: cur.predictions,
-            predictionResults: cur.predictionResults,
+            predictions: {},
+            predictionResults: {},
             allOrdersModalOpen: cur.allOrdersModalOpen,
-            tradingProgressModalOpen: cur.tradingProgressModalOpen,
+            tradingProgressModalOpen: false,
             completedTrades: cur.completedTrades || {},
+            teamList: cur.teamList || teamList
+        };
+
+        // 참여자용 페이로드: 타인의 예측(predictions)을 공유하지 않고 각자 고유 키 포트폴리오만 참조하도록 전달
+        const participantPayload = {
+            pin: cur.pin || pin,
+            year: cur.currentYear,
+            stocks: cur.activeStocks,
+            isPubliclyRevealed: cur.isPubliclyRevealed,
+            portfolios: cur.portfolios,
+            permissions: cur.permissions,
+            allowAllNews: cur.allowAllNews,
+            allowAllVipHint: cur.allowAllVipHint,
+            predictions: {},
+            predictionResults: cur.predictionResults,
+            allOrdersModalOpen: false,
+            tradingProgressModalOpen: false,
+            completedTrades: {},
             teamList: cur.teamList || teamList
         };
 
@@ -2780,7 +2805,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             }
             channelRef.current.postMessage({
                 type: 'STOCK_GAME_SCREEN_UPDATE',
-                payload
+                payload: screenPayload
             });
             channelRef.current.postMessage({
                 type: 'MODE_CHANGE',
@@ -2794,11 +2819,11 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             socket.emit('room:message', {
                 pin,
                 event: 'stock_game:state_sync',
-                payload
+                payload: participantPayload
             });
             socket.emit('stock_game:state_sync', {
                 pin,
-                ...payload
+                ...participantPayload
             });
         }
     };
@@ -2811,104 +2836,6 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             channel.onmessage = (event) => {
                 if (event.data?.type === 'SCREEN_PING') {
                     broadcastStockState();
-                } else if (event.data?.type === 'STOCK_GAME_PREDICT_VOTE' && event.data.payload) {
-                    const { teamId, stockKey, direction } = event.data.payload;
-                    const targetTeam = teamId || selectedTeamId || '1';
-                    setPredictions(prev => {
-                        const next = {
-                            ...prev,
-                            [targetTeam]: {
-                                ...(prev[targetTeam] || {}),
-                                [stockKey]: direction
-                            }
-                        };
-                        broadcastStockState({ predictions: next });
-                        return next;
-                    });
-                } else if (event.data?.type === 'STOCK_GAME_EXECUTE_ORDER' && event.data.payload) {
-                    const { teamId, nickname, cash, holdings } = event.data.payload;
-                    const strTeamId = teamId ? String(teamId) : '';
-                    const strNick = nickname ? String(nickname) : '';
-                    setPortfolios(prev => {
-                        const existing = (strTeamId && prev[strTeamId]) || (strNick && prev[strNick]) || {
-                            seedMoney: 1000000,
-                            cash: 1000000,
-                            holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
-                            history: {}
-                        };
-                        const updated = {
-                            ...existing,
-                            teamId: strTeamId || existing.teamId,
-                            nickname: strNick || existing.nickname,
-                            cash: cash !== undefined ? cash : existing.cash,
-                            holdings: holdings || existing.holdings
-                        };
-                        const nextP = { ...prev };
-                        if (strTeamId) nextP[strTeamId] = updated;
-                        if (strNick) nextP[strNick] = updated;
-                        if (liveParticipants && Array.isArray(liveParticipants)) {
-                            liveParticipants.forEach(p => {
-                                const pId = String(p.id || '');
-                                const pNick = String(p.nickname || '');
-                                const pGroup = String(p.groupId || '');
-                                if ((strTeamId && (pId === strTeamId || pGroup === strTeamId)) ||
-                                    (strNick && (pNick === strNick || pId === strNick))) {
-                                    if (pId) nextP[pId] = updated;
-                                    if (pNick) nextP[pNick] = updated;
-                                    if (pGroup) nextP[pGroup] = updated;
-                                }
-                            });
-                        }
-                        broadcastStockState({ portfolios: nextP });
-                        return nextP;
-                    });
-                } else if (event.data?.type === 'STOCK_GAME_VIP_HINT_SELECTED' && event.data.payload) {
-                    const { teamId, nickname, stockKey, year } = event.data.payload;
-                    const key = teamId || nickname || '1';
-                    setHostVipHints(prev => ({
-                        ...prev,
-                        [key]: {
-                            teamId: key,
-                            nickname: nickname || key,
-                            stockKey,
-                            year: year || currentYear,
-                            timestamp: new Date().toLocaleTimeString()
-                        }
-                    }));
-                } else if (event.data?.type === 'STOCK_GAME_PARTICIPANT_ACTIVITY' && event.data.payload) {
-                    const { teamId, nickname, action, stockKey, direction } = event.data.payload;
-                    const key = teamId || nickname || '1';
-                    setParticipantActivities(prev => {
-                        const existing = prev[key] || { newsRead: [], predictionsCount: 0, tradesCount: 0, lastAction: '' };
-                        let nextNews = [...(existing.newsRead || [])];
-                        let nextPreds = existing.predictionsCount || 0;
-                        let nextTrades = existing.tradesCount || 0;
-                        let lastAction = '';
-
-                        if (action === 'READ_NEWS' && stockKey) {
-                            if (!nextNews.includes(stockKey)) nextNews.push(stockKey);
-                            lastAction = `[${stockKey}] 뉴스 확인`;
-                        } else if (action === 'PREDICT') {
-                            nextPreds++;
-                            lastAction = `[${stockKey}] ${direction === 'UP' ? '상승' : '하락'} 예측`;
-                        } else if (action === 'TRADE') {
-                            nextTrades++;
-                            lastAction = `[${stockKey}] 매매 체결`;
-                        }
-
-                        return {
-                            ...prev,
-                            [key]: {
-                                ...existing,
-                                nickname: nickname || key,
-                                newsRead: nextNews,
-                                predictionsCount: nextPreds,
-                                tradesCount: nextTrades,
-                                lastAction,
-                                lastTime: new Date().toLocaleTimeString()
-                            }
-                        };
-                    });
                 }
             };
         } catch (e) {}
@@ -2917,27 +2844,24 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             const handlePredictMsg = (msg) => {
                 const data = msg.payload || msg;
                 if (data && data.stockKey) {
-                    const targetTeam = data.teamId || '1';
-                    setPredictions(prev => {
-                        const next = {
-                            ...prev,
-                            [targetTeam]: {
-                                ...(prev[targetTeam] || {}),
-                                [data.stockKey]: data.direction
-                            }
-                        };
-                        broadcastStockState({ predictions: next });
-                        return next;
-                    });
+                    const playerKey = String(data.nickname || data.teamId || '1').trim();
+                    setPredictions(prev => ({
+                        ...prev,
+                        [playerKey]: {
+                            ...(prev[playerKey] || {}),
+                            [data.stockKey]: data.direction
+                        }
+                    }));
                 }
             };
             const handleExecuteOrderMsg = (data) => {
                 const payload = data.payload || data;
-                if (payload && (payload.teamId || payload.nickname)) {
-                    const strTeamId = payload.teamId ? String(payload.teamId) : '';
-                    const strNick = payload.nickname ? String(payload.nickname) : '';
+                if (payload && (payload.nickname || payload.teamId)) {
+                    const strNick = payload.nickname ? String(payload.nickname).trim() : '';
+                    const strTeamId = payload.teamId ? String(payload.teamId).trim() : '';
+                    const playerKey = strNick || strTeamId || '1';
                     setPortfolios(prev => {
-                        const existing = (strTeamId && prev[strTeamId]) || (strNick && prev[strNick]) || {
+                        const existing = prev[playerKey] || (strNick && prev[strNick]) || {
                             seedMoney: 1000000,
                             cash: 1000000,
                             holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
@@ -2945,36 +2869,30 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         };
                         const updated = {
                             ...existing,
-                            teamId: strTeamId || existing.teamId,
-                            nickname: strNick || existing.nickname,
+                            teamId: playerKey,
+                            nickname: strNick || existing.nickname || playerKey,
                             cash: payload.cash !== undefined ? payload.cash : existing.cash,
                             holdings: payload.holdings || existing.holdings
                         };
-                        const nextP = { ...prev };
-                        if (strTeamId) nextP[strTeamId] = updated;
-                        if (strNick) nextP[strNick] = updated;
-                        if (liveParticipants && Array.isArray(liveParticipants)) {
-                            liveParticipants.forEach(p => {
-                                const pId = String(p.id || '');
-                                const pNick = String(p.nickname || '');
-                                const pGroup = String(p.groupId || '');
-                                if ((strTeamId && (pId === strTeamId || pGroup === strTeamId)) ||
-                                    (strNick && (pNick === strNick || pId === strNick))) {
-                                    if (pId) nextP[pId] = updated;
-                                    if (pNick) nextP[pNick] = updated;
-                                    if (pGroup) nextP[pGroup] = updated;
-                                }
-                            });
-                        }
-                        broadcastStockState({ portfolios: nextP });
+                        const nextP = {
+                            ...prev,
+                            [playerKey]: updated,
+                            ...(strNick ? { [strNick]: updated } : {})
+                        };
+                        stateRef.current.portfolios = nextP;
                         return nextP;
                     });
+                    setCompletedTrades(prev => ({
+                        ...prev,
+                        [playerKey]: true,
+                        ...(strNick ? { [strNick]: true } : {})
+                    }));
                 }
             };
             const handleVipHintMsg = (msg) => {
                 const data = msg.payload || msg;
-                if (data && (data.teamId || data.nickname)) {
-                    const teamKey = data.teamId || data.nickname || '1';
+                if (data && (data.nickname || data.teamId)) {
+                    const teamKey = String(data.nickname || data.teamId || '1').trim();
                     setHostVipHints(prev => ({
                         ...prev,
                         [teamKey]: {
@@ -2989,8 +2907,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             };
             const handleActivityMsg = (msg) => {
                 const data = msg.payload || msg;
-                if (data && (data.teamId || data.nickname)) {
-                    const teamKey = data.teamId || data.nickname || '1';
+                if (data && (data.nickname || data.teamId)) {
+                    const teamKey = String(data.nickname || data.teamId || '1').trim();
                     setParticipantActivities(prev => {
                         const existing = prev[teamKey] || { newsRead: [], predictionsCount: 0, tradesCount: 0, lastAction: '' };
                         let nextNews = [...(existing.newsRead || [])];
@@ -3003,7 +2921,9 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                             lastAction = `[${data.stockKey}] 뉴스 확인`;
                         } else if (data.action === 'PREDICT') {
                             nextPreds++;
-                            lastAction = `[${data.stockKey}] ${data.direction === 'UP' ? '상승' : '하락'} 예측`;
+                            lastAction = data.direction
+                                ? `[${data.stockKey}] ${data.direction === 'UP' ? '▲상승' : '▼하락'} 선택`
+                                : `[${data.stockKey}] 예측 해제`;
                         } else if (data.action === 'TRADE') {
                             nextTrades++;
                             lastAction = `[${data.stockKey}] 매매 체결`;
@@ -3031,10 +2951,12 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         const next = { ...prev };
                         let modified = false;
                         list.forEach((p, idx) => {
-                            const key = String(p.id || p.nickname || p.groupId || idx + 1);
+                            const key = String(p.nickname || p.id || idx + 1).trim();
                             if (!next[key]) {
                                 const seed = p.score && p.score > 0 ? p.score : 1000000;
                                 next[key] = {
+                                    teamId: key,
+                                    nickname: p.nickname || key,
                                     seedMoney: seed,
                                     cash: seed,
                                     holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
@@ -3091,7 +3013,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 socket.off('room:message');
             }
         };
-    }, [currentYear, isPubliclyRevealed, allowAllNews, allowAllVipHint, activeStocks, portfolios, predictions, predictionResults, allOrdersModalOpen]);
+    }, [currentYear, isPubliclyRevealed, allowAllNews, allowAllVipHint, activeStocks, portfolios, predictionResults, allOrdersModalOpen]);
 
     // 🎲 새로운 10개 종목 무작위 추출 (새 게임)
     const handleReRandomizeStocks = () => {
@@ -4504,7 +4426,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         주가 등락의 원인이 되는 경제 사건들입니다.
                     </p>
 
-                    {/* 🔥 상단 배치: 참여자별 현재 연도 주식 매매 & 보유 현황 (뉴스 바로 밑, 스크롤 필요 없음) */}
+                    {/* 🔥 상단 배치: 참여자별 실시간 진행(뉴스 열람·상승/하락 예측·매매) 현황 (메인 모니터 전용) */}
                     <div style={{
                         marginBottom: '10px',
                         background: '#1e293b',
@@ -4515,12 +4437,24 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         flexDirection: 'column',
                         gap: '6px'
                     }}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <BarChart3 size={15} /> 참여자별 {currentYear}년 주식 매매 현황
+                        <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <BarChart3 size={15} /> 참여자별 {currentYear}년 실시간 진행 현황
+                            </span>
+                            <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: '700' }}>
+                                메인 모니터 전용 ({teamList.length}명)
+                            </span>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
-                            {Object.entries(portfolios || {}).map(([key, p]) => {
-                                if (!p) return null;
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
+                            {teamList.map((team) => {
+                                const p = getTeamPortfolio(team, portfolios);
+                                const act = participantActivities[team.name] || participantActivities[team.id] || {};
+                                const teamPreds = predictions[team.name] || predictions[team.id] || {};
+                                const vip = hostVipHints[team.name] || hostVipHints[team.id] || null;
+                                const isTraded = Boolean(completedTrades[team.name] || completedTrades[team.id] || (act.tradesCount > 0));
+                                const predEntries = Object.entries(teamPreds).filter(([, dir]) => dir === 'UP' || dir === 'DOWN');
+                                const newsReadList = act.newsRead || [];
+
                                 let stockVal = 0;
                                 const holdingsSummary = [];
                                 stockList.forEach(s => {
@@ -4531,31 +4465,92 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                                         holdingsSummary.push(`${s.key}: ${q}주`);
                                     }
                                 });
-                                const cashVal = p.cash || 0;
+                                const cashVal = p.cash !== undefined ? p.cash : 1000000;
                                 const totalAsset = cashVal + stockVal;
+
                                 return (
-                                    <div key={key} style={{
-                                        background: '#0f172a',
-                                        borderRadius: '8px',
-                                        padding: '6px 8px',
-                                        fontSize: '0.75rem',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: '3px',
-                                        border: '1px solid rgba(255,255,255,0.05)'
-                                    }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <strong style={{ color: '#f8fafc' }}>👤 {key}</strong>
+                                    <div
+                                        key={team.id}
+                                        onClick={() => setSelectedTeamId(String(team.id))}
+                                        style={{
+                                            background: String(selectedTeamId) === String(team.id) ? 'rgba(56, 189, 248, 0.12)' : '#0f172a',
+                                            borderRadius: '8px',
+                                            padding: '7px 9px',
+                                            fontSize: '0.75rem',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '4px',
+                                            cursor: 'pointer',
+                                            border: String(selectedTeamId) === String(team.id)
+                                                ? '1px solid rgba(56, 189, 248, 0.5)'
+                                                : '1px solid rgba(255,255,255,0.06)'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <strong style={{ color: '#f8fafc' }}>👤 {team.name}</strong>
+                                                <span style={{
+                                                    padding: '1px 6px',
+                                                    borderRadius: '6px',
+                                                    fontSize: '0.68rem',
+                                                    fontWeight: '800',
+                                                    background: isTraded ? 'rgba(16, 185, 129, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                                                    color: isTraded ? '#34d399' : '#94a3b8'
+                                                }}>
+                                                    {isTraded ? `✓ 매매체결${act.tradesCount ? `(${act.tradesCount}회)` : ''}` : '⏳ 탐색/대기'}
+                                                </span>
+                                            </div>
                                             <span style={{ color: '#ffffff', fontWeight: '900' }}>
-                                                총 자산: {totalAsset.toLocaleString()}원
+                                                {totalAsset.toLocaleString()}원
                                             </span>
                                         </div>
-                                        <div style={{ display: 'flex', gap: '10px', fontSize: '0.72rem' }}>
-                                            <span style={{ color: '#10b981' }}>예수금: {cashVal.toLocaleString()}원</span>
-                                            <span style={{ color: '#f59e0b' }}>주식 평가금: {stockVal.toLocaleString()}원</span>
+
+                                        {/* 실시간 행동 상태: 뉴스 확인 / 상승·하락 예측 / 특별힌트 */}
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.7rem', color: '#cbd5e1' }}>
+                                            <span style={{ color: newsReadList.length > 0 ? '#38bdf8' : '#64748b' }}>
+                                                📰 뉴스: {newsReadList.length > 0 ? `${newsReadList.length}건(${newsReadList.join(',')})` : '0건'}
+                                            </span>
+                                            <span style={{ color: predEntries.length > 0 ? '#a78bfa' : '#64748b' }}>
+                                                🎯 예측: {predEntries.length}/10건
+                                            </span>
+                                            {vip && (
+                                                <span style={{ color: '#fbbf24', fontWeight: '800' }}>
+                                                    👑 힌트:[{vip.stockKey}]
+                                                </span>
+                                            )}
+                                            {act.lastAction && (
+                                                <span style={{ color: '#34d399', marginLeft: 'auto' }}>
+                                                    ⚡ {act.lastAction}
+                                                </span>
+                                            )}
                                         </div>
-                                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                                            매매/보유: {holdingsSummary.length > 0 ? holdingsSummary.join(', ') : '보유 주식 없음'}
+
+                                        {predEntries.length > 0 && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+                                                {predEntries.map(([sKey, dir]) => (
+                                                    <span
+                                                        key={sKey}
+                                                        style={{
+                                                            padding: '1px 5px',
+                                                            borderRadius: '4px',
+                                                            fontSize: '0.66rem',
+                                                            fontWeight: '800',
+                                                            background: dir === 'UP' ? 'rgba(244, 63, 94, 0.18)' : 'rgba(56, 189, 248, 0.18)',
+                                                            color: dir === 'UP' ? '#fb7185' : '#38bdf8'
+                                                        }}
+                                                    >
+                                                        {sKey}{dir === 'UP' ? '▲' : '▼'}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div style={{ display: 'flex', gap: '10px', fontSize: '0.71rem' }}>
+                                            <span style={{ color: '#10b981' }}>예수금: {cashVal.toLocaleString()}원</span>
+                                            <span style={{ color: '#f59e0b' }}>주식: {stockVal.toLocaleString()}원</span>
+                                        </div>
+                                        <div style={{ fontSize: '0.69rem', color: '#94a3b8' }}>
+                                            보유: {holdingsSummary.length > 0 ? holdingsSummary.join(', ') : '보유 주식 없음'}
                                         </div>
                                     </div>
                                 );
@@ -4748,32 +4743,28 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const [tradeType, setTradeType] = useState('BUY'); // 'BUY' | 'SELL'
     const [tradeQty, setTradeQty] = useState(0);
 
-    // 참여자 예측 투표 및 힌트 보상 모달 상태
+    // 참여자 예측 투표 및 힌트 보상 모달 상태 (각 유저 로컬 전용)
     const [localVotes, setLocalVotes] = useState({});
+    const [localPortfolio, setLocalPortfolio] = useState(null);
     const [rewardModalOpen, setRewardModalOpen] = useState(false);
     const [chosenHintStock, setChosenHintStock] = useState(null);
     const [evaluatedYear, setEvaluatedYear] = useState(null);
 
-    const myTeamId = String(groupId || 1);
+    // 온라인 입장 유저별 고유 식별키 (닉네임 최우선, 다른 유저와 '1'번 키를 절대 공유하지 않음)
+    const myPlayerKey = String(nickname || groupId || 1).trim();
+    const myTeamId = myPlayerKey;
     const stockList = useMemo(() => Object.values(gameState.stocks || {}), [gameState.stocks]);
-    const rawPortfolio = (nickname && gameState.portfolios?.[nickname]) || gameState.portfolios?.[myTeamId];
+    const rawPortfolio = nickname
+        ? gameState.portfolios?.[String(nickname).trim()]
+        : gameState.portfolios?.[myPlayerKey];
 
-    // 실시간 활동 정보 전송 헬퍼 (호스트 모니터링용)
+    // 실시간 활동 정보 전송 헬퍼 (메인 모니터 호스트 단독 모니터링용)
     const emitActivity = (action, stockKey = null, direction = null) => {
-        try {
-            const bc = new BroadcastChannel('quizrun_screen_sync');
-            bc.postMessage({
-                type: 'STOCK_GAME_PARTICIPANT_ACTIVITY',
-                payload: { teamId: myTeamId, nickname, action, stockKey, direction }
-            });
-            setTimeout(() => bc.close(), 200);
-        } catch (e) {}
-
-        if (socket) {
+        if (socket && pin) {
             socket.emit('stock_game:participant_activity', {
                 pin,
-                teamId: myTeamId,
-                nickname,
+                teamId: myPlayerKey,
+                nickname: nickname || myPlayerKey,
                 action,
                 stockKey,
                 direction
@@ -4782,8 +4773,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 pin,
                 event: 'stock_game:participant_activity',
                 payload: {
-                    teamId: myTeamId,
-                    nickname,
+                    teamId: myPlayerKey,
+                    nickname: nickname || myPlayerKey,
                     action,
                     stockKey,
                     direction
@@ -4838,12 +4829,14 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
             }
         };
 
-        socket.on('stock_game:state_sync', handleSync);
-        socket.on('room:message', (msg) => {
+        const handleRoomMsg = (msg) => {
             if (msg && msg.event === 'stock_game:state_sync' && msg.payload) {
                 handleSync(msg.payload);
             }
-        });
+        };
+
+        socket.on('stock_game:state_sync', handleSync);
+        socket.on('room:message', handleRoomMsg);
 
         // Request host for latest state upon mount
         if (socket && pin) {
@@ -4851,41 +4844,33 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
             socket.emit('room:message', { pin, event: 'stock_game:request_sync', payload: {} });
         }
 
-        try {
-            const bc = new BroadcastChannel('quizrun_screen_sync');
-            bc.postMessage({ type: 'SCREEN_PING' });
-            bc.onmessage = (e) => {
-                if (e.data?.type === 'STOCK_GAME_SCREEN_UPDATE' && e.data?.payload) {
-                    handleSync(e.data.payload);
-                }
-            };
-        } catch (e) {}
-
         return () => {
             socket.off('stock_game:state_sync', handleSync);
+            socket.off('room:message', handleRoomMsg);
         };
     }, [socket, pin]);
 
-    // 내 포트폴리오 계산
+    // 내 포트폴리오 계산 (오직 본인 고유 키/로컬 매매 내역만 참조)
     const myPortfolio = useMemo(() => {
         const defaultSeed = (myScore && myScore > 0) ? myScore : 1000000;
-        if (!rawPortfolio) {
+        const base = localPortfolio || rawPortfolio;
+        if (!base) {
             return {
                 seedMoney: defaultSeed,
                 cash: defaultSeed,
                 holdings: {}
             };
         }
-        const hasHoldings = Object.values(rawPortfolio.holdings || {}).some(qty => qty > 0);
-        if (!hasHoldings && myScore && myScore > 0 && myScore !== rawPortfolio.seedMoney) {
+        const hasHoldings = Object.values(base.holdings || {}).some(qty => qty > 0);
+        if (!localPortfolio && !hasHoldings && myScore && myScore > 0 && myScore !== base.seedMoney) {
             return {
-                ...rawPortfolio,
+                ...base,
                 seedMoney: myScore,
                 cash: myScore
             };
         }
-        return rawPortfolio;
-    }, [rawPortfolio, myScore]);
+        return base;
+    }, [localPortfolio, rawPortfolio, myScore]);
 
     // 내 주식 평가금 계산
     const myStockValue = useMemo(() => {
@@ -4898,23 +4883,20 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         return total;
     }, [myPortfolio.holdings, gameState.year, stockList]);
 
-    const myTotalAsset = (myPortfolio.cash || 0) + myStockValue;
+    const myTotalAsset = (myPortfolio.cash !== undefined ? myPortfolio.cash : 1000000) + myStockValue;
     const myReturnRate = (myPortfolio.seedMoney && myPortfolio.seedMoney > 0)
         ? (((myTotalAsset - myPortfolio.seedMoney) / myPortfolio.seedMoney) * 100).toFixed(1)
         : '0.0';
 
     const yearNewsList = useMemo(() => generateStockNewsForYear(gameState.year, gameState.stocks || {}), [gameState.year, gameState.stocks]);
-    const hasMyVipHint = gameState.allowAllVipHint || Boolean(gameState.permissions[myTeamId]?.hint);
+    const hasMyVipHint = gameState.allowAllVipHint || Boolean(gameState.permissions?.[myPlayerKey]?.hint);
 
     const stockKeys = useMemo(() => ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'], []);
 
+    // 내 예측 선택은 오직 내 휴대폰에서 선택한 localVotes만 반영 (다른 참여자의 선택이 절대 섞이지 않음)
     const myPredictions = useMemo(() => {
-        const fromHost = gameState.predictions?.[myTeamId] || {};
-        return {
-            ...fromHost,
-            ...localVotes
-        };
-    }, [gameState.predictions, myTeamId, localVotes]);
+        return { ...localVotes };
+    }, [localVotes]);
 
     const votedCount = useMemo(() => stockKeys.filter(k => Boolean(myPredictions[k])).length, [stockKeys, myPredictions]);
     const isAllVoted = useMemo(() => stockKeys.length > 0 && stockKeys.every(k => Boolean(myPredictions[k])), [stockKeys, myPredictions]);
@@ -4929,7 +4911,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         return hits;
     }, [yearNewsList, myPredictions]);
 
-    const myResult = gameState.predictionResults?.[myTeamId];
+    const myResult = gameState.predictionResults?.[myPlayerKey];
     const effectiveHits = calculatedHits;
     const isQualified = effectiveHits >= 5 || Boolean(myResult?.qualified) || gameState.allowAllVipHint;
 
@@ -4944,6 +4926,13 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         setShowAnalysis(false);
         setSelectedNews(null);
     }, [gameState.year]);
+
+    // 새 게임(종목 재추출)으로 호스트가 2015년 초기화 시 로컬 포트폴리오도 동기화
+    useEffect(() => {
+        if (rawPortfolio) {
+            setLocalPortfolio(rawPortfolio);
+        }
+    }, [gameState.year, rawPortfolio]);
 
     // 체크 도중이라도 5개 이상 맞추면 즉시 특급 힌트 혜택 모달 팝업 & 정답 효과음!
     // 10개를 전부 다 체크했는데 5개 미만인 경우 아쉬운 결과 안내 모달 팝업 & 오답 효과음!
@@ -4970,18 +4959,11 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
 
         emitActivity('PREDICT', stockKey, nextVal);
 
-        try {
-            const bc = new BroadcastChannel('quizrun_screen_sync');
-            bc.postMessage({
-                type: 'STOCK_GAME_PREDICT_VOTE',
-                payload: { teamId: myTeamId, stockKey, direction: nextVal }
-            });
-        } catch (e) {}
-
-        if (socket) {
+        if (socket && pin) {
             socket.emit('stock_game:predict', {
                 pin,
-                teamId: myTeamId,
+                teamId: myPlayerKey,
+                nickname: nickname || myPlayerKey,
                 stockKey,
                 direction: nextVal
             });
@@ -4989,7 +4971,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 pin,
                 event: 'stock_game:predict',
                 payload: {
-                    teamId: myTeamId,
+                    teamId: myPlayerKey,
+                    nickname: nickname || myPlayerKey,
                     stockKey,
                     direction: nextVal
                 }
@@ -5001,20 +4984,12 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const handleSelectVipHint = (stockKey) => {
         if (chosenHintStock) return;
         setChosenHintStock(stockKey);
-        try {
-            const bc = new BroadcastChannel('quizrun_screen_sync');
-            bc.postMessage({
-                type: 'STOCK_GAME_VIP_HINT_SELECTED',
-                payload: { teamId: myTeamId, nickname, stockKey, year: gameState.year }
-            });
-            setTimeout(() => bc.close(), 200);
-        } catch (e) {}
 
-        if (socket) {
+        if (socket && pin) {
             socket.emit('stock_game:vip_hint_selected', {
                 pin,
-                teamId: myTeamId,
-                nickname,
+                teamId: myPlayerKey,
+                nickname: nickname || myPlayerKey,
                 stockKey,
                 year: gameState.year
             });
@@ -5022,8 +4997,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 pin,
                 event: 'stock_game:vip_hint_selected',
                 payload: {
-                    teamId: myTeamId,
-                    nickname,
+                    teamId: myPlayerKey,
+                    nickname: nickname || myPlayerKey,
                     stockKey,
                     year: gameState.year
                 }
@@ -5054,7 +5029,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         if (price <= 0) return;
 
         if (tradeType === 'BUY') {
-            const availableCash = myPortfolio.cash || 0;
+            const availableCash = myPortfolio.cash !== undefined ? myPortfolio.cash : 1000000;
             const targetCash = availableCash * (pct / 100);
             const calcQty = Math.floor(targetCash / price);
             if (tradeQty === calcQty && calcQty > 0) {
@@ -5073,7 +5048,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         }
     };
 
-    // 매수 / 매도 주문 체결 실행
+    // 매수 / 매도 주문 체결 실행 (본인에게만 반영 + 호스트 메인모니터로만 전송)
     const handleExecuteTrade = (stockItem) => {
         if (!stockItem) return;
         const qty = parseInt(tradeQty, 10);
@@ -5085,7 +5060,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         const price = stockItem.prices ? (stockItem.prices[gameState.year] ?? stockItem.prices[2015] ?? 0) : 0;
         const currentHoldings = myPortfolio.holdings?.[stockItem.key] || 0;
 
-        let newCash = myPortfolio.cash || 0;
+        let newCash = myPortfolio.cash !== undefined ? myPortfolio.cash : 1000000;
         let newHoldings = { ...(myPortfolio.holdings || {}) };
 
         if (tradeType === 'BUY') {
@@ -5111,38 +5086,28 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
 
         const updatedPortfolio = {
             ...myPortfolio,
+            teamId: myPlayerKey,
+            nickname: nickname || myPlayerKey,
             cash: newCash,
             holdings: newHoldings
         };
 
-        // 로컬 상태 동기화 및 호스트 전달
+        // 본인 로컬 포트폴리오 즉시 반영
+        setLocalPortfolio(updatedPortfolio);
         setGameState(prev => ({
             ...prev,
             portfolios: {
                 ...prev.portfolios,
-                [myTeamId]: updatedPortfolio,
-                ...(nickname ? { [nickname]: updatedPortfolio } : {})
+                [myPlayerKey]: updatedPortfolio,
+                ...(nickname ? { [String(nickname).trim()]: updatedPortfolio } : {})
             }
         }));
 
-        try {
-            const bc = new BroadcastChannel('quizrun_screen_sync');
-            bc.postMessage({
-                type: 'STOCK_GAME_EXECUTE_ORDER',
-                payload: {
-                    teamId: myTeamId,
-                    nickname: nickname,
-                    cash: newCash,
-                    holdings: newHoldings
-                }
-            });
-        } catch (e) {}
-
-        if (socket) {
+        if (socket && pin) {
             socket.emit('stock_game:execute_order', {
                 pin,
-                teamId: myTeamId,
-                nickname: nickname,
+                teamId: myPlayerKey,
+                nickname: nickname || myPlayerKey,
                 cash: newCash,
                 holdings: newHoldings
             });
@@ -5150,8 +5115,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 pin,
                 event: 'stock_game:execute_order',
                 payload: {
-                    teamId: myTeamId,
-                    nickname: nickname,
+                    teamId: myPlayerKey,
+                    nickname: nickname || myPlayerKey,
                     cash: newCash,
                     holdings: newHoldings
                 }
