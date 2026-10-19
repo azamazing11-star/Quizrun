@@ -8,9 +8,15 @@ echo     Starting Quizrun High-Speed App
 echo =======================================
 echo.
 
-:: Check latest updates from GitHub
-echo [0/4] Checking latest updates from GitHub (git pull)...
-git pull origin main
+:: Check latest updates from GitHub and smart-merge with local changes
+echo [0/4] Syncing latest updates with GitHub...
+for /f %%i in ('git rev-parse HEAD 2^>nul') do set BEFORE_HEAD=%%i
+git add -A >nul 2>&1
+git diff --cached --quiet || git commit -m "Auto-save local changes on startup" >nul 2>&1
+git fetch origin main
+git merge origin/main --no-edit -X theirs
+git push origin main >nul 2>&1
+for /f %%i in ('git rev-parse HEAD 2^>nul') do set AFTER_HEAD=%%i
 echo.
 
 :: Check and install Backend dependencies if missing
@@ -31,9 +37,12 @@ if not exist "%~dp0frontend\node_modules\" (
     echo.
 )
 
-:: Build frontend if dist is missing
-if not exist "%~dp0frontend\dist\index.html" (
-    echo [3/4] Building frontend bundle...
+:: Build frontend if dist is missing OR if GitHub updates were merged
+set NEED_BUILD=0
+if not exist "%~dp0frontend\dist\index.html" set NEED_BUILD=1
+if not "!BEFORE_HEAD!"=="!AFTER_HEAD!" set NEED_BUILD=1
+if "!NEED_BUILD!"=="1" (
+    echo [3/4] Building latest frontend bundle...
     cd /d "%~dp0frontend"
     call npm run build
     cd /d "%~dp0"

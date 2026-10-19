@@ -728,7 +728,7 @@ app.post('/api/git/pull', async (req, res) => {
   }
 });
 
-// 4. One-Click All-in-One Git & Render Sync (Pull -> Auto-Commit & Push -> Rebuild)
+// 4. One-Click All-in-One Git & Render Sync (Smart Compare & Merge Local + GitHub -> Push -> Rebuild)
 app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
   if (isGitOperating) {
     return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
@@ -736,17 +736,8 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
   isGitOperating = true;
   try {
     const customMessage = req.body?.message || `원클릭 동기화: Quizrun (${new Date().toLocaleString('ko-KR')})`;
-    console.log('[Git One-Click Sync] Step 1: Pulling latest changes from GitHub...');
-    let pullOutput = '';
-    try {
-      const pullRes = await runGit(['pull', '--no-rebase', 'origin', 'main'], { timeout: 45000 });
-      pullOutput = pullRes.stdout || '';
-      console.log('[Git One-Click Sync] Pull result:', pullOutput);
-    } catch (pullErr) {
-      console.warn('[Git One-Click Sync] Pull warning (proceeding):', pullErr.message || pullErr);
-    }
 
-    console.log('[Git One-Click Sync] Step 2: Staging and committing local changes...');
+    console.log('[Git One-Click Sync] Step 1: Staging and committing local changes first...');
     await runGit(['add', '-A']);
     const statusRes = await runGit(['status', '--porcelain']);
     let didCommit = false;
@@ -755,7 +746,29 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
       didCommit = true;
     }
 
-    console.log('[Git One-Click Sync] Step 3: Pushing to GitHub (origin/main)...');
+    console.log('[Git One-Click Sync] Step 2: Fetching and comparing with GitHub (origin/main)...');
+    let pullOutput = '';
+    try {
+      await runGit(['fetch', 'origin', 'main'], { timeout: 25000 });
+      const behindRes = await runGit(['rev-list', '--count', 'HEAD..origin/main'], { timeout: 10000 });
+      const behindCount = parseInt(behindRes.stdout.trim(), 10) || 0;
+      if (behindCount > 0) {
+        const localTsRes = await runGit(['log', '-1', '--format=%ct', 'HEAD']);
+        const remoteTsRes = await runGit(['log', '-1', '--format=%ct', 'origin/main']);
+        const localTs = parseInt(localTsRes.stdout.trim(), 10) || 0;
+        const remoteTs = parseInt(remoteTsRes.stdout.trim(), 10) || 0;
+        const strategyOpt = localTs >= remoteTs ? 'ours' : 'theirs';
+        console.log(`[Git One-Click Sync] Merging ${behindCount} remote commit(s) using -X ${strategyOpt} (localTs=${localTs}, remoteTs=${remoteTs})...`);
+        const mergeRes = await runGit(['merge', 'origin/main', '--no-edit', '-X', strategyOpt], { timeout: 45000 });
+        pullOutput = mergeRes.stdout || '';
+      } else {
+        pullOutput = 'Already up to date.';
+      }
+    } catch (pullErr) {
+      console.warn('[Git One-Click Sync] Merge warning (proceeding):', pullErr.message || pullErr);
+    }
+
+    console.log('[Git One-Click Sync] Step 3: Pushing merged latest state to GitHub (origin/main)...');
     const pushRes = await runGit(['push', 'origin', 'main'], { timeout: 45000 });
     console.log('[Git One-Click Sync] Push result:', pushRes.stdout);
 
@@ -777,7 +790,7 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
     isGitOperating = false;
     res.json({
       success: true,
-      message: 'GitHub 및 Render 웹사이트 동기화가 성공적으로 완료되었습니다! (Render는 약 1분 뒤 자동 배포 완료됩니다)',
+      message: '로컬과 GitHub의 코드를 비교·병합하여 최신 버전으로 동기화 및 배포 완료했습니다! (Render는 약 1분 뒤 자동 반영됩니다)',
       didCommit,
       pull: pullOutput,
       push: pushRes.stdout

@@ -772,7 +772,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                                 <span>화면에서 바로 GitHub & Render 동기화</span>
                                             </h4>
                                             <p style={{ margin: '3px 0 0', fontSize: '0.75rem', color: '#c7d2fe' }}>
-                                                버튼 클릭 한 번으로 최신 코드 받기(pull), 변경사항 올리기(push), 프론트엔드 최신 빌드까지 자동 완료합니다.
+                                                내 컴퓨터(로컬)와 GitHub의 코드를 비교·병합하여 양쪽 최신 코드로 업데이트(Pull & Merge)하고 웹 배포(Push) 및 빌드까지 자동 완료합니다.
                                             </p>
                                         </div>
 
