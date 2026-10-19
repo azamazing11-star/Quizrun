@@ -95,19 +95,78 @@ export async function restoreAllQuizrunData(backup) {
     }
   }
 
-  // 2. 백엔드 퀴즈 복원 (로컬 서버가 실행 중일 때)
-  if (backup.backendQuizzes) {
-    try {
+  // 2. 백엔드 퀴즈 및 클라이언트 스토리지 복원 (로컬 서버가 실행 중일 때)
+  try {
+    const payload = {
+      ...(backup.backendQuizzes || {}),
+      localStorage: backup.localStorage || {}
+    }
+    await fetch('/api/quizzes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(3000)
+    })
+  } catch {}
+
+  return true
+}
+
+/**
+ * 브라우저 LocalStorage와 로컬 서버 하드디스크(backend/data/) 자동 양방향 동기화
+ * - 브라우저 캐시를 지워도 하드디스크에 저장된 모든 데이터를 즉시 자동 복원
+ * - 브라우저에 새로 저장된 데이터(틀린그림찾기, OX 프리셋, 게임 순서 등)도 하드디스크에 영구 보존
+ */
+export async function syncLocalWithBackend() {
+  try {
+    const res = await fetch('/api/quizzes', { signal: AbortSignal.timeout(3000) })
+    if (!res.ok) return false
+    const serverData = await res.json()
+
+    // 1. 서버의 clientStorage 및 quizzes 중 브라우저에 없는 항목 자동 복원 (캐시 삭제 대비)
+    const serverClientStorage = serverData?.appConfig?.clientStorage || {}
+    let restoredAny = false
+    for (const [key, val] of Object.entries(serverClientStorage)) {
+      if (key && !localStorage.getItem(key)) {
+        try {
+          localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val))
+          restoredAny = true
+        } catch {}
+      }
+    }
+
+    if (serverData?.quizzes && typeof serverData.quizzes === 'object') {
+      for (const [key, val] of Object.entries(serverData.quizzes)) {
+        if (key && key.startsWith('quizrun_data_') && !localStorage.getItem(key)) {
+          try {
+            localStorage.setItem(key, JSON.stringify(val))
+          } catch {}
+        }
+      }
+    }
+
+    // 2. 현재 브라우저의 데이터를 서버 하드디스크(backend/data/)에도 백업
+    const currentLocal = {}
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && !key.startsWith('quizrun_supabase') && key !== LOCAL_UPDATED_KEY) {
+        currentLocal[key] = localStorage.getItem(key)
+      }
+    }
+
+    if (Object.keys(currentLocal).length > 0) {
       await fetch('/api/quizzes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(backup.backendQuizzes),
+        body: JSON.stringify({ localStorage: currentLocal }),
         signal: AbortSignal.timeout(3000)
       })
-    } catch {}
-  }
+    }
 
-  return true
+    return restoredAny
+  } catch {
+    return false
+  }
 }
 
 /**

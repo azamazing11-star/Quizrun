@@ -855,15 +855,46 @@ app.post('/api/quizzes', (req, res) => {
   try {
     const body = req.body;
     if (body && typeof body === 'object') {
+      let quizzesChanged = false;
+      let configChanged = false;
+
       if (body.quizzes && typeof body.quizzes === 'object') {
         PERSISTED_QUIZZES = { ...PERSISTED_QUIZZES, ...body.quizzes };
-        savePersistedData(QUIZ_DATA_PATH, PERSISTED_QUIZZES);
-      } else if (!body.appConfig) {
+        quizzesChanged = true;
+      } else if (!body.appConfig && !body.localStorage) {
         PERSISTED_QUIZZES = { ...PERSISTED_QUIZZES, ...body };
-        savePersistedData(QUIZ_DATA_PATH, PERSISTED_QUIZZES);
+        quizzesChanged = true;
       }
+
       if (body.appConfig && typeof body.appConfig === 'object') {
         APP_CONFIG = { ...APP_CONFIG, ...body.appConfig };
+        configChanged = true;
+      }
+
+      if (body.localStorage && typeof body.localStorage === 'object') {
+        if (!APP_CONFIG.clientStorage) APP_CONFIG.clientStorage = {};
+        for (const [k, v] of Object.entries(body.localStorage)) {
+          if (!k || k.startsWith('quizrun_supabase') || k === 'quizrun_local_updated_at') continue;
+          if (APP_CONFIG.clientStorage[k] !== v) {
+            APP_CONFIG.clientStorage[k] = v;
+            configChanged = true;
+          }
+          if (k.startsWith('quizrun_data_')) {
+            try {
+              const parsed = typeof v === 'string' ? JSON.parse(v) : v;
+              if (parsed && typeof parsed === 'object') {
+                PERSISTED_QUIZZES[k] = parsed;
+                quizzesChanged = true;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      if (quizzesChanged) {
+        savePersistedData(QUIZ_DATA_PATH, PERSISTED_QUIZZES);
+      }
+      if (configChanged) {
         savePersistedData(APP_CONFIG_PATH, APP_CONFIG);
         if (typeof io !== 'undefined' && io) {
           io.emit('config:updated', APP_CONFIG);

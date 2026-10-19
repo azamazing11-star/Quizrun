@@ -7,6 +7,7 @@ import {
 import Confetti from 'react-confetti';
 import { playSound } from '../utils/audio';
 import { useGlobalSession } from '../context/GlobalSessionContext';
+import { syncLocalWithBackend } from '../services/cloudSync';
 
 // Image compression helper using Canvas to prevent LocalStorage Quota Exceeded error
 function compressImage(dataUrl, maxDim = 800, quality = 0.85) {
@@ -252,42 +253,52 @@ export default function SpotDifference({ socket }) {
     const editorImgRef = useRef(null);
     const isHostRef = useRef(!isMirrorView);
 
-    // 1. Initialize Questions safely from LocalStorage
+    // 1. Initialize Questions safely from LocalStorage (with automatic server disk fallback)
     useEffect(() => {
-        const isInitialized = localStorage.getItem('quizrun_spot_diff_initialized') === 'true';
-        try {
-            const saved = localStorage.getItem('quizrun_spot_diff_questions');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed)) {
-                    if (parsed.length > 0 || isInitialized) {
-                        setQuestions(parsed);
-                        return;
+        const loadQuestions = async () => {
+            let isInitialized = localStorage.getItem('quizrun_spot_diff_initialized') === 'true';
+            try {
+                let saved = localStorage.getItem('quizrun_spot_diff_questions');
+                if (!saved) {
+                    await syncLocalWithBackend();
+                    saved = localStorage.getItem('quizrun_spot_diff_questions');
+                    isInitialized = localStorage.getItem('quizrun_spot_diff_initialized') === 'true';
+                }
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        if (parsed.length > 0 || isInitialized) {
+                            setQuestions(parsed);
+                            syncLocalWithBackend();
+                            return;
+                        }
                     }
                 }
+            } catch (e) {
+                console.error('Error loading spot difference questions:', e);
             }
-        } catch (e) {
-            console.error('Error loading spot difference questions:', e);
-        }
 
-        if (!isInitialized) {
-            const sample = generateDefaultSampleImages();
-            const defaultList = [
-                {
-                    id: 'sample_1',
-                    title: '동화 마을 풍경 (기본 예시 1)',
-                    image1: sample.image1,
-                    image2: sample.image2,
-                    points: sample.points,
-                    aspectRatio: '3 / 2'
-                }
-            ];
-            setQuestions(defaultList);
-            try {
-                localStorage.setItem('quizrun_spot_diff_questions', JSON.stringify(defaultList));
-                localStorage.setItem('quizrun_spot_diff_initialized', 'true');
-            } catch (e) {}
-        }
+            if (!isInitialized) {
+                const sample = generateDefaultSampleImages();
+                const defaultList = [
+                    {
+                        id: 'sample_1',
+                        title: '동화 마을 풍경 (기본 예시 1)',
+                        image1: sample.image1,
+                        image2: sample.image2,
+                        points: sample.points,
+                        aspectRatio: '3 / 2'
+                    }
+                ];
+                setQuestions(defaultList);
+                try {
+                    localStorage.setItem('quizrun_spot_diff_questions', JSON.stringify(defaultList));
+                    localStorage.setItem('quizrun_spot_diff_initialized', 'true');
+                    syncLocalWithBackend();
+                } catch (e) {}
+            }
+        };
+        loadQuestions();
     }, []);
 
     // 2. BroadcastChannel Sync Setup between Main Window & Subscreen
@@ -367,12 +378,13 @@ export default function SpotDifference({ socket }) {
         } catch (e) {}
     };
 
-    // Save questions helper with Guaranteed LocalStorage write
+    // Save questions helper with Guaranteed LocalStorage & Server Disk write
     const saveQuestionsToStorage = (newList) => {
         setQuestions(newList);
         try {
             localStorage.setItem('quizrun_spot_diff_questions', JSON.stringify(newList));
             localStorage.setItem('quizrun_spot_diff_initialized', 'true');
+            syncLocalWithBackend();
         } catch (e) {
             console.error('LocalStorage save error:', e);
             alert('저장 공간 용량이 부족합니다. 이미지를 새로 업로드하면 자동으로 최적화되오니 다시 시도해 주세요.');

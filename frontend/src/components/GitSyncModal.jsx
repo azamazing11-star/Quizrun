@@ -39,7 +39,8 @@ import {
     getLocalUpdatedAt, 
     formatTime,
     collectAllQuizrunData,
-    restoreAllQuizrunData
+    restoreAllQuizrunData,
+    syncLocalWithBackend
 } from '../services/cloudSync';
 
 export default function GitSyncModal({ isOpen, onClose }) {
@@ -228,6 +229,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
         setStatusMessage({ type: 'info', text: '로컬 코드를 깃허브로 안전하게 백업(Push)하는 중입니다...' });
 
         try {
+            await syncLocalWithBackend();
             const res = await fetch('/api/git/push', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

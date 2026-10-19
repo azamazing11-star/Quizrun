@@ -5,6 +5,7 @@ import QRCode from 'react-qr-code';
 import { getParticipantJoinUrl } from '../utils/url';
 import { PlayCircle, MonitorPlay, Zap, BookOpen, FlaskConical, Globe, Trophy, Music, Film, Coffee, Map, Palette, Database, Cpu, Leaf, Moon, Microscope, Beaker, Atom, Compass, Book, Scale, Languages, Landmark, Edit3, Folder, Smile, ArrowLeft, Scissors, Hammer, Crown, Copy, CheckCircle2, RefreshCw, Monitor, Users, Sparkles, Cloud } from 'lucide-react';
 import GitSyncModal from '../components/GitSyncModal';
+import { syncLocalWithBackend } from '../services/cloudSync';
 
 const ICON_MAP = {
     '경제': <Landmark size={24} color="#059669" />,
@@ -315,6 +316,18 @@ export default function Home({ socket }) {
 
         // Initial load
         const loadEverything = () => {
+            syncLocalWithBackend().then((restored) => {
+                if (restored) {
+                    const savedOrder = localStorage.getItem('gamerun_games_order');
+                    if (savedOrder) {
+                        try {
+                            const parsed = JSON.parse(savedOrder);
+                            if (Array.isArray(parsed) && parsed.length > 0) setGames(parsed);
+                        } catch (e) {}
+                    }
+                }
+            });
+
             socket.emit('config:load', (res) => {
                 if (res && res.success && res.config && res.config.quizzes) {
                     setQuizzes(res.config.quizzes);
