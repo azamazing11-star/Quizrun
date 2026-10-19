@@ -891,9 +891,43 @@ function loadPersistedData(filePath, defaultValue = {}) {
   return defaultValue;
 }
 
+let autoGitBackupTimer = null;
+
+function scheduleAutoGitBackup() {
+  if (autoGitBackupTimer) clearTimeout(autoGitBackupTimer);
+  autoGitBackupTimer = setTimeout(async () => {
+    if (isGitOperating) return;
+    isGitOperating = true;
+    try {
+      await runGit(['add', 'backend/data']);
+      const statusRes = await runGit(['status', '--porcelain', 'backend/data']);
+      if (statusRes.stdout && statusRes.stdout.trim().length > 0) {
+        const msg = `Auto-backup: Quizrun data & settings (${new Date().toLocaleString('ko-KR')})`;
+        console.log(`[Auto Git Sync] Committing data changes: ${msg}`);
+        await runGit(['commit', '-m', msg]);
+        try {
+          await runGit(['fetch', 'origin', 'main'], { timeout: 15000 });
+          const behindRes = await runGit(['rev-list', '--count', 'HEAD..origin/main'], { timeout: 10000 });
+          const behindCount = parseInt(behindRes.stdout.trim(), 10) || 0;
+          if (behindCount > 0) {
+            await runGit(['merge', 'origin/main', '--no-edit', '-X', 'ours'], { timeout: 30000 });
+          }
+        } catch (e) {}
+        await runGit(['push', 'origin', 'main'], { timeout: 40000 });
+        console.log('[Auto Git Sync] Background GitHub backup completed!');
+      }
+    } catch (err) {
+      console.warn('[Auto Git Sync] Background sync warning:', err.message || err);
+    } finally {
+      isGitOperating = false;
+    }
+  }, 6000);
+}
+
 function savePersistedData(filePath, data) {
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    scheduleAutoGitBackup();
   } catch (err) {
     console.error(`Error saving persisted data to ${filePath}:`, err);
   }
@@ -947,8 +981,10 @@ app.post('/api/quizzes', (req, res) => {
             try {
               const parsed = typeof v === 'string' ? JSON.parse(v) : v;
               if (parsed && typeof parsed === 'object') {
-                PERSISTED_QUIZZES[k] = parsed;
-                quizzesChanged = true;
+                if (JSON.stringify(PERSISTED_QUIZZES[k]) !== JSON.stringify(parsed)) {
+                  PERSISTED_QUIZZES[k] = parsed;
+                  quizzesChanged = true;
+                }
               }
             } catch (e) {}
           }
@@ -959,6 +995,7 @@ app.post('/api/quizzes', (req, res) => {
         savePersistedData(QUIZ_DATA_PATH, PERSISTED_QUIZZES);
       }
       if (configChanged) {
+        APP_CONFIG.updatedAt = new Date().toISOString();
         savePersistedData(APP_CONFIG_PATH, APP_CONFIG);
         if (typeof io !== 'undefined' && io) {
           io.emit('config:updated', APP_CONFIG);

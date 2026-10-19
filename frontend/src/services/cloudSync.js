@@ -7,13 +7,60 @@ export const LOCAL_UPDATED_KEY = 'quizrun_local_updated_at'
 export const CHUNK_SIZE = 1.5 * 1024 * 1024 // 1.5 MB 청크
 
 let cachedLocalUpdatedAt = null
+let isInternalSyncOp = false
+let autoBackupTimer = null
+
+function scheduleAutoBackendBackup() {
+  if (autoBackupTimer) clearTimeout(autoBackupTimer)
+  autoBackupTimer = setTimeout(async () => {
+    try {
+      const currentLocal = {}
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && !key.startsWith('quizrun_supabase') && key !== LOCAL_UPDATED_KEY) {
+          currentLocal[key] = localStorage.getItem(key)
+        }
+      }
+      if (Object.keys(currentLocal).length > 0) {
+        await fetch('/api/quizzes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ localStorage: currentLocal }),
+          signal: AbortSignal.timeout(3000)
+        })
+      }
+    } catch {}
+  }, 1500)
+}
+
+try {
+  if (typeof window !== 'undefined' && typeof Storage !== 'undefined' && !window.__quizrunStorageHooked) {
+    window.__quizrunStorageHooked = true
+    const origSetItem = Storage.prototype.setItem
+    Storage.prototype.setItem = function (key, value) {
+      const res = origSetItem.apply(this, arguments)
+      if (this === window.localStorage && !isInternalSyncOp && key && !key.startsWith('quizrun_supabase') && key !== LOCAL_UPDATED_KEY) {
+        isInternalSyncOp = true
+        try {
+          origSetItem.call(window.localStorage, LOCAL_UPDATED_KEY, new Date().toISOString())
+        } catch {}
+        isInternalSyncOp = false
+        scheduleAutoBackendBackup()
+      }
+      return res
+    }
+  }
+} catch {}
 
 export function setLocalUpdatedAt(isoString = new Date().toISOString()) {
   cachedLocalUpdatedAt = isoString
+  isInternalSyncOp = true
   try {
     localStorage.setItem(LOCAL_UPDATED_KEY, isoString)
   } catch (e) {
     console.warn('[Quizrun] Failed to write timestamp to localStorage:', e)
+  } finally {
+    isInternalSyncOp = false
   }
 }
 
@@ -123,38 +170,61 @@ export async function syncLocalWithBackend() {
     if (!res.ok) return false
     const serverData = await res.json()
 
-    // 1. 서버의 clientStorage 및 quizzes 중 브라우저에 없는 항목 자동 복원 (캐시 삭제 대비)
+    const localTime = getLocalUpdatedAt() ? new Date(getLocalUpdatedAt()).getTime() : 0
+    const serverTime = serverData?.appConfig?.updatedAt ? new Date(serverData.appConfig.updatedAt).getTime() : 0
+    const isServerNewer = serverTime > 0 && serverTime > localTime + 2000
+
+    // 1. 서버의 clientStorage 및 quizzes 중 브라우저에 없거나 서버가 더 최신인 항목 자동 복원
     const serverClientStorage = serverData?.appConfig?.clientStorage || {}
     let restoredAny = false
-    for (const [key, val] of Object.entries(serverClientStorage)) {
-      if (key && !localStorage.getItem(key)) {
-        try {
-          localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val))
-          restoredAny = true
-        } catch {}
+    isInternalSyncOp = true
+    try {
+      for (const [key, val] of Object.entries(serverClientStorage)) {
+        if (!key) continue
+        const strVal = typeof val === 'string' ? val : JSON.stringify(val)
+        if (!localStorage.getItem(key) || (isServerNewer && localStorage.getItem(key) !== strVal)) {
+          try {
+            localStorage.setItem(key, strVal)
+            restoredAny = true
+          } catch {}
+        }
       }
+
+      if (serverData?.quizzes && typeof serverData.quizzes === 'object') {
+        for (const [key, val] of Object.entries(serverData.quizzes)) {
+          if (key && key.startsWith('quizrun_data_')) {
+            const strVal = JSON.stringify(val)
+            if (!localStorage.getItem(key) || (isServerNewer && localStorage.getItem(key) !== strVal)) {
+              try {
+                localStorage.setItem(key, strVal)
+              } catch {}
+            }
+          }
+        }
+      }
+    } finally {
+      isInternalSyncOp = false
     }
 
-    if (serverData?.quizzes && typeof serverData.quizzes === 'object') {
-      for (const [key, val] of Object.entries(serverData.quizzes)) {
-        if (key && key.startsWith('quizrun_data_') && !localStorage.getItem(key)) {
-          try {
-            localStorage.setItem(key, JSON.stringify(val))
-          } catch {}
+    if (isServerNewer && serverData?.appConfig?.updatedAt) {
+      setLocalUpdatedAt(serverData.appConfig.updatedAt)
+    }
+
+    // 2. 현재 브라우저에 서버보다 새로 추가/변경된 데이터가 있을 때만 서버 하드디스크(backend/data/)에 백업
+    const currentLocal = {}
+    let hasLocalDiff = false
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && !key.startsWith('quizrun_supabase') && key !== LOCAL_UPDATED_KEY) {
+        const val = localStorage.getItem(key)
+        currentLocal[key] = val
+        if (serverClientStorage[key] !== val) {
+          hasLocalDiff = true
         }
       }
     }
 
-    // 2. 현재 브라우저의 데이터를 서버 하드디스크(backend/data/)에도 백업
-    const currentLocal = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key && !key.startsWith('quizrun_supabase') && key !== LOCAL_UPDATED_KEY) {
-        currentLocal[key] = localStorage.getItem(key)
-      }
-    }
-
-    if (Object.keys(currentLocal).length > 0) {
+    if (hasLocalDiff && Object.keys(currentLocal).length > 0) {
       await fetch('/api/quizzes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
