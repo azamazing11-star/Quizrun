@@ -23,7 +23,10 @@ import {
     OthelloGame, 
     BrickBreakerGame,
     MemoryGame,
-    PassBombGame
+    PassBombGame,
+    SpotDifferenceMiniGame,
+    FortuneMiniGame,
+    LadderMiniGame
 } from './Participant';
 import CardMatchGame from '../components/CardMatchGame';
 import CardThemeBar from '../components/CardThemeBar';
@@ -1905,7 +1908,7 @@ export default function Host({ socket }) {
                                     </div>
                                 ) : (
                                     /* Offline Mode or Host Solo: Host Directly Plays & Controls */
-                                    <div style={{ width: '100%', height: gameId === 'stock_game' ? '100%' : 'auto', maxWidth: (gameId === 'card_match' || gameId === 'stock_game') ? '100%' : '480px' }}>
+                                    <div style={{ width: '100%', height: gameId === 'stock_game' ? '100%' : 'auto', maxWidth: (gameId === 'card_match' || gameId === 'stock_game' || gameId === 'spot_difference') ? '100%' : '540px' }}>
                                         {gameId === 'yutnori' && <YutnoriGame />}
                                         {gameId === 'card_match' && <CardMatchGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
                                         {gameId === 'rock_paper_scissors' && <RpsGame />}
@@ -1916,7 +1919,21 @@ export default function Host({ socket }) {
                                         {gameId === 'speed_numbers' && <SpeedNumbersGame />}
                                         {gameId === 'janggi' && <JanggiGame />}
                                         {gameId === 'chess' && <ChessGame />}
-                                        {gameId === 'card_poker' && <PokerGame />}
+                                        {(gameId === 'card_poker' || gameId === 'card_game') && (
+                                            <div style={{ width: '100%' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => navigate('/card-game')}
+                                                        className="glass-button"
+                                                        style={{ fontSize: '0.82rem', padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}
+                                                    >
+                                                        🖥️ 대형 포커 테이블로 열기
+                                                    </button>
+                                                </div>
+                                                <PokerGame />
+                                            </div>
+                                        )}
                                         {gameId === 'gostop' && <GoStopGame />}
                                         {gameId === 'othello' && <OthelloGame />}
                                         {gameId === 'tetris' && <TetrisGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
@@ -1924,6 +1941,51 @@ export default function Host({ socket }) {
                                         {(gameId === 'timeattack' || gameId === 'airplane_game') && <AirplaneGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
                                         {gameId === 'memory_game' && <MemoryGame />}
                                         {gameId === 'pass_bomb' && <PassBombGame />}
+                                        {gameId === 'spot_difference' && (
+                                            <div style={{ width: '100%' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => navigate('/spot-difference')}
+                                                        className="glass-button"
+                                                        style={{ fontSize: '0.82rem', padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}
+                                                    >
+                                                        🖥️ 대형 캔버스 모드로 열기
+                                                    </button>
+                                                </div>
+                                                <SpotDifferenceMiniGame socket={socket} pin={location.state?.pin || pin} />
+                                            </div>
+                                        )}
+                                        {gameId === 'fortune' && (
+                                            <div style={{ width: '100%' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => navigate('/fortune')}
+                                                        className="glass-button"
+                                                        style={{ fontSize: '0.82rem', padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}
+                                                    >
+                                                        🖥️ 대형 포춘 화면으로 열기
+                                                    </button>
+                                                </div>
+                                                <FortuneMiniGame socket={socket} pin={location.state?.pin || pin} />
+                                            </div>
+                                        )}
+                                        {gameId === 'ladder' && (
+                                            <div style={{ width: '100%' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => navigate('/ladder')}
+                                                        className="glass-button"
+                                                        style={{ fontSize: '0.82rem', padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}
+                                                    >
+                                                        🖥️ 대형 사다리 화면으로 열기
+                                                    </button>
+                                                </div>
+                                                <LadderMiniGame socket={socket} pin={location.state?.pin || pin} />
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
