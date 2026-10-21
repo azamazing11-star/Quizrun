@@ -401,7 +401,7 @@ function SpectatorGenericView({ gameData, gameId, playerScore = 0 }) {
         yutnori: { icon: '🎲', label: '윷놀이 실시간 진행' },
         rock_paper_scissors: { icon: '✊✌️🖐️', label: '가위바위보 실시간 대결' },
         whack_mole: { icon: '🐹', label: '두더지 잡기 실시간 사냥' },
-        omok: { icon: '⚫⚪', label: '오목 실시간 대국' },
+        omok: { icon: '⚫⚪', label: '사목 실시간 대국' },
         minesweeper: { icon: '💣', label: '지뢰찾기 실시간 탐색' },
         speed_numbers: { icon: '🔢', label: '숫자 순서 실시간 터치' },
         janggi: { icon: '♟️', label: '장기 실시간 대국' },

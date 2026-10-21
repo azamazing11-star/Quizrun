@@ -13,6 +13,7 @@ import {
     RpsGame, 
     WhackMoleGame, 
     OmokGame, 
+    SamokGame, 
     MinesweeperGame, 
     SpeedNumbersGame, 
     JanggiGame, 
@@ -1909,7 +1910,7 @@ export default function Host({ socket }) {
                                         {gameId === 'card_match' && <CardMatchGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
                                         {gameId === 'rock_paper_scissors' && <RpsGame />}
                                         {gameId === 'whack_mole' && <WhackMoleGame />}
-                                        {gameId === 'omok' && <OmokGame />}
+                                        {(gameId === 'omok' || gameId === 'samok') && <SamokGame />}
                                         {gameId === 'minesweeper' && <MinesweeperGame />}
                                         {gameId === 'stock_game' && <StockGame socket={socket} pin={location.state?.pin || pin} isHost={true} participants={participants} />}
                                         {gameId === 'speed_numbers' && <SpeedNumbersGame />}

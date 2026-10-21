@@ -5,6 +5,8 @@ import { playSound } from '../utils/audio';
 import { getChosung } from '../utils/chosung';
 import Confetti from 'react-confetti';
 import MediaViewer from '../components/MediaViewer';
+import GameFinishBanner from '../components/GameFinishBanner';
+import FireworksOverlay from '../components/FireworksOverlay';
 import StockGame from '../components/StockGame';
 import CardMatchGame from '../components/CardMatchGame';
 import TetrisGame from '../components/TetrisGame';
@@ -1269,7 +1271,7 @@ export default function Participant({ socket }) {
                             {gameId === 'pass_bomb' && '폭탄 돌리기'}
                             {gameId === 'rock_paper_scissors' && '가위바위보'}
                             {gameId === 'whack_mole' && '두더지 잡기'}
-                            {gameId === 'omok' && '오목'}
+                            {(gameId === 'omok' || gameId === 'samok') && '사목'}
                             {gameId === 'ladder' && '사다리 타기'}
                             {gameId === 'fortune' && '포춘 쿠키'}
                             {gameId === 'spot_difference' && '숨은 그림 찾기'}
@@ -1290,7 +1292,7 @@ export default function Participant({ socket }) {
                         {gameId === 'card_match' && <CardMatchGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} onScoreUpdate={(newScore) => setMyScore(newScore)} />}
                         {gameId === 'rock_paper_scissors' && <RpsGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'whack_mole' && <WhackMoleGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
-                        {gameId === 'omok' && <OmokGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {(gameId === 'omok' || gameId === 'samok') && <SamokGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'minesweeper' && <MinesweeperGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'stock_game' && <StockGame socket={socket} pin={pin} isHost={false} groupId={groupId} nickname={nickname} myScore={myScore} />}
                         {gameId === 'speed_numbers' && <SpeedNumbersGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
@@ -2615,68 +2617,243 @@ export function WhackMoleGame({ socket, pin, nickname, groupId, baseScore = 0, o
     );
 }
 
-export function OmokGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
-    const [board, setBoard] = useState(Array(49).fill(null)); // 7x7 board
+export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
+    // Initial 9x9 board: rows 0..8, cols 0..8
+    const [bounds, setBounds] = useState({ minR: 0, maxR: 8, minC: 0, maxC: 8 });
+    // stones: { "r,c": "black" | "white" }
+    const [stones, setStones] = useState({});
     const [isBlackTurn, setIsBlackTurn] = useState(true);
     const [winner, setWinner] = useState(null);
+    const [winningLine, setWinningLine] = useState([]);
+    const [lastMove, setLastMove] = useState(null);
     const [roundScore, setRoundScore] = useState(0);
+    const [showWinBanner, setShowWinBanner] = useState(false);
+    const [expandNotice, setExpandNotice] = useState(null);
     const initialBaseRef = useRef(baseScore);
+
+    // Zoom & Pan viewport state
+    const [scale, setScale] = useState(1.0);
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+
+    const containerRef = useRef(null);
+    const isDraggingRef = useRef(false);
+    const dragStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+    const moveDistRef = useRef(0);
+
+    const touchStateRef = useRef({
+        touches: 0,
+        dist: 0,
+        startScale: 1.0,
+        startX: 0,
+        startY: 0,
+        panX: 0,
+        panY: 0,
+        moveDist: 0,
+        startTime: 0
+    });
 
     useEffect(() => {
         emitLiveGameStream({
             socket, pin, gameId: 'omok', nickname, groupId,
             baseScore: initialBaseRef.current, roundScore: 0,
             isAlive: true, isFinished: false, updateRoomScore: false,
-            gameData: { statusText: '⚫⚪ 오목 대국 시작 (7x7)', progressPct: 5, moves: 0 }
+            gameData: { statusText: '⚫⚪ 사목 대국 시작 (9x9 동적 확장)', progressPct: 5, moves: 0 }
         });
     }, []);
-    
-    const handleCellClick = (idx) => {
-        if (board[idx] || winner) return;
-        const nextBoard = [...board];
-        const stone = isBlackTurn ? '⚫' : '⚪';
-        nextBoard[idx] = stone;
-        setBoard(nextBoard);
-        
-        const checkLine = (start, step, count) => {
-            const token = nextBoard[start];
-            if (!token) return false;
-            for (let i = 1; i < count; i++) {
-                if (nextBoard[start + i * step] !== token) return false;
-            }
-            return true;
+
+    // Desktop Mouse Wheel Zoom
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const handleWheel = (e) => {
+            e.preventDefault();
+            const delta = e.deltaY;
+            const factor = delta < 0 ? 1.12 : 0.89;
+            setScale(prev => Math.min(2.5, Math.max(0.35, +(prev * factor).toFixed(2))));
         };
-        
-        let won = false;
-        for (let r = 0; r < 7; r++) {
-            for (let c = 0; c <= 3; c++) {
-                if (checkLine(r * 7 + c, 1, 4)) won = true;
-            }
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => el.removeEventListener('wheel', handleWheel);
+    }, []);
+
+    // Desktop Mouse Drag to Pan
+    const handleMouseDown = (e) => {
+        if (e.button !== 0) return;
+        isDraggingRef.current = true;
+        dragStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            panX: pan.x,
+            panY: pan.y
+        };
+        moveDistRef.current = 0;
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isDraggingRef.current) return;
+        const dx = e.clientX - dragStartRef.current.x;
+        const dy = e.clientY - dragStartRef.current.y;
+        moveDistRef.current = Math.hypot(dx, dy);
+        setPan({
+            x: dragStartRef.current.panX + dx,
+            y: dragStartRef.current.panY + dy
+        });
+    };
+
+    const handleMouseUp = () => {
+        isDraggingRef.current = false;
+    };
+
+    // Mobile Touch: 2-finger Pinch Zoom + 1-finger Drag Pan
+    const handleTouchStart = (e) => {
+        if (e.touches.length === 1) {
+            touchStateRef.current = {
+                touches: 1,
+                dist: 0,
+                startScale: scale,
+                startX: e.touches[0].clientX,
+                startY: e.touches[0].clientY,
+                panX: pan.x,
+                panY: pan.y,
+                moveDist: 0,
+                startTime: Date.now()
+            };
+        } else if (e.touches.length === 2) {
+            const d = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            touchStateRef.current = {
+                touches: 2,
+                dist: d,
+                startScale: scale,
+                startX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                startY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+                panX: pan.x,
+                panY: pan.y,
+                moveDist: 0,
+                startTime: Date.now()
+            };
         }
-        for (let c = 0; c < 7; c++) {
-            for (let r = 0; r <= 3; r++) {
-                if (checkLine(r * 7 + c, 7, 4)) won = true;
+    };
+
+    const handleTouchMove = (e) => {
+        if (e.touches.length === 2) {
+            // Pinch to zoom
+            const d = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            if (touchStateRef.current.dist > 0) {
+                const ratio = d / touchStateRef.current.dist;
+                const nextScale = Math.min(2.5, Math.max(0.35, +(touchStateRef.current.startScale * ratio).toFixed(2)));
+                setScale(nextScale);
             }
+        } else if (e.touches.length === 1 && touchStateRef.current.touches === 1) {
+            // Single finger pan
+            const dx = e.touches[0].clientX - touchStateRef.current.startX;
+            const dy = e.touches[0].clientY - touchStateRef.current.startY;
+            touchStateRef.current.moveDist = Math.hypot(dx, dy);
+            setPan({
+                x: touchStateRef.current.panX + dx,
+                y: touchStateRef.current.panY + dy
+            });
         }
-        for (let r = 0; r <= 3; r++) {
-            for (let c = 0; c <= 3; c++) {
-                if (checkLine(r * 7 + c, 8, 4)) won = true;
+    };
+
+    const handleTouchEnd = (e) => {
+        if (e.touches.length === 0) {
+            touchStateRef.current.touches = 0;
+        }
+    };
+
+    // Cell Click (Stone Placement & Dynamic Expansion)
+    const handleCellClick = (r, c) => {
+        // Prevent click if dragging or pinching
+        if (moveDistRef.current > 6 || touchStateRef.current.moveDist > 8) return;
+        const key = `${r},${c}`;
+        if (stones[key] || winner) return;
+
+        const currentStone = isBlackTurn ? 'black' : 'white';
+        const nextStones = { ...stones, [key]: currentStone };
+        setStones(nextStones);
+        setLastMove({ r, c });
+
+        // Auto-expand board when stone is within 2 cells of border
+        // "돌들을 놓을 때 더 이상 돌을 놓을 공간이 없기 두 칸 전까지 가면 그쪽으로 판이 자동으로 넓어지게"
+        let { minR, maxR, minC, maxC } = bounds;
+        let expanded = false;
+        let expandedDirs = [];
+
+        if (r - minR <= 1) {
+            minR -= 2;
+            expanded = true;
+            expandedDirs.push('위쪽');
+        }
+        if (maxR - r <= 1) {
+            maxR += 2;
+            expanded = true;
+            expandedDirs.push('아래쪽');
+        }
+        if (c - minC <= 1) {
+            minC -= 2;
+            expanded = true;
+            expandedDirs.push('왼쪽');
+        }
+        if (maxC - c <= 1) {
+            maxC += 2;
+            expanded = true;
+            expandedDirs.push('오른쪽');
+        }
+
+        if (expanded) {
+            setBounds({ minR, maxR, minC, maxC });
+            const totalC = maxC - minC + 1;
+            const totalR = maxR - minR + 1;
+            setExpandNotice(`✨ 바둑판 ${expandedDirs.join(', ')} 확장! (${totalC}×${totalR})`);
+            setTimeout(() => setExpandNotice(null), 2500);
+        }
+
+        // Win check: 4-in-a-row (사목)
+        const checkWin = (row, col, color) => {
+            const directions = [
+                [0, 1],   // 가로
+                [1, 0],   // 세로
+                [1, 1],   // 대각선 ↘
+                [1, -1]   // 대각선 ↙
+            ];
+            for (const [dr, dc] of directions) {
+                const line = [`${row},${col}`];
+                let i = 1;
+                while (nextStones[`${row + dr * i},${col + dc * i}`] === color) {
+                    line.push(`${row + dr * i},${col + dc * i}`);
+                    i++;
+                }
+                i = 1;
+                while (nextStones[`${row - dr * i},${col - dc * i}`] === color) {
+                    line.push(`${row - dr * i},${col - dc * i}`);
+                    i++;
+                }
+                if (line.length >= 4) {
+                    return line;
+                }
             }
-        }
-        for (let r = 0; r <= 3; r++) {
-            for (let c = 3; c < 7; c++) {
-                if (checkLine(r * 7 + c, 6, 4)) won = true;
-            }
-        }
-        
-        const movesCount = nextBoard.filter(Boolean).length;
-        const nextRoundScore = roundScore + (won ? 40 : 5);
+            return null;
+        };
+
+        const winLine = checkWin(r, c, currentStone);
+        const movesCount = Object.keys(nextStones).length;
+        const nextRoundScore = roundScore + (winLine ? 50 : 5);
         setRoundScore(nextRoundScore);
 
-        if (won) {
+        if (winLine) {
             const winText = isBlackTurn ? '흑돌(⚫)' : '백돌(⚪)';
             setWinner(winText);
-            playSound('correct');
+            setWinningLine(winLine);
+            setShowWinBanner(true);
+            try {
+                playSound('fanfare');
+            } catch (e) {}
+
             emitLiveGameStream({
                 socket, pin, gameId: 'omok', nickname, groupId,
                 baseScore: initialBaseRef.current, roundScore: nextRoundScore,
@@ -2690,55 +2867,294 @@ export function OmokGame({ socket, pin, nickname, groupId, baseScore = 0, onScor
             });
         } else {
             setIsBlackTurn(!isBlackTurn);
+            try {
+                playSound('step');
+            } catch (e) {}
             emitLiveGameStream({
                 socket, pin, gameId: 'omok', nickname, groupId,
                 baseScore: initialBaseRef.current, roundScore: nextRoundScore,
                 isAlive: true, isFinished: false, onScoreUpdate,
                 gameData: {
-                    statusText: `⚫⚪ ${movesCount}수 진행 중 (${isBlackTurn ? '흑돌' : '백돌'} 착수)`,
+                    statusText: `⚫⚪ ${movesCount}수 진행 중 (${isBlackTurn ? '백돌' : '흑돌'} 차례)`,
                     progressPct: Math.min(95, Math.round((movesCount / 20) * 100)),
                     moves: movesCount
                 }
             });
         }
     };
-    
+
     const reset = () => {
-        setBoard(Array(49).fill(null));
+        setBounds({ minR: 0, maxR: 8, minC: 0, maxC: 8 });
+        setStones({});
         setIsBlackTurn(true);
         setWinner(null);
+        setWinningLine([]);
+        setLastMove(null);
+        setShowWinBanner(false);
+        setScale(1.0);
+        setPan({ x: 0, y: 0 });
     };
-    
+
+    const totalRows = bounds.maxR - bounds.minR + 1;
+    const totalCols = bounds.maxC - bounds.minC + 1;
+    const cellSize = 42;
+
+    const rows = [];
+    for (let r = bounds.minR; r <= bounds.maxR; r++) rows.push(r);
+    const cols = [];
+    for (let c = bounds.minC; c <= bounds.maxC; c++) cols.push(c);
+
     return (
-        <div style={{ padding: '0.5rem' }}>
-            <p style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>
-                {winner ? `🎉 ${winner} 승리!` : `차례: ${isBlackTurn ? '⚫ 흑돌' : '⚪ 백돌'} (4목 완성 시 승리)`}
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', background: '#d97706', padding: '8px', borderRadius: '12px', border: '3px solid #78350f' }}>
-                {board.map((cell, idx) => (
-                    <div 
-                        key={idx}
-                        onClick={() => handleCellClick(idx)}
-                        style={{
-                            height: '42px',
-                            background: '#f59e0b',
-                            border: '1px solid #78350f',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '1.5rem',
-                            cursor: 'pointer'
+        <div style={{ padding: '0.25rem', userSelect: 'none' }}>
+            {/* Top Status & Zoom Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span 
+                        style={{ 
+                            padding: '4px 10px', 
+                            borderRadius: '8px', 
+                            fontWeight: '800', 
+                            fontSize: '0.88rem',
+                            background: winner ? '#fef3c7' : isBlackTurn ? '#1e293b' : '#f1f5f9',
+                            color: winner ? '#d97706' : isBlackTurn ? '#ffffff' : '#0f172a',
+                            border: '1.5px solid #cbd5e1'
                         }}
                     >
-                        {cell}
-                    </div>
-                ))}
+                        {winner ? `🎉 ${winner} 4목 승리!` : `차례: ${isBlackTurn ? '⚫ 흑돌' : '⚪ 백돌'} (4목 승리)`}
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '700' }}>
+                        {totalCols}×{totalRows} 크기
+                    </span>
+                </div>
+
+                {/* Zoom Control Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                        type="button"
+                        onClick={() => setScale(s => Math.min(2.5, +(s + 0.15).toFixed(2)))}
+                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontWeight: '800', fontSize: '0.85rem' }}
+                        title="확대"
+                    >
+                        ➕
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setScale(s => Math.max(0.35, +(s - 0.15).toFixed(2)))}
+                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontWeight: '800', fontSize: '0.85rem' }}
+                        title="축소"
+                    >
+                        ➖
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => { setScale(1.0); setPan({ x: 0, y: 0 }); }}
+                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer', fontWeight: '700', fontSize: '0.78rem' }}
+                        title="화면 맞춤"
+                    >
+                        🎯 맞춤 ({Math.round(scale * 100)}%)
+                    </button>
+                </div>
             </div>
-            <button onClick={reset} className="glass-button" style={{ width: '100%', marginTop: '1rem' }}>바둑판 초기화</button>
+
+            {/* Quick helper notice */}
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>💡 PC: 휠/드래그 이동 · 모바일: 두 손가락 핀치 줌</span>
+                {expandNotice && (
+                    <span style={{ color: '#059669', fontWeight: '800', animation: 'bannerFadeIn 0.3s ease' }}>
+                        {expandNotice}
+                    </span>
+                )}
+            </div>
+
+            {/* Viewport Container */}
+            <div
+                ref={containerRef}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: '460px',
+                    backgroundColor: '#78350f',
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                    cursor: isDraggingRef.current ? 'grabbing' : 'grab',
+                    touchAction: 'none',
+                    boxShadow: 'inset 0 0 20px rgba(0,0,0,0.5), 0 10px 25px rgba(0,0,0,0.2)'
+                }}
+            >
+                {/* Centering Wrapper with Pan and Zoom */}
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${scale})`,
+                        transformOrigin: 'center center',
+                        transition: isDraggingRef.current ? 'none' : 'transform 0.08s ease-out'
+                    }}
+                >
+                    {/* Authentic Baduk Wooden Board */}
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(${totalCols}, ${cellSize}px)`,
+                            gridTemplateRows: `repeat(${totalRows}, ${cellSize}px)`,
+                            background: 'linear-gradient(135deg, #d97706, #b45309)',
+                            padding: '12px',
+                            borderRadius: '10px',
+                            boxShadow: '0 12px 30px rgba(0,0,0,0.45)',
+                            border: '4px solid #451a03'
+                        }}
+                    >
+                        {rows.map((r, rIdx) => 
+                            cols.map((c, cIdx) => {
+                                const key = `${r},${c}`;
+                                const stone = stones[key];
+                                const isWinning = winningLine.includes(key);
+                                const isLast = lastMove?.r === r && lastMove?.c === c;
+                                const isStarPoint = (r % 4 === 0 && c % 4 === 0);
+
+                                return (
+                                    <div
+                                        key={key}
+                                        onClick={() => handleCellClick(r, c)}
+                                        style={{
+                                            position: 'relative',
+                                            width: `${cellSize}px`,
+                                            height: `${cellSize}px`,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: stone || winner ? 'default' : 'pointer'
+                                        }}
+                                    >
+                                        {/* Cross Lines */}
+                                        <div 
+                                            style={{
+                                                position: 'absolute',
+                                                top: '50%',
+                                                left: 0,
+                                                right: 0,
+                                                height: '1.5px',
+                                                background: '#5c2807',
+                                                pointerEvents: 'none'
+                                            }} 
+                                        />
+                                        <div 
+                                            style={{
+                                                position: 'absolute',
+                                                left: '50%',
+                                                top: 0,
+                                                bottom: 0,
+                                                width: '1.5px',
+                                                background: '#5c2807',
+                                                pointerEvents: 'none'
+                                            }} 
+                                        />
+
+                                        {/* Star point dot */}
+                                        {isStarPoint && !stone && (
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    width: '5px',
+                                                    height: '5px',
+                                                    borderRadius: '50%',
+                                                    background: '#5c2807',
+                                                    pointerEvents: 'none'
+                                                }}
+                                            />
+                                        )}
+
+                                        {/* Placed Stone */}
+                                        {stone && (
+                                            <div
+                                                style={{
+                                                    position: 'relative',
+                                                    zIndex: 2,
+                                                    width: '34px',
+                                                    height: '34px',
+                                                    borderRadius: '50%',
+                                                    background: stone === 'black'
+                                                        ? 'radial-gradient(circle at 35% 35%, #4b5563, #09090b 80%)'
+                                                        : 'radial-gradient(circle at 35% 35%, #ffffff, #e2e8f0 85%)',
+                                                    boxShadow: isWinning
+                                                        ? '0 0 16px 4px #fbbf24, 0 4px 8px rgba(0,0,0,0.6)'
+                                                        : '0 3px 6px rgba(0,0,0,0.4)',
+                                                    border: isWinning
+                                                        ? '2.5px solid #f59e0b'
+                                                        : stone === 'white' ? '1px solid #cbd5e1' : 'none',
+                                                    animation: isWinning ? 'winningStoneGlow 1.2s infinite ease-in-out' : 'none',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}
+                                            >
+                                                {/* Last move indicator */}
+                                                {isLast && !isWinning && (
+                                                    <div 
+                                                        style={{ 
+                                                            width: '6px', 
+                                                            height: '6px', 
+                                                            borderRadius: '50%', 
+                                                            background: stone === 'black' ? '#ef4444' : '#dc2626' 
+                                                        }} 
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                <button 
+                    type="button"
+                    onClick={reset} 
+                    className="glass-button" 
+                    style={{ flex: 1, padding: '10px', fontSize: '0.95rem', fontWeight: '800' }}
+                >
+                    바둑판 초기화 (새 게임)
+                </button>
+            </div>
+
+            {/* Victory Celebration Banner with Fanfare and Fireworks */}
+            <GameFinishBanner
+                show={showWinBanner && Boolean(winner)}
+                type="win"
+                title={`🎉 ${winner} 4목 승리!`}
+                subtitle={`총 ${Object.keys(stones).length}수 만에 4목을 완성하여 승리했습니다!`}
+                scoreText={`+${roundScore}점`}
+                onRestart={reset}
+                onClose={() => setShowWinBanner(false)}
+                restartText="새 대국 시작"
+                closeText="바둑판 살펴보기"
+            />
+
+            <style>{`
+                @keyframes winningStoneGlow {
+                    0% { transform: scale(1); box-shadow: 0 0 12px 3px #fbbf24; }
+                    50% { transform: scale(1.1); box-shadow: 0 0 20px 6px #f59e0b; }
+                    100% { transform: scale(1); box-shadow: 0 0 12px 3px #fbbf24; }
+                }
+            `}</style>
         </div>
     );
 }
+
+// Backward compatibility alias
+export const OmokGame = SamokGame;
 
 export function MinesweeperGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const GRID_SIZE = 25; // 5x5
@@ -2855,6 +3271,15 @@ export function MinesweeperGame({ socket, pin, nickname, groupId, baseScore = 0,
                 })}
             </div>
             <button onClick={initialize} className="glass-button" style={{ width: '100%', marginTop: '1rem' }}>지뢰찾기 재설정</button>
+            <GameFinishBanner
+                show={gameOver || win}
+                type={win ? "win" : "lose"}
+                title={win ? "🎉 지뢰찾기 올클리어!" : "💥 지뢰 폭발!"}
+                subtitle={win ? "모든 안전 구역을 완벽하게 찾아냈습니다!" : `안전 구역 ${score}칸 확보 후 지뢰를 밟았습니다.`}
+                scoreText={`+${roundScore}점`}
+                onRestart={initialize}
+                restartText={win ? "새 게임 시작" : "다시 도전하기"}
+            />
         </div>
     );
 }
@@ -2961,6 +3386,15 @@ export function SpeedNumbersGame({ socket, pin, nickname, groupId, baseScore = 0
                 })}
             </div>
             <button onClick={shuffle} className="glass-button" style={{ width: '100%', marginTop: '1rem' }}>기록 재도전</button>
+            <GameFinishBanner
+                show={win}
+                type="win"
+                title="🎉 숫자 터치 완주 성공!"
+                subtitle={`1부터 16까지 ${timeTaken}초 만에 순서대로 모두 터치했습니다!`}
+                scoreText={`+${roundScore}점`}
+                onRestart={shuffle}
+                restartText="기록 갱신 도전"
+            />
         </div>
     );
 }
