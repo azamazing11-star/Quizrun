@@ -1036,17 +1036,48 @@ export default function Create({ socket }) {
                 mediaDisplayMode = 'image';
             }
 
-            // Upload base64 file to server
+            // For images, compress to portable Data URL so it works 100% on Local, Supabase Cloud, and Render without broken links
+            let portableDataUrl = dataUrl;
+            if (mediaType === 'image') {
+                try {
+                    portableDataUrl = await new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const MAX_DIM = 900;
+                            let { width, height } = img;
+                            if (width > MAX_DIM || height > MAX_DIM) {
+                                if (width > height) {
+                                    height = Math.round((height * MAX_DIM) / width);
+                                    width = MAX_DIM;
+                                } else {
+                                    width = Math.round((width * MAX_DIM) / height);
+                                    height = MAX_DIM;
+                                }
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = width;
+                            canvas.height = height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, width, height);
+                            resolve(canvas.toDataURL('image/jpeg', 0.85));
+                        };
+                        img.onerror = () => resolve(dataUrl);
+                        img.src = dataUrl;
+                    });
+                } catch {}
+            }
+
+            // Upload base64 file to server (for Images, keep portableDataUrl so Cloud/Render never loses the image)
             try {
                 const response = await fetch('/api/upload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: file.name, data: dataUrl })
+                    body: JSON.stringify({ name: file.name, data: portableDataUrl })
                 });
                 const resData = await response.json();
                 if (resData.success && resData.url) {
                     const newQuestions = [...questions];
-                    newQuestions[qIndex].mediaUrl = resData.url;
+                    newQuestions[qIndex].mediaUrl = mediaType === 'image' ? portableDataUrl : resData.url;
                     newQuestions[qIndex].mediaType = mediaType;
                     newQuestions[qIndex].mediaName = file.name;
                     newQuestions[qIndex].mediaDisplayMode = mediaDisplayMode;
