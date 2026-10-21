@@ -27,8 +27,9 @@ if (typeof window !== 'undefined') {
 
 export const playSound = (type) => {
     const audioCtx = getAudioCtx();
+    if (!audioCtx) return;
     if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
+        audioCtx.resume().catch(() => {});
     }
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
@@ -98,29 +99,35 @@ export const playSound = (type) => {
             break;
 
         case 'fanfare':
-            // "Fanfare" (Final Results)
-            const notes = [
-                { f: 523.25, d: 0.15 }, // C5
-                { f: 659.25, d: 0.15 }, // E5
-                { f: 783.99, d: 0.15 }, // G5
-                { f: 1046.50, d: 0.4 }  // C6
+            // "Fanfare" (Triumphant celebratory fanfare)
+            oscillator.disconnect();
+            gainNode.disconnect();
+            const fanfareNotes = [
+                { f: 523.25, d: 0.12 }, // C5
+                { f: 659.25, d: 0.12 }, // E5
+                { f: 783.99, d: 0.12 }, // G5
+                { f: 1046.50, d: 0.22 }, // C6
+                { f: 783.99, d: 0.12 }, // G5
+                { f: 1046.50, d: 0.55 }  // C6 grand finish
             ];
-            let t = now;
-            notes.forEach(note => {
+            let ft = now;
+            fanfareNotes.forEach((note, idx) => {
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                osc.type = 'square';
-                osc.frequency.value = note.f;
+                osc.type = idx >= 3 ? 'triangle' : 'square';
+                osc.frequency.setValueAtTime(note.f, ft);
 
-                gain.gain.setValueAtTime(0.2, t);
-                gain.gain.exponentialRampToValueAtTime(0.01, t + note.d);
+                gain.gain.setValueAtTime(0.25, ft);
+                gain.gain.exponentialRampToValueAtTime(0.001, ft + note.d);
 
-                osc.start(t);
-                osc.stop(t + note.d);
-                t += note.d + 0.05;
+                osc.start(ft);
+                osc.stop(ft + note.d);
+                ft += note.d + 0.03;
             });
+            break;
+
         case 'beep':
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(880, now);

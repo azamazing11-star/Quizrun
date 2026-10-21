@@ -223,6 +223,53 @@ export default function ScreenView({ socket }) {
         return () => socket.off('room:message', handleRoomMsg);
     }, [socket]);
 
+    const {
+        gameState,
+        isOffline,
+        quizTitle,
+        currentQuestion,
+        currentOptions,
+        correctIndex,
+        correctAnswer,
+        currentExplanation,
+        showAnswer,
+        currentQuestionIndex,
+        totalQuestions,
+        points,
+        currentMediaUrl,
+        currentMediaType,
+        currentMediaName,
+        currentMediaDisplayMode,
+        showChosung,
+        quizType,
+        buzzedInfo,
+        judgeResult,
+        groupScores,
+        participants,
+        totalPoints,
+        pin,
+        serverIp,
+        publicUrl,
+        confetti,
+        offlineWinnerList,
+        isMediaMutedOnScreen
+    } = screenData;
+
+    const isOfflineMode = (contextGameMode === 'offline') && (isOffline !== false);
+    const activePin = pin || contextPin;
+    const activePublicUrl = publicUrl || contextPublicUrl;
+    const activeServerIp = serverIp || contextServerIp;
+    const activeParticipants = (participants && participants.length > 0)
+        ? participants
+        : (contextOnlineParticipants || []);
+    const mergedPlayerStreams = {
+        ...(screenData.playerStreams || {}),
+        ...playerStreams
+    };
+    const activeLiveScores = !isOfflineMode
+        ? activeParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true }))
+        : liveScores.map(s => ({ num: s.num, score: s.score || 0, isOnline: false }));
+
     // Setup Unified BroadcastChannel
     useEffect(() => {
         let channel;
@@ -457,52 +504,6 @@ export default function ScreenView({ socket }) {
         };
     }, [socket]);
 
-    const {
-        gameState,
-        isOffline,
-        quizTitle,
-        currentQuestion,
-        currentOptions,
-        correctIndex,
-        correctAnswer,
-        currentExplanation,
-        showAnswer,
-        currentQuestionIndex,
-        totalQuestions,
-        points,
-        currentMediaUrl,
-        currentMediaType,
-        currentMediaName,
-        currentMediaDisplayMode,
-        showChosung,
-        quizType,
-        buzzedInfo,
-        judgeResult,
-        groupScores,
-        participants,
-        totalPoints,
-        pin,
-        serverIp,
-        publicUrl,
-        confetti,
-        offlineWinnerList,
-        isMediaMutedOnScreen
-    } = screenData;
-
-    const isOfflineMode = (contextGameMode === 'offline') && (isOffline !== false);
-    const activePin = pin || contextPin;
-    const activePublicUrl = publicUrl || contextPublicUrl;
-    const activeServerIp = serverIp || contextServerIp;
-    const activeParticipants = (participants && participants.length > 0)
-        ? participants
-        : (contextOnlineParticipants || []);
-    const mergedPlayerStreams = {
-        ...(screenData.playerStreams || {}),
-        ...playerStreams
-    };
-    const activeLiveScores = !isOfflineMode
-        ? activeParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true }))
-        : liveScores.map(s => ({ num: s.num, score: s.score || 0, isOnline: false }));
 
     // Direct touch/click on options from sub-monitor
     const handleOptionSelect = (idx) => {
