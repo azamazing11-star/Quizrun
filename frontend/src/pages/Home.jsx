@@ -115,6 +115,7 @@ export default function Home({ socket }) {
         setOnlineParticipants,
         createOnlineRoom
     } = useGlobalSession();
+    const isOffline = gameMode === 'offline';
     const [isCopied, setIsCopied] = useState(false);
     const [showGitModal, setShowGitModal] = useState(false);
     const [currentMode, setCurrentMode] = useState('intro'); // 'intro', 'quizrun', 'gamerun'

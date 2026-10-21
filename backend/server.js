@@ -912,8 +912,8 @@ function scheduleAutoGitBackup() {
     if (isGitOperating) return;
     isGitOperating = true;
     try {
-      await runGit(['add', 'backend/data']);
-      const statusRes = await runGit(['status', '--porcelain', 'backend/data']);
+      await runGit(['add', 'backend/data', 'backend/uploads']);
+      const statusRes = await runGit(['status', '--porcelain', 'backend/data', 'backend/uploads']);
       if (statusRes.stdout && statusRes.stdout.trim().length > 0) {
         const msg = `Auto-backup: Quizrun data & settings (${new Date().toLocaleString('ko-KR')})`;
         console.log(`[Auto Git Sync] Committing data changes: ${msg}`);

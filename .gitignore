@@ -12,7 +12,6 @@ backend/bin/cloudflared*
 # frontend/dist/
 
 # Uploaded user media
-backend/uploads/*
 !backend/uploads/.gitkeep
 
 # Logs and temp files
