@@ -5,7 +5,7 @@ import {
     RefreshCw, ChevronRight, Users, ShieldAlert, BarChart3, Newspaper, Check,
     Maximize, Minimize, ExternalLink, ArrowRight, Trophy, Edit3, Volume2, Tv, Monitor,
     Building2, Briefcase, Info, ArrowLeft, ArrowUpRight, ArrowDownRight, Layers,
-    Clock, Globe, Zap, Search, BookOpen, Star, Flame, Radio, X
+    Clock, Globe, Zap, Search, BookOpen, Star, Flame, Radio, X, Coins
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import Confetti from 'react-confetti';
@@ -2573,6 +2573,86 @@ export function StockGameHost({ socket, pin, participants = [] }) {
 
     // 참여자 실시간 활동 진행 상황 (뉴스 확인, 예측 투표 등)
     const [participantActivities, setParticipantActivities] = useState({});
+    // 💰 초기 투자금 설정 모달 상태 (일괄 고정 100만원 vs 누적 점수 * 100,000원)
+    const [seedConfigModalOpen, setSeedConfigModalOpen] = useState(() => {
+        try {
+            return sessionStorage.getItem('quizrun_stock_seed_configured') !== 'true';
+        } catch {
+            return false;
+        }
+    });
+    const [seedCalcMode, setSeedCalcMode] = useState('flat'); // 'flat' | 'score_multiplier'
+    const [flatSeedAmount, setFlatSeedAmount] = useState(1000000);
+    const [scoreMultiplier, setScoreMultiplier] = useState(100000);
+    const [minScoreSeed, setMinScoreSeed] = useState(1000000);
+    const [hostTradeToast, setHostTradeToast] = useState(null);
+
+    useEffect(() => {
+        if (!hostTradeToast) return;
+        const timer = setTimeout(() => setHostTradeToast(null), 4000);
+        return () => clearTimeout(timer);
+    }, [hostTradeToast]);
+
+    const applySeedConfiguration = (targetMode = seedCalcMode, targetFlat = flatSeedAmount, targetMult = scoreMultiplier, targetMin = minScoreSeed) => {
+        const flatVal = Math.max(0, parseInt(targetFlat, 10) || 1000000);
+        const multVal = Math.max(0, parseInt(targetMult, 10) || 100000);
+        const minVal = Math.max(0, parseInt(targetMin, 10) || 1000000);
+
+        const nextP = { ...portfolios };
+        teamList.forEach(t => {
+            const key = String(t.id);
+            let score = 0;
+            if (liveParticipants && liveParticipants.length > 0) {
+                const p = liveParticipants.find(lp => String(lp.nickname || lp.id).trim() === key || String(lp.nickname).trim() === String(t.nickname).trim());
+                if (p && p.score !== undefined) score = Number(p.score) || 0;
+            } else if (contextScores && contextScores.length > 0) {
+                const cs = contextScores.find(s => String(s.num) === key);
+                if (cs && cs.score !== undefined) score = Number(cs.score) || 0;
+            }
+
+            let calculatedSeed = 1000000;
+            if (targetMode === 'flat') {
+                calculatedSeed = flatVal;
+            } else {
+                calculatedSeed = score > 0 ? (score * multVal) : minVal;
+            }
+
+            const updatedTeamPortfolio = {
+                teamId: key,
+                nickname: t.name,
+                seedMoney: calculatedSeed,
+                cash: calculatedSeed,
+                holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
+                history: { 2015: { asset: calculatedSeed, rank: 1, returnRate: 0 } }
+            };
+            nextP[key] = updatedTeamPortfolio;
+            if (t.nickname) {
+                nextP[t.nickname] = updatedTeamPortfolio;
+            }
+        });
+
+        setPortfolios(nextP);
+        stateRef.current.portfolios = nextP;
+        broadcastStockState({ portfolios: nextP, teamList });
+
+        try {
+            sessionStorage.setItem('quizrun_stock_seed_configured', 'true');
+        } catch (e) {}
+
+        try {
+            const bc = new BroadcastChannel('quizrun_stock_seed_sync');
+            bc.postMessage({ 
+                type: 'BULK_SET_SEED', 
+                amount: targetMode === 'flat' ? flatVal : 0,
+                detailedPortfolios: nextP 
+            });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+
+        setSeedConfigModalOpen(false);
+        playSound('correct');
+    };
+
 
     // 주문 입력 폼: { [stockKey]: number }
     const [orderInputs, setOrderInputs] = useState({
@@ -2880,6 +2960,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                             ...(strNick ? { [strNick]: updated } : {})
                         };
                         stateRef.current.portfolios = nextP;
+                        // 실시간으로 서브 모니터 및 참가자들에게 최신 잔여 현금/포트폴리오 즉시 전파
+                        broadcastStockState({ portfolios: nextP });
                         return nextP;
                     });
                     setCompletedTrades(prev => ({
@@ -2887,6 +2969,16 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         [playerKey]: true,
                         ...(strNick ? { [strNick]: true } : {})
                     }));
+
+                    // 메인 모니터 호스트 화면에 실시간 거래 체결 토스트 알림 표시
+                    const actionName = payload.tradeType === 'BUY' ? '매수' : (payload.tradeType === 'SELL' ? '매도' : '매매');
+                    const tradeInfo = payload.stockName || payload.stockKey || '';
+                    const qtyInfo = payload.qty ? `${payload.qty}주 ` : '';
+                    setHostTradeToast({
+                        id: Date.now(),
+                        message: `🔔 [${strNick || playerKey}] ${tradeInfo} ${qtyInfo}${actionName} 완료! (잔여 예수금: ${payload.cash !== undefined ? Number(payload.cash).toLocaleString() : '0'}원)`
+                    });
+                    playSound('submit');
                 }
             };
             const handleVipHintMsg = (msg) => {
@@ -3538,6 +3630,26 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 {/* Host Control Actions */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     {/* 🎲 Randomize 10 stocks button */}
+                    <button
+                        onClick={() => setSeedConfigModalOpen(true)}
+                        style={{
+                            background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                            color: 'white',
+                            border: '1px solid rgba(52, 211, 153, 0.4)',
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            fontWeight: '900',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 4px 12px rgba(5, 150, 105, 0.35)'
+                        }}
+                        title="초기 투자금 설정 (100만원 일괄 또는 누적 게임 점수 곱하기)"
+                    >
+                        <Coins size={15} color="#6ee7b7" /> 초기 투자금 설정
+                    </button>
                     <button
                         onClick={handleReRandomizeStocks}
                         style={{
@@ -4714,6 +4826,376 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 stockList={stockList}
                 teamList={teamList}
             />
+
+            {/* 💰 초기 투자금 설정 모달 (일괄 100만 vs 점수 곱하기 100,000) */}
+            <SeedMoneySettingModal
+                isOpen={seedConfigModalOpen}
+                onClose={() => setSeedConfigModalOpen(false)}
+                teamList={teamList}
+                liveParticipants={liveParticipants}
+                contextScores={contextScores}
+                seedCalcMode={seedCalcMode}
+                setSeedCalcMode={setSeedCalcMode}
+                flatSeedAmount={flatSeedAmount}
+                setFlatSeedAmount={setFlatSeedAmount}
+                scoreMultiplier={scoreMultiplier}
+                setScoreMultiplier={setScoreMultiplier}
+                minScoreSeed={minScoreSeed}
+                setMinScoreSeed={setMinScoreSeed}
+                onApply={applySeedConfiguration}
+            />
+
+            {/* 메인 모니터 호스트 실시간 매매 체결 토스트 */}
+            {hostTradeToast && (
+                <div style={{
+                    position: 'fixed',
+                    top: '20px',
+                    right: '24px',
+                    zIndex: 10000,
+                    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                    border: '2px solid #10b981',
+                    borderRadius: '14px',
+                    padding: '12px 20px',
+                    color: '#f8fafc',
+                    fontWeight: '900',
+                    fontSize: '0.98rem',
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    animation: 'slideIn 0.3s ease-out'
+                }}>
+                    <span>{hostTradeToast.message}</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// =============================================================================
+// 4-C. 초기 투자금 설정 모달 (일괄 100만원 vs 누적 게임 점수 곱하기 100,000원)
+// =============================================================================
+export function SeedMoneySettingModal({
+    isOpen,
+    onClose,
+    teamList = [],
+    liveParticipants = [],
+    contextScores = [],
+    seedCalcMode,
+    setSeedCalcMode,
+    flatSeedAmount,
+    setFlatSeedAmount,
+    scoreMultiplier,
+    setScoreMultiplier,
+    minScoreSeed,
+    setMinScoreSeed,
+    onApply
+}) {
+    if (!isOpen) return null;
+
+    return (
+        <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+        }}>
+            <div style={{
+                background: '#0f172a',
+                border: '2px solid #334155',
+                borderRadius: '24px',
+                width: '100%',
+                maxWidth: '680px',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+                padding: '28px',
+                boxShadow: '0 25px 60px rgba(0, 0, 0, 0.6)',
+                color: '#f8fafc',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px',
+                animation: 'popIn 0.3s ease-out'
+            }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Coins size={24} color="#a7f3d0" />
+                        </div>
+                        <div>
+                            <h2 style={{ fontSize: '1.35rem', fontWeight: '900', margin: 0, color: '#f8fafc' }}>
+                                💰 주식 게임 초기 투자금(예수금) 설정
+                            </h2>
+                            <p style={{ margin: '3px 0 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
+                                참가자들에게 2015년 지급할 초기 투자금 산정 방식을 선택하세요.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{ background: '#1e293b', border: 'none', color: '#94a3b8', width: '36px', height: '36px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {/* Option 1: 일괄 고정 투자금 적용 */}
+                <div
+                    onClick={() => setSeedCalcMode('flat')}
+                    style={{
+                        background: seedCalcMode === 'flat' ? 'rgba(5, 150, 105, 0.12)' : '#1e293b',
+                        border: seedCalcMode === 'flat' ? '2.5px solid #10b981' : '1.5px solid #334155',
+                        borderRadius: '16px',
+                        padding: '18px 20px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: seedCalcMode === 'flat' ? '0 4px 20px rgba(16, 185, 129, 0.25)' : 'none'
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                                width: '22px',
+                                height: '22px',
+                                borderRadius: '50%',
+                                border: seedCalcMode === 'flat' ? '6px solid #10b981' : '2px solid #64748b',
+                                background: '#0f172a'
+                            }} />
+                            <span style={{ fontSize: '1.1rem', fontWeight: '900', color: seedCalcMode === 'flat' ? '#34d399' : '#f8fafc' }}>
+                                옵션 1. 모든 참여자 동일 금액 일괄 적용 (기본값)
+                            </span>
+                        </div>
+                        <span style={{ fontSize: '0.78rem', background: '#065f46', color: '#a7f3d0', padding: '3px 8px', borderRadius: '8px', fontWeight: '800' }}>
+                            추천 기본
+                        </span>
+                    </div>
+                    <p style={{ margin: '0 0 12px 32px', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                        점수와 관계없이 모든 사람에게 동일한 초기 시드머니를 지급합니다.
+                    </p>
+                    <div style={{ marginLeft: '32px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'bold' }}>지급 금액:</span>
+                        <input
+                            type="number"
+                            value={flatSeedAmount}
+                            onChange={(e) => setFlatSeedAmount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                                background: '#0f172a',
+                                border: '1.5px solid #38bdf8',
+                                borderRadius: '10px',
+                                color: '#38bdf8',
+                                padding: '8px 14px',
+                                fontSize: '1.1rem',
+                                fontWeight: '900',
+                                width: '170px'
+                            }}
+                        />
+                        <span style={{ fontWeight: '900', color: '#f8fafc' }}>원 ({Number(flatSeedAmount).toLocaleString()}원)</span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            {[500000, 1000000, 2000000, 5000000].map(amt => (
+                                <button
+                                    key={amt}
+                                    onClick={(e) => { e.stopPropagation(); setFlatSeedAmount(amt); setSeedCalcMode('flat'); }}
+                                    style={{
+                                        background: flatSeedAmount === amt && seedCalcMode === 'flat' ? '#10b981' : '#334155',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        padding: '5px 10px',
+                                        fontSize: '0.78rem',
+                                        fontWeight: '800',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {amt / 10000}만
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Option 2: 누적 게임 점수 연동 */}
+                <div
+                    onClick={() => setSeedCalcMode('score_multiplier')}
+                    style={{
+                        background: seedCalcMode === 'score_multiplier' ? 'rgba(56, 189, 248, 0.12)' : '#1e293b',
+                        border: seedCalcMode === 'score_multiplier' ? '2.5px solid #38bdf8' : '1.5px solid #334155',
+                        borderRadius: '16px',
+                        padding: '18px 20px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: seedCalcMode === 'score_multiplier' ? '0 4px 20px rgba(56, 189, 248, 0.25)' : 'none'
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                                width: '22px',
+                                height: '22px',
+                                borderRadius: '50%',
+                                border: seedCalcMode === 'score_multiplier' ? '6px solid #38bdf8' : '2px solid #64748b',
+                                background: '#0f172a'
+                            }} />
+                            <span style={{ fontSize: '1.1rem', fontWeight: '900', color: seedCalcMode === 'score_multiplier' ? '#38bdf8' : '#f8fafc' }}>
+                                옵션 2. 여태까지 진행한 게임 점수 × 배수 적용
+                            </span>
+                        </div>
+                        <span style={{ fontSize: '0.78rem', background: '#0369a1', color: '#e0f2fe', padding: '3px 8px', borderRadius: '8px', fontWeight: '800' }}>
+                            점수 연동
+                        </span>
+                    </div>
+                    <p style={{ margin: '0 0 12px 32px', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                        앞서 진행한 퀴즈런/게임런의 누적 점수에 비례하여 차등 시드머니를 지급합니다.
+                    </p>
+                    <div style={{ marginLeft: '32px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'bold' }}>공식: 게임 점수 1점당 ×</span>
+                            <input
+                                type="number"
+                                value={scoreMultiplier}
+                                onChange={(e) => setScoreMultiplier(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                    background: '#0f172a',
+                                    border: '1.5px solid #38bdf8',
+                                    borderRadius: '10px',
+                                    color: '#38bdf8',
+                                    padding: '8px 14px',
+                                    fontSize: '1.1rem',
+                                    fontWeight: '900',
+                                    width: '150px'
+                                }}
+                            />
+                            <span style={{ fontWeight: '900', color: '#f8fafc' }}>원 ({Number(scoreMultiplier).toLocaleString()}원)</span>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                {[10000, 50000, 100000, 200000].map(mult => (
+                                    <button
+                                        key={mult}
+                                        onClick={(e) => { e.stopPropagation(); setScoreMultiplier(mult); setSeedCalcMode('score_multiplier'); }}
+                                        style={{
+                                            background: scoreMultiplier === mult && seedCalcMode === 'score_multiplier' ? '#0284c7' : '#334155',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            padding: '5px 10px',
+                                            fontSize: '0.78rem',
+                                            fontWeight: '800',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        ×{mult / 10000}만
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 0점인 참가자 최소 보장금 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingTop: '4px', borderTop: '1px dashed #334155' }}>
+                            <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>💡 0점인 참여자 최소 지급금:</span>
+                            <input
+                                type="number"
+                                value={minScoreSeed}
+                                onChange={(e) => setMinScoreSeed(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                    background: '#0f172a',
+                                    border: '1px solid #64748b',
+                                    borderRadius: '8px',
+                                    color: '#94a3b8',
+                                    padding: '5px 10px',
+                                    fontSize: '0.9rem',
+                                    fontWeight: '700',
+                                    width: '130px'
+                                }}
+                            />
+                            <span style={{ fontSize: '0.82rem', color: '#64748b' }}>원 (0점이라도 게임에 참여할 수 있도록 기본 자금 지급)</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 실시간 참여자별 지급 예정액 미리보기 */}
+                <div style={{ background: '#1e293b', borderRadius: '16px', padding: '16px', border: '1px solid #334155' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <span style={{ fontWeight: '900', fontSize: '0.92rem', color: '#38bdf8' }}>
+                            👀 실시간 참여자별 초기 투자금 지급 미리보기 ({teamList.length}명)
+                        </span>
+                        <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                            {seedCalcMode === 'flat' ? '일괄 적용 모드' : '점수 곱하기 모드'}
+                        </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
+                        {teamList.map((t, idx) => {
+                            let score = 0;
+                            if (liveParticipants && liveParticipants.length > 0) {
+                                const p = liveParticipants.find(lp => String(lp.nickname || lp.id).trim() === String(t.id) || String(lp.nickname).trim() === String(t.nickname).trim());
+                                if (p && p.score !== undefined) score = Number(p.score) || 0;
+                            } else if (contextScores && contextScores.length > 0) {
+                                const cs = contextScores.find(s => String(s.num) === String(t.id));
+                                if (cs && cs.score !== undefined) score = Number(cs.score) || 0;
+                            }
+                            const calcAmount = seedCalcMode === 'flat'
+                                ? flatSeedAmount
+                                : (score > 0 ? (score * scoreMultiplier) : minScoreSeed);
+
+                            return (
+                                <div key={t.id || idx} style={{ background: '#0f172a', borderRadius: '10px', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #334155' }}>
+                                    <div>
+                                        <div style={{ fontWeight: '800', fontSize: '0.88rem', color: '#f8fafc' }}>{t.name}</div>
+                                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>점수: {score.toLocaleString()}점</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right', fontWeight: '900', fontSize: '0.92rem', color: '#10b981' }}>
+                                        {Number(calcAmount).toLocaleString()}원
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Footer Action Buttons */}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', paddingTop: '8px', borderTop: '1px solid #1e293b' }}>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: '#334155',
+                            color: '#cbd5e1',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '12px 20px',
+                            fontWeight: '800',
+                            fontSize: '0.95rem',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        닫기
+                    </button>
+                    <button
+                        onClick={() => onApply(seedCalcMode, flatSeedAmount, scoreMultiplier, minScoreSeed)}
+                        style={{
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '12px 28px',
+                            fontWeight: '900',
+                            fontSize: '1.05rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)'
+                        }}
+                    >
+                        <Check size={18} />
+                        <span>✓ 이 설정으로 초기 투자금 적용 및 전체 동기화</span>
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
@@ -4749,6 +5231,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const [rewardModalOpen, setRewardModalOpen] = useState(false);
     const [chosenHintStock, setChosenHintStock] = useState(null);
     const [evaluatedYear, setEvaluatedYear] = useState(null);
+    const [tradeSuccessNotice, setTradeSuccessNotice] = useState(null);
 
     // 온라인 입장 유저별 고유 식별키 (닉네임 최우선, 다른 유저와 '1'번 키를 절대 공유하지 않음)
     const myPlayerKey = String(nickname || groupId || 1).trim();
@@ -4850,27 +5333,16 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         };
     }, [socket, pin]);
 
-    // 내 포트폴리오 계산 (오직 본인 고유 키/로컬 매매 내역만 참조)
+    // 내 포트폴리오 계산 (로컬 매수/매도 내역 최우선, 그 다음 호스트 동기화 rawPortfolio 참조)
     const myPortfolio = useMemo(() => {
-        const defaultSeed = (myScore && myScore > 0) ? myScore : 1000000;
-        const base = localPortfolio || rawPortfolio;
-        if (!base) {
-            return {
-                seedMoney: defaultSeed,
-                cash: defaultSeed,
-                holdings: {}
-            };
-        }
-        const hasHoldings = Object.values(base.holdings || {}).some(qty => qty > 0);
-        if (!localPortfolio && !hasHoldings && myScore && myScore > 0 && myScore !== base.seedMoney) {
-            return {
-                ...base,
-                seedMoney: myScore,
-                cash: myScore
-            };
-        }
-        return base;
-    }, [localPortfolio, rawPortfolio, myScore]);
+        if (localPortfolio) return localPortfolio;
+        if (rawPortfolio) return rawPortfolio;
+        return {
+            seedMoney: 1000000,
+            cash: 1000000,
+            holdings: {}
+        };
+    }, [localPortfolio, rawPortfolio]);
 
     // 내 주식 평가금 계산
     const myStockValue = useMemo(() => {
@@ -5103,32 +5575,37 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
             }
         }));
 
+        const orderData = {
+            pin,
+            teamId: myPlayerKey,
+            nickname: nickname || myPlayerKey,
+            cash: newCash,
+            holdings: newHoldings,
+            stockKey: stockItem.key,
+            stockName: stockItem.sector || stockItem.name || stockItem.key,
+            tradeType,
+            qty,
+            totalCost: tradeType === 'BUY' ? (qty * price) : 0
+        };
+
         if (socket && pin) {
-            socket.emit('stock_game:execute_order', {
-                pin,
-                teamId: myPlayerKey,
-                nickname: nickname || myPlayerKey,
-                cash: newCash,
-                holdings: newHoldings
-            });
+            socket.emit('stock_game:execute_order', orderData);
             socket.emit('room:message', {
                 pin,
                 event: 'stock_game:execute_order',
-                payload: {
-                    teamId: myPlayerKey,
-                    nickname: nickname || myPlayerKey,
-                    cash: newCash,
-                    holdings: newHoldings
-                }
+                payload: orderData
             });
         }
 
         setTradeQty(0);
-        alert(`[${stockItem.key}] ${stockItem.sector} ${qty.toLocaleString()}주 ${tradeType === 'BUY' ? '매수' : '매도'} 체결이 완료되었습니다!`);
+        setTradeSuccessNotice({
+            msg: `[${stockItem.key}] ${stockItem.sector} ${qty.toLocaleString()}주 ${tradeType === 'BUY' ? '매수' : '매도'} 체결 완료! (잔여 예수금: ${newCash.toLocaleString()}원)`
+        });
+        setTimeout(() => setTradeSuccessNotice(null), 5000);
     };
 
     return (
-        <div style={{
+        <div translate="no" className="notranslate" style={{
             width: '100%',
             minHeight: '100vh',
             background: '#090d16',
@@ -5137,6 +5614,33 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
             flexDirection: 'column',
             fontFamily: "'Pretendard', 'Noto Sans KR', sans-serif", wordBreak: 'keep-all', overflowWrap: 'break-word'
         }}>
+            {/* Real-time Order Success Toast Banner */}
+            {tradeSuccessNotice && (
+                <div style={{
+                    padding: '10px 16px',
+                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 4px 15px rgba(5, 150, 105, 0.4)',
+                    fontWeight: '900',
+                    fontSize: '0.92rem',
+                    animation: 'slideIn 0.3s ease-out'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle size={20} color="#a7f3d0" />
+                        <span>{tradeSuccessNotice.msg}</span>
+                    </div>
+                    <button
+                        onClick={() => setTradeSuccessNotice(null)}
+                        style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+            )}
+
             {/* Special Hint Reward Trigger Banner for Participant */}
             {(isQualified || isAllVoted) && (
                 <div style={{ padding: '8px 12px 0 12px', background: '#0f172a' }}>
@@ -5920,15 +6424,23 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '12px',
-                                            padding: '12px',
-                                            fontSize: '1rem',
+                                            padding: '14px',
+                                            fontSize: '1.05rem',
                                             fontWeight: '900',
                                             cursor: (numQty <= 0 || isOverBudget || isOverShares) ? 'not-allowed' : 'pointer',
-                                            boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-                                            marginTop: '2px'
+                                            boxShadow: (numQty <= 0 || isOverBudget || isOverShares) ? 'none' : '0 4px 15px rgba(0,0,0,0.3)',
+                                            marginTop: '4px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px'
                                         }}
                                     >
-                                        ✓ {orderTotalCost.toLocaleString()}원 {tradeType === 'BUY' ? '매수 체결 완료' : '매도 체결 완료'}
+                                        {numQty <= 0 ? (
+                                            <span>주문 수량을 선택해 주세요</span>
+                                        ) : (
+                                            <span>👉 {orderTotalCost.toLocaleString()}원 {tradeType === 'BUY' ? '매수 주문 실행' : '매도 주문 실행'}</span>
+                                        )}
                                     </button>
                                 </div>
                             </div>
