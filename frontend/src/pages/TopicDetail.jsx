@@ -8,9 +8,25 @@ export default function TopicDetail({ socket }) {
     const navigate = useNavigate();
     const { id } = useParams();
 
-    const [subTopics, setSubTopics] = React.useState([]);
-    const [allCounts, setAllCounts] = React.useState({});
-    const [isLoading, setIsLoading] = React.useState(true);
+    const [subTopics, setSubTopics] = React.useState(() => {
+        try {
+            const cached = localStorage.getItem(`quizrun_cached_topics_${id}`);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch (e) {}
+        const baseNames = SUB_TOPIC_NAMES[id] || Array.from({ length: 24 }, (_, i) => `준비중 ${i + 1}`);
+        return baseNames.map((name, i) => ({ id: `sub-${i + 1}`, title: name }));
+    });
+    const [allCounts, setAllCounts] = React.useState(() => {
+        try {
+            const cached = localStorage.getItem('quizrun_cached_counts');
+            if (cached) return JSON.parse(cached);
+        } catch (e) {}
+        return {};
+    });
+    const [isLoading, setIsLoading] = React.useState(false);
     const [socketConnected, setSocketConnected] = React.useState(socket.connected);
     const [error, setError] = React.useState(null);
 
@@ -45,7 +61,7 @@ export default function TopicDetail({ socket }) {
         socket.on('config:updated', handleConfigUpdate);
 
         const loadEverything = () => {
-            setIsLoading(true);
+            if (subTopics.length === 0) setIsLoading(true);
             setError(null);
 
             const timeout = setTimeout(() => {
@@ -64,6 +80,7 @@ export default function TopicDetail({ socket }) {
                     }
                     if (res.config[`topic_${id}`]) {
                         setSubTopics(res.config[`topic_${id}`]);
+                        try { localStorage.setItem(`quizrun_cached_topics_${id}`, JSON.stringify(res.config[`topic_${id}`])); } catch(e){}
                     } else {
                         // Fallback to default names only if server explicitly says it's missing
                         const baseNames = SUB_TOPIC_NAMES[id] || Array.from({ length: 24 }, (_, i) => `준비중 ${i + 1}`);
@@ -85,6 +102,7 @@ export default function TopicDetail({ socket }) {
             socket.emit('quiz:getAllCounts', (res) => {
                 if (res && res.success) {
                     setAllCounts(res.counts);
+                    try { localStorage.setItem('quizrun_cached_counts', JSON.stringify(res.counts)); } catch(e){}
                 }
             });
         };

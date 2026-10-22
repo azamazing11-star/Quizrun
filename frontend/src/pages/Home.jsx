@@ -52,7 +52,7 @@ const ICON_MAP = {
     '벽돌깨기': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="18" width="16" height="3" rx="1"/><circle cx="12" cy="10" r="3"/><path d="m14 7-4-4"/></svg>,
     '비행기게임': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0284c7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L9 9H3L7 14L5 21L12 17L19 21L17 14L21 9H15L12 2Z"/></svg>,
     '타임어택': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0284c7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L9 9H3L7 14L5 21L12 17L19 21L17 14L21 9H15L12 2Z"/></svg>,
-    '숨은 그림 찾기': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6M8 11h6"/></svg>,
+    '눈치 게임': <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6M8 11h6"/></svg>,
     '운세': <Sparkles size={24} color="#d946ef" />
 };
 
@@ -63,7 +63,7 @@ const getIconByTitle = (title) => {
 
 const MULTIPLAYER_GAMES = [
     { id: 'fortune', title: '운세', bg: '#fdf4ff', count: 0 },
-    { id: 'spot_difference', title: '숨은 그림 찾기', bg: '#fef3c7', count: 0 },
+    { id: 'nunchi_game', title: '눈치 게임', bg: '#fef3c7', count: 0 },
     { id: 'ladder', title: '사다리 타기', bg: '#ffedd5', count: 0 },
     { id: 'timeattack', title: '비행기게임', bg: '#e0f2fe', count: 0 },
     { id: 'word_bomb', title: '단어 폭탄', bg: '#ffe4e6', count: 0 },
@@ -243,6 +243,7 @@ export default function Home({ socket }) {
                 const parsed = JSON.parse(saved);
                 const remapped = Array.isArray(parsed) ? parsed.map(g => {
                     if (g.id === 'card_poker' || g.title === '포커 카드') return { ...g, id: 'card_game', title: '카드 게임' };
+                    if (g.id === 'spot_difference' || g.title === '숨은 그림 찾기') return { ...g, id: 'nunchi_game', title: '눈치 게임', bg: '#fef3c7' };
                     if (g.id === 'timeattack' || g.title === '타임어택') return { ...g, id: 'timeattack', title: '비행기게임', bg: '#e0f2fe' };
                     return g;
                 }) : [];
@@ -1250,13 +1251,12 @@ export default function Home({ socket }) {
                                 if (editingId !== quiz.id) {
                                     const isSpecialGameFolder = (
                                         quiz.id === 'ladder' || quiz.title === '사다리' ||
-                                        quiz.id === 'spot_difference' || quiz.title === '숨은 그림 찾기' ||
                                         quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택'
                                     );
                                     if (isSpecialGameFolder && !isOffline) {
                                         const specialGameId = (quiz.id === 'ladder' || quiz.title === '사다리')
                                             ? 'ladder'
-                                            : ((quiz.id === 'spot_difference' || quiz.title === '숨은 그림 찾기') ? 'spot_difference' : 'timeattack');
+                                            : 'timeattack';
                                         try {
                                             sessionStorage.setItem('quizrun_last_host_state', JSON.stringify({
                                                 isGame: true,
@@ -1268,8 +1268,7 @@ export default function Home({ socket }) {
                                         handleNavWithSync('/host', { isGame: true, gameId: specialGameId, gameTitle: quiz.title, pin: onlinePin });
                                     } else if (quiz.id === 'ladder' || quiz.title === '사다리') {
                                         handleNavWithSync('/ladder');
-                                    } else if (quiz.id === 'spot_difference' || quiz.title === '숨은 그림 찾기') {
-                                        handleNavWithSync('/spot-difference');
+                                    
                                     } else if (quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택') {
                                         handleNavWithSync('/timeattack');
                                     } else {

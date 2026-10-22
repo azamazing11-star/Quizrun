@@ -1,3 +1,5 @@
+import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
+import NunchiGame from '../components/NunchiGame';
 import React, { useState, useEffect, useRef } from 'react';
 import { Users, Play, ChevronRight, Trophy, Home, ArrowLeft, Zap, ClipboardCheck, Type, Edit3, Tv, Eye, X, Music, Volume2, VolumeX } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -223,6 +225,10 @@ export default function Host({ socket }) {
     const [answeredCount, setAnsweredCount] = useState(0);
     const [currentQuestion, setCurrentQuestion] = useState('');
     const [currentMediaUrl, setCurrentMediaUrl] = useState('');
+    const [currentMediaUrl2, setCurrentMediaUrl2] = useState('');
+    const [currentDiffSpots, setCurrentDiffSpots] = useState([]);
+    const [currentTimeLimit, setCurrentTimeLimit] = useState(60);
+    const [isSpotDiff, setIsSpotDiff] = useState(false);
     const [currentMediaType, setCurrentMediaType] = useState('');
     const [currentMediaName, setCurrentMediaName] = useState('');
     const [currentMediaDisplayMode, setCurrentMediaDisplayMode] = useState('auto');
@@ -439,6 +445,10 @@ export default function Host({ socket }) {
             points: currentPoints,
             totalPoints: totalScore,
             currentMediaUrl: overrides.currentMediaUrl !== undefined ? overrides.currentMediaUrl : currentMediaUrl,
+            mediaUrl2: overrides.mediaUrl2 !== undefined ? overrides.mediaUrl2 : (currentMediaUrl2 || ''),
+            diffSpots: overrides.diffSpots !== undefined ? overrides.diffSpots : (currentDiffSpots || []),
+            timeLimit: overrides.timeLimit !== undefined ? overrides.timeLimit : (currentTimeLimit || 60),
+            isSpotDiff: overrides.isSpotDiff !== undefined ? overrides.isSpotDiff : isSpotDiff,
             currentMediaType: overrides.currentMediaType !== undefined ? overrides.currentMediaType : currentMediaType,
             currentMediaName: overrides.currentMediaName !== undefined ? overrides.currentMediaName : currentMediaName,
             currentMediaDisplayMode: overrides.currentMediaDisplayMode !== undefined ? overrides.currentMediaDisplayMode : currentMediaDisplayMode,
@@ -644,6 +654,10 @@ export default function Host({ socket }) {
             if (data.state === 'question') {
                 setCurrentQuestion(typeof data.question === 'object' ? data.question.text : data.question);
                 setCurrentMediaUrl(data.mediaUrl || data.question?.mediaUrl || '');
+                setCurrentMediaUrl2(data.mediaUrl2 || data.question?.mediaUrl2 || '');
+                setCurrentDiffSpots(data.diffSpots || data.question?.diffSpots || []);
+                setCurrentTimeLimit(data.timeLimit || data.question?.timeLimit || 60);
+                setIsSpotDiff(Boolean(data.isSpotDiff || data.question?.isSpotDiff || data.mediaUrl2 || data.question?.mediaUrl2));
                 setCurrentMediaType(data.mediaType || data.question?.mediaType || '');
                 setCurrentMediaName(data.mediaName || data.question?.mediaName || '');
                 setCurrentMediaDisplayMode(data.mediaDisplayMode || data.question?.mediaDisplayMode || 'audio');
@@ -1988,20 +2002,13 @@ export default function Host({ socket }) {
                                         {(gameId === 'timeattack' || gameId === 'airplane_game') && <AirplaneGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
                                         {gameId === 'memory_game' && <MemoryGame />}
                                         {gameId === 'pass_bomb' && <PassBombGame />}
-                                        {gameId === 'spot_difference' && (
-                                            <div style={{ width: '100%' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => navigate('/spot-difference')}
-                                                        className="glass-button"
-                                                        style={{ fontSize: '0.82rem', padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}
-                                                    >
-                                                        🖥️ 대형 캔버스 모드로 열기
-                                                    </button>
-                                                </div>
-                                                <SpotDifferenceMiniGame socket={socket} pin={location.state?.pin || pin} />
-                                            </div>
+                                        {(gameId === 'nunchi_game' || gameId === 'spot_difference') && (
+                                            <NunchiGame 
+                                                socket={socket} 
+                                                pin={location.state?.pin || pin} 
+                                                isHost={true} 
+                                                participants={participants} 
+                                            />
                                         )}
                                         {gameId === 'fortune' && (
                                             <div style={{ width: '100%' }}>

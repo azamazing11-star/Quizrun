@@ -1,3 +1,5 @@
+import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
+import NunchiGame from '../components/NunchiGame';
 import React, { useState, useEffect, useRef } from 'react';
 import { User, KeyRound, AlertCircle, CheckCircle, XCircle, ArrowLeft, Music } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -145,6 +147,10 @@ export default function Participant({ socket }) {
     const [totalQuestions, setTotalQuestions] = useState(0);
     const [currentOptions, setCurrentOptions] = useState([]);
     const [currentMediaUrl, setCurrentMediaUrl] = useState('');
+    const [currentMediaUrl2, setCurrentMediaUrl2] = useState('');
+    const [currentDiffSpots, setCurrentDiffSpots] = useState([]);
+    const [currentTimeLimit, setCurrentTimeLimit] = useState(60);
+    const [isSpotDiff, setIsSpotDiff] = useState(false);
     const [currentMediaType, setCurrentMediaType] = useState('');
     const [currentMediaName, setCurrentMediaName] = useState('');
     const [currentMediaDisplayMode, setCurrentMediaDisplayMode] = useState('auto');
@@ -249,6 +255,10 @@ export default function Participant({ socket }) {
                 }
                 setCurrentOptions(data.options || []);
                 setCurrentMediaUrl(data.mediaUrl || data.question?.mediaUrl || '');
+                setCurrentMediaUrl2(data.mediaUrl2 || data.question?.mediaUrl2 || '');
+                setCurrentDiffSpots(data.diffSpots || data.question?.diffSpots || []);
+                setCurrentTimeLimit(data.timeLimit || data.question?.timeLimit || 60);
+                setIsSpotDiff(Boolean(data.isSpotDiff || data.question?.isSpotDiff || data.mediaUrl2 || data.question?.mediaUrl2));
                 setCurrentMediaType(data.mediaType || data.question?.mediaType || '');
                 setCurrentMediaName(data.mediaName || data.question?.mediaName || '');
                 setCurrentMediaDisplayMode(data.mediaDisplayMode || data.question?.mediaDisplayMode || 'audio');
@@ -1275,7 +1285,7 @@ export default function Participant({ socket }) {
                             {(gameId === 'omok' || gameId === 'samok') && '사목'}
                             {gameId === 'ladder' && '사다리 타기'}
                             {gameId === 'fortune' && '포춘 쿠키'}
-                            {gameId === 'spot_difference' && '숨은 그림 찾기'}
+                            {(gameId === 'nunchi_game' || gameId === 'spot_difference') && '눈치 게임'}
                             {gameId === 'janggi' && '장기'}
                             {gameId === 'chess' && '체스'}
                             {(gameId === 'card_game' || gameId === 'card_poker') && '카드 게임'}
@@ -1305,6 +1315,7 @@ export default function Participant({ socket }) {
                         {gameId === 'memory_game' && <MemoryGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'pass_bomb' && <PassBombGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'spot_difference' && <SpotDifferenceMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {(gameId === 'nunchi_game' || gameId === 'spot_difference') && <NunchiGame socket={socket} pin={pin} nickname={nickname} myScore={myScore} isHost={false} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'fortune' && <FortuneMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'ladder' && <LadderMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'tetris' && <TetrisGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
@@ -1608,6 +1619,22 @@ export default function Participant({ socket }) {
                 )}
 
                 {gameState === 'question' && (() => {
+                    if (isSpotDiff || currentMediaUrl2) {
+                        return (
+                            <SpotDifferenceQuiz
+                                isHost={false}
+                                mediaUrl={currentMediaUrl}
+                                mediaUrl2={currentMediaUrl2}
+                                diffSpots={currentDiffSpots}
+                                timeLimit={currentTimeLimit || 60}
+                                questionText={currentQuestion}
+                                socket={socket}
+                                pin={pin}
+                                nickname={nickname}
+                                onScoreAdjust={(amt) => setMyScore(prev => prev + amt)}
+                            />
+                        );
+                    }
                     const isOX = quizType === 'ox' || (currentOptions && currentOptions.length === 2);
                     const isShort = quizType === 'short' || (!isBuzzerMode && (!currentOptions || currentOptions.length === 0 || currentOptions.every(o => !o || o.trim() === '')));
                     const isMCQ = !isBuzzerMode && !isOX && !isShort;

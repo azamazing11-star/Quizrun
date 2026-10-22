@@ -34,7 +34,12 @@ export default function Create({ socket }) {
     const navigate = useNavigate();
     const location = useLocation();
     const { onlinePin } = useGlobalSession();
-    const { topicId, subId } = location.state || {};
+    const { topicId, subId, subTopicTitle } = location.state || {};
+    const isSpotDiffFolder = Boolean(
+        subTopicTitle?.includes('숨은그림찾기') || 
+        subId === 'sub-11' || 
+        location.state?.isSpotDiff
+    );
     
     const [mode, setMode] = useState(location.state?.mode || null); // 'mcq' | 'short' | 'ox'
     const [questions, setQuestions] = useState([
@@ -1891,7 +1896,270 @@ export default function Create({ socket }) {
                                 )}
                             </div>
 
-                            {/* Media File Upload / Attach Section */}
+                            {/* Spot the Difference Mode Toggle & Editor */}
+                            <div style={{
+                                marginBottom: '16px',
+                                background: (q.isSpotDiff || isSpotDiffFolder) ? '#fff7ed' : '#f8fafc',
+                                border: (q.isSpotDiff || isSpotDiffFolder) ? '2px solid #fdba74' : '1px solid #e2e8f0',
+                                borderRadius: '14px',
+                                padding: '14px'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const nq = [...questions];
+                                                nq[qIndex].isSpotDiff = !Boolean(nq[qIndex].isSpotDiff ?? isSpotDiffFolder);
+                                                if (nq[qIndex].isSpotDiff) {
+                                                    if (!nq[qIndex].text) nq[qIndex].text = '두 그림을 비교하여 틀린 부분을 모두 찾아보세요!';
+                                                    if (!nq[qIndex].timeLimit) nq[qIndex].timeLimit = 60;
+                                                    if (!nq[qIndex].diffSpots) nq[qIndex].diffSpots = [];
+                                                }
+                                                setQuestions(nq);
+                                            }}
+                                            style={{
+                                                padding: '6px 14px',
+                                                borderRadius: '10px',
+                                                border: 'none',
+                                                background: (q.isSpotDiff ?? isSpotDiffFolder) ? '#ea580c' : '#cbd5e1',
+                                                color: 'white',
+                                                fontWeight: '900',
+                                                fontSize: '0.88rem',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                        >
+                                            🔍 {(q.isSpotDiff ?? isSpotDiffFolder) ? '숨은그림찾기 켜짐 (2장 비교)' : '숨은그림찾기 모드로 전환'}
+                                        </button>
+                                        <span style={{ fontSize: '0.82rem', color: '#7c2d12', fontWeight: 'bold' }}>
+                                            {(q.isSpotDiff ?? isSpotDiffFolder) && '두 이미지를 비교해 틀린 부분을 맞추는 퀴즈입니다.'}
+                                        </span>
+                                    </div>
+
+                                    {(q.isSpotDiff ?? isSpotDiffFolder) && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#475569' }}>⏱️ 제한 시간:</span>
+                                            {[30, 45, 60, 90, 120].map(sec => (
+                                                <button
+                                                    key={sec}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nq = [...questions];
+                                                        nq[qIndex].timeLimit = sec;
+                                                        setQuestions(nq);
+                                                    }}
+                                                    style={{
+                                                        padding: '4px 8px',
+                                                        borderRadius: '8px',
+                                                        border: (q.timeLimit === sec || (!q.timeLimit && sec === 60)) ? '1.5px solid #ea580c' : '1px solid #cbd5e1',
+                                                        background: (q.timeLimit === sec || (!q.timeLimit && sec === 60)) ? '#ffedd5' : 'white',
+                                                        color: (q.timeLimit === sec || (!q.timeLimit && sec === 60)) ? '#c2410c' : '#64748b',
+                                                        fontWeight: 'bold',
+                                                        fontSize: '0.8rem',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    {sec}초
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {(q.isSpotDiff ?? isSpotDiffFolder) && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
+                                        {/* Point Rule Banner */}
+                                        <div style={{ padding: '8px 12px', background: '#ecfdf5', borderRadius: '10px', border: '1px solid #86efac', color: '#166534', fontSize: '0.82rem', fontWeight: 'bold' }}>
+                                            💡 참가자가 틀린 곳을 찾을 때마다 +10점 획득, 가장 먼저 정해진 개수를 전부 찾은 1위는 획득 점수의 2배 보너스를 얻습니다.
+                                        </div>
+
+                                        {/* Two Image Uploads Side-by-Side */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                                            {/* Image 1: Original */}
+                                            <div style={{ background: 'white', padding: '12px', borderRadius: '12px', border: '1px solid #fed7aa' }}>
+                                                <div style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#2563eb', marginBottom: '8px' }}>
+                                                    [ 🖼️ 1. 원본 이미지 ]
+                                                </div>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) {
+                                                            const reader = new FileReader();
+                                                            reader.onload = (re) => {
+                                                                const nq = [...questions];
+                                                                nq[qIndex].mediaUrl = re.target.result;
+                                                                nq[qIndex].mediaType = 'image';
+                                                                setQuestions(nq);
+                                                            };
+                                                            reader.readAsDataURL(file);
+                                                        }
+                                                    }}
+                                                    style={{ fontSize: '0.82rem', width: '100%' }}
+                                                />
+                                                {q.mediaUrl && (
+                                                    <div style={{ marginTop: '8px', maxHeight: '160px', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
+                                                        <img src={q.mediaUrl} alt="Orig Preview" style={{ maxHeight: '160px', maxWidth: '100%', objectFit: 'contain', borderRadius: '8px' }} />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Image 2: Diff Image */}
+                                            <div style={{ background: 'white', padding: '12px', borderRadius: '12px', border: '1px solid #fdba74' }}>
+                                                <div style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#ea580c', marginBottom: '8px' }}>
+                                                    [ 🔍 2. 틀린 그림 이미지 (정답 마킹용) ]
+                                                </div>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) {
+                                                            const reader = new FileReader();
+                                                            reader.onload = (re) => {
+                                                                const nq = [...questions];
+                                                                nq[qIndex].mediaUrl2 = re.target.result;
+                                                                setQuestions(nq);
+                                                            };
+                                                            reader.readAsDataURL(file);
+                                                        }
+                                                    }}
+                                                    style={{ fontSize: '0.82rem', width: '100%' }}
+                                                />
+                                                {q.mediaUrl2 && (
+                                                    <div style={{ marginTop: '8px', maxHeight: '160px', overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
+                                                        <img src={q.mediaUrl2} alt="Diff Preview" style={{ maxHeight: '160px', maxWidth: '100%', objectFit: 'contain', borderRadius: '8px' }} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Spot Marking Canvas on Image 2 */}
+                                        {(q.mediaUrl2 || q.mediaUrl) && (
+                                            <div style={{ background: 'white', padding: '14px', borderRadius: '12px', border: '1.5px solid #fed7aa' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                                    <span style={{ fontWeight: 'bold', fontSize: '0.88rem', color: '#9a3412' }}>
+                                                        👆 틀린 그림의 틀린 곳을 직접 클릭하여 정답 위치를 지정하세요:
+                                                    </span>
+                                                    <span style={{ padding: '2px 8px', background: '#ffedd5', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', color: '#c2410c' }}>
+                                                        지정된 틀린 곳: {(q.diffSpots || []).length}개
+                                                    </span>
+                                                </div>
+
+                                                <div
+                                                    onClick={(e) => {
+                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                        const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+                                                        const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+                                                        const nq = [...questions];
+                                                        const spots = nq[qIndex].diffSpots || [];
+                                                        nq[qIndex].diffSpots = [...spots, { id: spots.length + 1, x, y, radius: 8 }];
+                                                        setQuestions(nq);
+                                                    }}
+                                                    style={{
+                                                        position: 'relative',
+                                                        display: 'inline-block',
+                                                        width: '100%',
+                                                        maxHeight: '340px',
+                                                        cursor: 'crosshair',
+                                                        borderRadius: '10px',
+                                                        overflow: 'hidden',
+                                                        textAlign: 'center',
+                                                        background: '#f8fafc'
+                                                    }}
+                                                >
+                                                    <img
+                                                        src={q.mediaUrl2 || q.mediaUrl}
+                                                        alt="Marking canvas"
+                                                        style={{ maxWidth: '100%', maxHeight: '340px', objectFit: 'contain', userSelect: 'none' }}
+                                                    />
+
+                                                    {/* Target Marker Circles */}
+                                                    {(q.diffSpots || []).map((spot, sIdx) => (
+                                                        <div
+                                                            key={sIdx}
+                                                            style={{
+                                                                position: 'absolute',
+                                                                left: `${spot.x}%`,
+                                                                top: `${spot.y}%`,
+                                                                width: '32px',
+                                                                height: '32px',
+                                                                transform: 'translate(-50%, -50%)',
+                                                                border: '3px solid #ef4444',
+                                                                borderRadius: '50%',
+                                                                background: 'rgba(239, 68, 68, 0.3)',
+                                                                color: 'white',
+                                                                fontWeight: '900',
+                                                                fontSize: '0.8rem',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                textShadow: '0 1px 3px rgba(0,0,0,0.8)'
+                                                            }}
+                                                        >
+                                                            {sIdx + 1}
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {/* Chips of Marked Spots */}
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px', alignItems: 'center' }}>
+                                                    {(q.diffSpots || []).map((spot, sIdx) => (
+                                                        <span
+                                                            key={sIdx}
+                                                            style={{
+                                                                padding: '3px 8px',
+                                                                background: '#fee2e2',
+                                                                border: '1px solid #fca5a5',
+                                                                borderRadius: '8px',
+                                                                color: '#b91c1c',
+                                                                fontSize: '0.8rem',
+                                                                fontWeight: 'bold',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px'
+                                                            }}
+                                                        >
+                                                            위치 {sIdx + 1} ({spot.x}%, {spot.y}%)
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const nq = [...questions];
+                                                                    nq[qIndex].diffSpots = nq[qIndex].diffSpots.filter((_, idx) => idx !== sIdx);
+                                                                    setQuestions(nq);
+                                                                }}
+                                                                style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, fontWeight: 'bold' }}
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </span>
+                                                    ))}
+                                                    {(q.diffSpots || []).length > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const nq = [...questions];
+                                                                nq[qIndex].diffSpots = [];
+                                                                setQuestions(nq);
+                                                            }}
+                                                            style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.78rem', cursor: 'pointer', textDecoration: 'underline' }}
+                                                        >
+                                                            모두 지우기
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+{/* Media File Upload / Attach Section */}
                             <div style={{ marginBottom: '20px', background: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px border #e2e8f0' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                     <label style={{ fontWeight: 'bold', color: '#334155', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>

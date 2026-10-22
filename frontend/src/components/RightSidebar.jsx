@@ -19,6 +19,23 @@ import {
 } from 'lucide-react';
 
 export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGameAndExit, onEndGame }) {
+    useEffect(() => {
+        if (!socket) return;
+        const handleWinnerSync = (data) => {
+            const { open } = data || {};
+            if (open) {
+                try { playSound('fanfare'); } catch(e){}
+                setConfettiActive(true);
+                setShowWinnerModal(true);
+            } else {
+                setShowWinnerModal(false);
+            }
+        };
+        socket.on('game:winner_modal_sync', handleWinnerSync);
+        return () => {
+            socket.off('game:winner_modal_sync', handleWinnerSync);
+        };
+    }, [socket]);
     const [isStockGameSynced, setIsStockGameSynced] = useState(() => {
         try {
             return sessionStorage.getItem('quizrun_active_game_mode') === 'stock_game';
@@ -33,7 +50,15 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
             bc = new BroadcastChannel('quizrun_screen_sync');
             bc.onmessage = (event) => {
                 const { type, payload } = event.data || {};
-                if (type === 'STOCK_GAME_SCREEN_UPDATE' || (type === 'MODE_CHANGE' && payload?.mode === 'stock_game')) {
+                if (type === 'WINNER_MODAL_SYNC') {
+                    if (payload?.open) {
+                        try { playSound('fanfare'); } catch(e){}
+                        setConfettiActive(true);
+                        setShowWinnerModal(true);
+                    } else {
+                        setShowWinnerModal(false);
+                    }
+                } else if (type === 'STOCK_GAME_SCREEN_UPDATE' || (type === 'MODE_CHANGE' && payload?.mode === 'stock_game')) {
                     setIsStockGameSynced(true);
                     try { sessionStorage.setItem('quizrun_active_game_mode', 'stock_game'); } catch (e) {}
                 } else if (type === 'MODE_CHANGE' && payload?.mode && payload.mode !== 'stock_game') {
@@ -1254,69 +1279,92 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
 
                         {/* Action Buttons */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <button
-                                style={{
-                                    padding: '12px',
-                                    borderRadius: '14px',
-                                    border: 'none',
-                                    background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-                                    color: 'white',
+                            {isSubScreen ? (
+                                <div style={{
+                                    marginTop: '1.2rem',
+                                    padding: '16px',
+                                    background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                                    borderRadius: '16px',
+                                    border: '2px solid #10b981',
+                                    color: '#065f46',
                                     fontWeight: '900',
-                                    fontSize: '0.98rem',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '6px',
-                                    boxShadow: isStockGame ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 14px rgba(14, 165, 233, 0.35)'
-                                }}
-                                onClick={() => setShowWinnerModal(false)}
-                            >
-                                <Check size={18} /> 누적 점수 유지하고 계속하기
-                            </button>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        borderRadius: '12px',
-                                        border: '1.5px solid #e2e8f0',
-                                        background: 'white',
-                                        color: '#64748b',
-                                        fontWeight: '800',
-                                        fontSize: '0.86rem',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '4px'
-                                    }}
-                                    onClick={handleResetScoresOnly}
-                                >
-                                    <RotateCcw size={14} /> {isStockGame ? '금액 초기화' : '점수 초기화'}
-                                </button>
-                                <button
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        borderRadius: '12px',
-                                        border: 'none',
-                                        background: '#fef2f2',
-                                        color: '#ef4444',
-                                        fontWeight: '800',
-                                        fontSize: '0.86rem',
-                                        cursor: 'pointer'
-                                    }}
-                                    onClick={() => {
-                                        if (window.confirm("세션을 완전히 종료하시겠습니까? 모든 참가자의 접속이 해제되고 점수가 초기화됩니다.")) {
-                                            endSession(socket);
-                                            setShowWinnerModal(false);
-                                        }
-                                    }}
-                                >
-                                    세션 완전 종료
-                                </button>
-                            </div>
+                                    fontSize: '1.1rem',
+                                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
+                                    textAlign: 'center'
+                                }}>
+                                    🎉 모든 참가자 여러분 수고하셨습니다! 결과를 축하합니다 🎉
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '1.2rem' }}>
+                                    <button
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            borderRadius: '14px',
+                                            border: 'none',
+                                            background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                                            color: 'white',
+                                            fontWeight: '900',
+                                            fontSize: '0.98rem',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px',
+                                            boxShadow: isStockGame ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 14px rgba(14, 165, 233, 0.35)'
+                                        }}
+                                        onClick={handleCloseWinnerModal}
+                                    >
+                                        <Check size={18} /> 누적 점수 유지하고 계속하기
+                                    </button>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            style={{
+                                                flex: 1,
+                                                padding: '10px',
+                                                borderRadius: '12px',
+                                                border: '1.5px solid #e2e8f0',
+                                                background: 'white',
+                                                color: '#64748b',
+                                                fontWeight: '800',
+                                                fontSize: '0.86rem',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '4px'
+                                            }}
+                                            onClick={() => {
+                                                handleResetScoresOnly();
+                                                handleCloseWinnerModal();
+                                            }}
+                                        >
+                                            <RotateCcw size={14} /> {isStockGame ? '금액 초기화' : '점수 초기화'}
+                                        </button>
+                                        <button
+                                            style={{
+                                                flex: 1,
+                                                padding: '10px',
+                                                borderRadius: '12px',
+                                                border: 'none',
+                                                background: '#fef2f2',
+                                                color: '#ef4444',
+                                                fontWeight: '800',
+                                                fontSize: '0.86rem',
+                                                cursor: 'pointer'
+                                            }}
+                                            onClick={() => {
+                                                if (window.confirm("세션을 완전히 종료하시겠습니까? 모든 참가자의 접속이 해제되고 점수가 초기화됩니다.")) {
+                                                    endSession(socket);
+                                                    handleCloseWinnerModal();
+                                                }
+                                            }}
+                                        >
+                                            세션 완전 종료
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

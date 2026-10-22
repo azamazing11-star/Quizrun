@@ -1437,7 +1437,7 @@ export default function QuizDetail({ socket }) {
                         if (subId === 'sub-comprehensive') {
                             alert('종합 폴더는 각 서브 폴더의 문제가 자동으로 모이는 폴더입니다.\n새 문제는 개별 서브 폴더에서 만들어 주세요.');
                         } else {
-                            navigate('/create', { state: { topicId, subId } });
+                            navigate('/create', { state: { topicId, subId, subTopicTitle } });
                         }
                     }}
                 >

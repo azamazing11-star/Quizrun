@@ -1,3 +1,4 @@
+import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Maximize, Minimize, Tv, Users, Zap, Trophy, CheckCircle, Send } from 'lucide-react';
@@ -203,6 +204,7 @@ export default function ScreenView({ socket }) {
     }, [contextScores]);
 
     const [playerStreams, setPlayerStreams] = useState({});
+    const [winnerModalSync, setWinnerModalSync] = useState(null);
 
     // Listen to live player stream events directly via socket
     useEffect(() => {
@@ -281,7 +283,14 @@ export default function ScreenView({ socket }) {
                 const { type, payload } = event.data || {};
                 setIsConnectedToHost(true);
 
-                if (type === 'MODE_CHANGE') {
+                if (type === 'WINNER_MODAL_SYNC') {
+                    if (payload && payload.open) {
+                        try { playSound('fanfare'); } catch(e){}
+                        setWinnerModalSync(payload);
+                    } else {
+                        setWinnerModalSync(null);
+                    }
+                } else if (type === 'MODE_CHANGE') {
                     if (payload && payload.mode === 'fortune' && isOfflineMode) {
                         navigate('/fortune?subscreen=true');
                     } else if (payload && payload.mode === 'card_game' && isOfflineMode) {
