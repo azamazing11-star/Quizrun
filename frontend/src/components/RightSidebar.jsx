@@ -15,10 +15,10 @@ import {
     RefreshCw, 
     TrendingUp, 
     ArrowLeft, 
-    RotateCcw 
+    RotateCcw, X 
 } from 'lucide-react';
 
-export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGame }) {
+export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGameAndExit, onEndGame }) {
     const [isStockGameSynced, setIsStockGameSynced] = useState(() => {
         try {
             return sessionStorage.getItem('quizrun_active_game_mode') === 'stock_game';
@@ -1011,27 +1011,54 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                     gap: '8px'
                 }}>
                     {onExitToLobby && (
-                        <button
-                            onClick={onExitToLobby}
-                            style={{
-                                width: '100%',
-                                padding: '10px 14px',
-                                borderRadius: '14px',
-                                border: '1.5px solid #cbd5e1',
-                                background: '#f8fafc',
-                                color: '#475569',
-                                fontWeight: '800',
-                                fontSize: '0.92rem',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '6px',
-                                transition: 'all 0.15s'
-                            }}
-                        >
-                            <ArrowLeft size={16} /> 게임 로비로 나가기
-                        </button>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                                onClick={onExitToLobby}
+                                title="참여자 QR코드를 보여주기 위해 홈 로비로 잠시 나갑니다 (언제든 계속하기 가능)"
+                                style={{
+                                    flex: 1,
+                                    padding: '10px 8px',
+                                    borderRadius: '12px',
+                                    border: '1.5px solid #cbd5e1',
+                                    background: '#f8fafc',
+                                    color: '#475569',
+                                    fontWeight: '800',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                    transition: 'all 0.15s'
+                                }}
+                            >
+                                <ArrowLeft size={15} /> 로비로 나가기
+                            </button>
+                            {onEndGameAndExit && (
+                                <button
+                                    onClick={onEndGameAndExit}
+                                    title="현재 게임을 완전히 종료하고 홈으로 돌아갑니다 (진행 중 안내창 삭제)"
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px 8px',
+                                        borderRadius: '12px',
+                                        border: '1.5px solid #fca5a5',
+                                        background: '#fee2e2',
+                                        color: '#dc2626',
+                                        fontWeight: '800',
+                                        fontSize: '0.85rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '4px',
+                                        transition: 'all 0.15s'
+                                    }}
+                                >
+                                    <X size={15} /> 게임 완전 종료
+                                </button>
+                            )}
+                        </div>
                     )}
                     <button
                         onClick={() => {

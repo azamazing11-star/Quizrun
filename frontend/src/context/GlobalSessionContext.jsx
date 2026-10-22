@@ -533,6 +533,9 @@ export function GlobalSessionProvider({ children, socket }) {
         setScores(prev => prev.map(item => ({ ...item, score: 0 })));
         localStorage.removeItem('quizrun_global_session');
         localStorage.removeItem('quizrun_online_participants');
+        localStorage.removeItem('quizrun_active_game_session');
+        sessionStorage.removeItem('quizrun_last_host_state');
+        localStorage.removeItem('quizrun_active_game_id');
 
         // Broadcast to subscreen and other tabs
         try {

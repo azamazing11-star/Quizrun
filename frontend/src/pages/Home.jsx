@@ -640,8 +640,8 @@ export default function Home({ socket }) {
                 <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px)', backgroundSize: '40px 40px', pointerEvents: 'none', zIndex: 0 }} />
 
                 <div style={{ zIndex: 10, textAlign: 'center', marginBottom: '1.5rem' }}>
-                    {/* Resume Active Game Banner if session exists */}
-                    {activeSession && (
+                    {/* Resume Active Game Banner if session exists (Hide on Subscreen) */}
+                    {!isSubScreen && activeSession && (
                         <div style={{
                             marginBottom: '1rem',
                             display: 'inline-flex',
@@ -687,11 +687,10 @@ export default function Home({ socket }) {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    if (window.confirm('진행 중인 게임 세션을 종료하고 새로 시작하시겠습니까?')) {
-                                        localStorage.removeItem('quizrun_active_game_session');
-                                        sessionStorage.removeItem('quizrun_last_host_state');
-                                        setActiveSession(null);
-                                    }
+                                    localStorage.removeItem('quizrun_active_game_session');
+                                    sessionStorage.removeItem('quizrun_last_host_state');
+                                    localStorage.removeItem('quizrun_active_game_id');
+                                    setActiveSession(null);
                                 }}
                                 style={{
                                     background: 'transparent',
@@ -1101,8 +1100,8 @@ export default function Home({ socket }) {
 
             {/* Folder Grid */}
             <div className="folder-grid" style={{ zIndex: 10, marginTop: activeSession ? '20px' : '80px' }}>
-                {/* Resume Active Game Banner in Lobby */}
-                {activeSession && (
+                {/* Resume Active Game Banner in Lobby (Hide on Subscreen) */}
+                {!isSubScreen && activeSession && (
                     <div style={{
                         gridColumn: '1 / -1',
                         marginBottom: '10px',
@@ -1152,11 +1151,10 @@ export default function Home({ socket }) {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    if (window.confirm('진행 중인 게임 세션을 종료하고 새로 시작하시겠습니까?')) {
-                                        localStorage.removeItem('quizrun_active_game_session');
-                                        sessionStorage.removeItem('quizrun_last_host_state');
-                                        setActiveSession(null);
-                                    }
+                                    localStorage.removeItem('quizrun_active_game_session');
+                                    sessionStorage.removeItem('quizrun_last_host_state');
+                                    localStorage.removeItem('quizrun_active_game_id');
+                                    setActiveSession(null);
                                 }}
                                 style={{
                                     background: 'white',

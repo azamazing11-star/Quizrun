@@ -1751,6 +1751,20 @@ export default function Host({ socket }) {
         navigate('/');
     };
 
+    // 현재 진행 중인 게임 세션을 완전히 종료하고 홈으로 복귀 (진행 중인 세션 배너 삭제)
+    const handleEndGameAndExit = () => {
+        try {
+            localStorage.removeItem('quizrun_active_game_session');
+            sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+        navigate('/');
+    };
+
     // RENDER THE ACTIVE MULTIPLAYER GAME SCREEN
     const renderActiveGame = () => {
         const isFallbackGame = !['word_bomb', 'ox_run', 'catch_mind'].includes(gameId);
@@ -1770,13 +1784,24 @@ export default function Host({ socket }) {
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #cbd5e1', paddingBottom: '1rem', marginBottom: '1.5rem', width: '100%' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                            <button 
-                                className="glass-button" 
-                                onClick={handleExitToLobby} 
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}
-                            >
-                                <ArrowLeft size={18} /> 게임 로비로 나가기
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button 
+                                    className="glass-button" 
+                                    onClick={handleExitToLobby} 
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}
+                                    title="참여자 QR코드를 보여주기 위해 홈 로비로 잠시 나갑니다 (언제든 계속하기 가능)"
+                                >
+                                    <ArrowLeft size={18} /> 로비로 잠시 나가기
+                                </button>
+                                <button 
+                                    className="glass-button" 
+                                    onClick={handleEndGameAndExit} 
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', background: '#fee2e2', color: '#dc2626', border: '1.5px solid #fca5a5' }}
+                                    title="현재 게임을 완전히 종료하고 홈으로 돌아갑니다 (진행 중 안내창 삭제)"
+                                >
+                                    <X size={18} /> 게임 완전 종료
+                                </button>
+                            </div>
                             <h2 
                                 style={{ 
                                     fontSize: '2.2rem', 
@@ -2018,7 +2043,8 @@ export default function Host({ socket }) {
                             <RightSidebar 
                                 socket={socket} 
                                 isStockGame={true} 
-                                onExitToLobby={handleExitToLobby} 
+                                onExitToLobby={handleExitToLobby}
+                                onEndGameAndExit={handleEndGameAndExit}
                                 onEndGame={endGeneralMultiplayerGame} 
                             />
                         ) : (
@@ -2094,9 +2120,14 @@ export default function Host({ socket }) {
                                     gap: '12px', 
                                     boxShadow: '0 4px 15px rgba(0,0,0,0.03)'
                                 }}>
-                                    <button className="glass-button" onClick={handleExitToLobby} style={{ width: '100%', background: '#64748b', color: 'white', border: 'none', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '1.05rem', cursor: 'pointer' }}>
-                                        게임 로비로 나가기
-                                    </button>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button className="glass-button" onClick={handleExitToLobby} style={{ flex: 1, background: '#64748b', color: 'white', border: 'none', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '0.92rem', cursor: 'pointer' }} title="참여자 QR코드를 보여주기 위해 홈 로비로 잠시 나갑니다">
+                                            로비로 나가기
+                                        </button>
+                                        <button className="glass-button" onClick={handleEndGameAndExit} style={{ flex: 1, background: '#fee2e2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '0.92rem', cursor: 'pointer' }} title="현재 게임을 완전히 종료하고 홈으로 돌아갑니다">
+                                            게임 완전 종료
+                                        </button>
+                                    </div>
                                     <button className="glass-button" onClick={endGeneralMultiplayerGame} style={{ width: '100%', background: '#ef4444', color: 'white', border: 'none', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '1.05rem', cursor: 'pointer' }}>
                                         게임 종료 및 결과 발표
                                     </button>
