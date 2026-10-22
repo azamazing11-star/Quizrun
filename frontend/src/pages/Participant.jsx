@@ -840,6 +840,7 @@ export default function Participant({ socket }) {
     // Floating universal back button for all mobile participants
     const renderUniversalBackButton = () => {
         if (gameState === 'join') return null; // 'join' already has its dedicated back button
+        if (gameId === 'stock_game') return null; // 주식 게임에서는 이전 단계 버튼 숨김
         return (
             <button
                 type="button"
@@ -1332,7 +1333,6 @@ export default function Participant({ socket }) {
         if (gameId === 'stock_game') {
             return (
                 <div style={{ width: '100%', minHeight: '100vh', background: '#090d16', position: 'relative' }}>
-                    {renderUniversalBackButton()}
                     {!isLoading && (
                         <div style={{
                             position: 'fixed',

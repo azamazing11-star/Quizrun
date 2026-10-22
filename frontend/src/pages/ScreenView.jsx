@@ -411,7 +411,9 @@ export default function ScreenView({ socket }) {
             if (payload) {
                 setStockGameData(prev => ({
                     ...prev,
-                    ...payload
+                    ...payload,
+                    // If payload does not explicitly specify allOrdersModalOpen, preserve existing view state
+                    allOrdersModalOpen: payload.allOrdersModalOpen !== undefined ? payload.allOrdersModalOpen : prev.allOrdersModalOpen
                 }));
             }
         };

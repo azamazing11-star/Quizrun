@@ -2873,7 +2873,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             allowAllVipHint: cur.allowAllVipHint,
             predictions: {},
             predictionResults: cur.predictionResults,
-            allOrdersModalOpen: false,
+            allOrdersModalOpen: cur.allOrdersModalOpen,
             tradingProgressModalOpen: false,
             completedTrades: {},
             teamList: cur.teamList || teamList
@@ -3070,7 +3070,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 } else if (msg && msg.event === 'stock_game:vip_hint_selected' && msg.payload) {
                     handleVipHintMsg(msg.payload);
                 } else if (msg && msg.event === 'stock_game:participant_activity' && msg.payload) {
-                    handleActivityMsg(msg.payload);
+                    // Handled exclusively by dedicated socket listener to prevent duplicate counting
                 } else if (msg && (msg.event === 'stock_game:request_sync' || msg.type === 'stock_game:request_sync')) {
                     broadcastStockState();
                 }
@@ -6303,15 +6303,17 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%' }}>
                                             <button
                                                 onClick={() => setTradeQty(Math.max(0, numQty - 100))}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                                title="100주 빼기"
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '52px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
-                                                -100
+                                                -100주
                                             </button>
                                             <button
                                                 onClick={() => setTradeQty(Math.max(0, numQty - 10))}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '40px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                                title="10주 빼기"
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
-                                                -10
+                                                -10주
                                             </button>
                                             <div style={{
                                                 flex: 1,
@@ -6348,16 +6350,21 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             </div>
                                             <button
                                                 onClick={() => setTradeQty(numQty + 10)}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '40px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                                title="10주 더하기"
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
-                                                +10
+                                                +10주
                                             </button>
                                             <button
                                                 onClick={() => setTradeQty(numQty + 100)}
-                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                                title="100주 더하기"
+                                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '52px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
                                             >
-                                                +100
+                                                +100주
                                             </button>
+                                        </div>
+                                        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                                            💡 위 버튼으로 매매 수량을 10주, 100주 단위로 빠르게 늘리거나 줄일 수 있습니다.
                                         </div>
                                     </div>
 

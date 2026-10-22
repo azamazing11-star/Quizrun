@@ -340,6 +340,28 @@ export default function Host({ socket }) {
         return () => socket.off('room:message', handleRoomMsg);
     }, [socket]);
 
+    // Socket auto-reconnect: re-claim room and fetch participants when server reconnects
+    useEffect(() => {
+        if (!socket) return;
+        const handleReconnect = () => {
+            const targetPin = location.state?.pin || pin;
+            if (targetPin) {
+                socket.emit('host:createRoom', { 
+                    pin: String(targetPin).trim(), 
+                    mode: isOffline ? 'offline' : 'normal',
+                    quizId: gameId,
+                    isGame: Boolean(isGame)
+                }, (res) => {
+                    if (res && res.participants && Array.isArray(res.participants)) {
+                        setParticipants(res.participants);
+                    }
+                });
+            }
+        };
+        socket.on('connect', handleReconnect);
+        return () => socket.off('connect', handleReconnect);
+    }, [socket, pin, isOffline, gameId, isGame, location.state]);
+
     // --- DUAL SCREEN & PRESENTER VIEW STATES ---
     const screenChannelRef = useRef(null);
     const [isScreenConnected, setIsScreenConnected] = useState(false);

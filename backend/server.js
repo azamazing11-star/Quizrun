@@ -1884,14 +1884,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- STOCK GAME DIRECT SOCKET RELAYS (Participant -> Host ONLY) ---
+  // --- STOCK GAME DIRECT SOCKET RELAYS (Always broadcast to room PIN so host/screen/reconnected sockets never miss) ---
   socket.on('stock_game:execute_order', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
       const room = rooms[cleanPin] || rooms[data.pin];
-      if (room && room.hostId) {
+      // Relay to all sockets in the room (guarantees delivery even if host reconnected with new socket.id)
+      io.to(cleanPin).emit('stock_game:execute_order', data);
+      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:execute_order', payload: data });
+      if (room && room.hostId && room.hostId !== socket.id) {
         io.to(room.hostId).emit('stock_game:execute_order', data);
-        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:execute_order', payload: data });
       }
     }
   });
@@ -1900,9 +1902,10 @@ io.on('connection', (socket) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
       const room = rooms[cleanPin] || rooms[data.pin];
-      if (room && room.hostId) {
+      io.to(cleanPin).emit('stock_game:predict', data);
+      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:predict', payload: data });
+      if (room && room.hostId && room.hostId !== socket.id) {
         io.to(room.hostId).emit('stock_game:predict', data);
-        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:predict', payload: data });
       }
     }
   });
@@ -1911,9 +1914,10 @@ io.on('connection', (socket) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
       const room = rooms[cleanPin] || rooms[data.pin];
-      if (room && room.hostId) {
+      io.to(cleanPin).emit('stock_game:vip_hint_selected', data);
+      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:vip_hint_selected', payload: data });
+      if (room && room.hostId && room.hostId !== socket.id) {
         io.to(room.hostId).emit('stock_game:vip_hint_selected', data);
-        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:vip_hint_selected', payload: data });
       }
     }
   });
@@ -1922,9 +1926,10 @@ io.on('connection', (socket) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
       const room = rooms[cleanPin] || rooms[data.pin];
-      if (room && room.hostId) {
+      io.to(cleanPin).emit('stock_game:participant_activity', data);
+      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:participant_activity', payload: data });
+      if (room && room.hostId && room.hostId !== socket.id) {
         io.to(room.hostId).emit('stock_game:participant_activity', data);
-        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:participant_activity', payload: data });
       }
     }
   });
@@ -1933,9 +1938,10 @@ io.on('connection', (socket) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
       const room = rooms[cleanPin] || rooms[data.pin];
-      if (room && room.hostId) {
+      io.to(cleanPin).emit('stock_game:request_sync', data);
+      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:request_sync', payload: data });
+      if (room && room.hostId && room.hostId !== socket.id) {
         io.to(room.hostId).emit('stock_game:request_sync', data);
-        io.to(room.hostId).emit('room:message', { sender: socket.id, event: 'stock_game:request_sync', payload: data });
       }
     }
   });
@@ -1943,6 +1949,10 @@ io.on('connection', (socket) => {
   socket.on('stock_game:state_sync', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
+      if (room) {
+        room.hostId = socket.id; // Refresh host socket ID so it never points to dead socket
+      }
       io.to(cleanPin).emit('stock_game:state_sync', data);
       io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:state_sync', payload: data });
     }
