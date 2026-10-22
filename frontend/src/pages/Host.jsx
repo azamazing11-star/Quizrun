@@ -379,7 +379,7 @@ export default function Host({ socket }) {
         const total = list.length;
         const ox = list.filter(q => q.type === 'ox' || (q.options && q.options.length === 2)).length;
         const mcq = list.filter(q => q.type === 'mcq' || (q.options && q.options.length > 2 && q.options.some(opt => opt && String(opt).trim() !== ''))).length;
-        const short = list.filter(q => q.type === 'short' || ((!q.options || q.options.length === 0 || q.options.every(opt => !opt || String(opt).trim() !== '')) && Boolean(q.answer && String(q.answer).trim() !== ''))).length;
+        const short = list.filter(q => q.type === 'short' || q.isSpotDiff || q.mediaUrl2 || ((!q.options || q.options.length === 0 || q.options.every(opt => !opt || String(opt).trim() !== '')) && Boolean(q.answer && String(q.answer).trim() !== ''))).length;
         return { total, mcq, ox, short };
     }, [allQuizQuestions]);
 

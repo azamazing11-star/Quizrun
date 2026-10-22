@@ -1197,12 +1197,24 @@ export default function Create({ socket }) {
     const handleCreateRoom = () => {
         // 질문 텍스트(text)가 없더라도 이미지/미디어(mediaUrl)나 정답/선택지가 입력되어 있으면 유효 문제로 인지
         const validQuestions = questions.filter(q => {
+            const isSpot = Boolean(q.isSpotDiff || isSpotDiffFolder || q.mediaUrl2 || (q.diffSpots && q.diffSpots.length > 0));
             const hasText = Boolean(q.text && q.text.trim());
-            const hasMedia = Boolean(q.mediaUrl && q.mediaUrl.trim());
-            const hasAnswer = Boolean((q.answer && q.answer.trim()) || (q.options && q.options.some(o => o && o.trim())));
-            return hasText || hasMedia || hasAnswer;
+            const hasMedia = Boolean((q.mediaUrl && q.mediaUrl.trim()) || (q.mediaUrl2 && q.mediaUrl2.trim()));
+            const hasAnswer = Boolean((q.answer && q.answer.trim()) || (q.options && q.options.some(o => o && o.trim())) || (q.diffSpots && q.diffSpots.length > 0));
+            return isSpot || hasText || hasMedia || hasAnswer;
         }).map(q => {
-            // 질문 텍스트가 비어있으면 미디어 타입에 맞는 기본 안내 텍스트를 자동 할당
+            const isSpot = Boolean(q.isSpotDiff || isSpotDiffFolder || q.mediaUrl2 || (q.diffSpots && q.diffSpots.length > 0));
+            if (isSpot) {
+                return {
+                    ...q,
+                    isSpotDiff: true,
+                    type: 'short',
+                    text: (q.text && q.text.trim()) ? q.text.trim() : '두 그림을 비교하여 틀린 부분을 모두 찾아보세요!',
+                    answer: (q.answer && q.answer.trim()) ? q.answer.trim() : `틀린 곳 ${(q.diffSpots || []).length || 3}군데`,
+                    timeLimit: q.timeLimit || 60,
+                    diffSpots: q.diffSpots || []
+                };
+            }
             if (!q.text || !q.text.trim()) {
                 let defaultText = '다음 문제의 정답을 맞혀보세요!';
                 if (q.mediaType === 'image' || q.mediaDisplayMode === 'image') {
@@ -1229,7 +1241,19 @@ export default function Create({ socket }) {
                 data[mode] = [];
 
                 localStorage.setItem(key, JSON.stringify(data));
-                socket.emit('quiz:saveQuestions', { topicId, subId, data }, (res) => {
+            try {
+                const cachedCounts = JSON.parse(localStorage.getItem('quizrun_cached_counts') || '{}');
+                const totalQ = (data.mcq || []).length + (data.short || []).length + (data.ox || []).length;
+                cachedCounts[key] = totalQ;
+                localStorage.setItem('quizrun_cached_counts', JSON.stringify(cachedCounts));
+            } catch(e) {}
+
+            socket.emit('quiz:saveQuestions', { topicId, subId, data }, (res) => {
+                socket.emit('quiz:getAllCounts', (cntRes) => {
+                    if (cntRes && cntRes.success && cntRes.counts) {
+                        try { localStorage.setItem('quizrun_cached_counts', JSON.stringify(cntRes.counts)); } catch(e){}
+                    }
+                });
                     alert('모든 문제가 삭제되어 빈 폴더로 저장되었습니다.');
                     navigate(`/quiz/${topicId}/${subId}`);
                 });
@@ -1259,7 +1283,12 @@ export default function Create({ socket }) {
                 q.options = [opt0, opt1];
                 q.answer = q.correctIndex === 1 ? opt1 : opt0;
             } else {
-                if (!q.answer.trim()) {
+                if (q.isSpotDiff) {
+                    if (!q.mediaUrl && !q.mediaUrl2) {
+                        alert(`${i + 1}번째 숨은그림찾기 문제의 이미지를 최소 1장 이상 등록해주세요.`);
+                        return;
+                    }
+                } else if (!q.answer || !q.answer.trim()) {
                     alert(`"${q.text.slice(0, 20)}" 문제의 정답을 입력해주세요.`);
                     return;
                 }
@@ -1526,7 +1555,7 @@ export default function Create({ socket }) {
                             </div>
 
                             {/* Batch Chosung Mode */}
-                            {mode === 'short' && (
+                            {mode === 'short' && !isSpotDiffFolder && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#334155' }}>초성 힌트:</span>
                                     <button
@@ -2159,7 +2188,8 @@ export default function Create({ socket }) {
                                 )}
                             </div>
 
-{/* Media File Upload / Attach Section */}
+{/* Media File Upload / Attach Section (Hide if spot difference) */}
+                            {!(q.isSpotDiff ?? isSpotDiffFolder) && (
                             <div style={{ marginBottom: '20px', background: '#f8fafc', padding: '14px', borderRadius: '12px', border: '1px border #e2e8f0' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                     <label style={{ fontWeight: 'bold', color: '#334155', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -2322,6 +2352,8 @@ export default function Create({ socket }) {
                                 )}
                             </div>
 
+                            )}
+
                             {mode === 'ox' ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                     <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2425,16 +2457,25 @@ export default function Create({ socket }) {
                             </div>
                         ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '16px', border: '2px solid var(--ans-green)', flex: 1, display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                    <CheckCircle size={24} color="var(--ans-green)" />
-                                    <input
-                                        type="text"
-                                        style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: '1.2rem', fontWeight: 'bold' }}
-                                        placeholder="정답을 입력하세요"
-                                        value={q.answer}
-                                        onChange={(e) => handleAnswerChange(qIndex, e.target.value)}
-                                    />
-                                </div>
+                                {(q.isSpotDiff ?? isSpotDiffFolder) ? (
+                                    <div style={{ background: '#ecfdf5', padding: '16px', borderRadius: '16px', border: '2px solid #10b981', flex: 1, display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                        <CheckCircle size={24} color="#059669" />
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#065f46' }}>
+                                            🎯 정답 설정: 틀린 그림에 마킹된 {(q.diffSpots || []).length}군데 위치 (자동 감지)
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '16px', border: '2px solid var(--ans-green)', flex: 1, display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                        <CheckCircle size={24} color="var(--ans-green)" />
+                                        <input
+                                            type="text"
+                                            style={{ border: 'none', background: 'transparent', width: '100%', outline: 'none', fontSize: '1.2rem', fontWeight: 'bold' }}
+                                            placeholder="정답을 입력하세요"
+                                            value={q.answer}
+                                            onChange={(e) => handleAnswerChange(qIndex, e.target.value)}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         )}
                         <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '6px' }}>

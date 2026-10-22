@@ -263,7 +263,7 @@ export default function QuizDetail({ socket }) {
             allQuestions = [
                 ...(data.mcq || []).map(q => ({ ...q, type: 'mcq' })),
                 ...(data.ox || []).map(q => ({ ...q, type: 'ox' })),
-                ...(data.short || []).map(q => ({ ...q, type: 'short' }))
+                ...(data.short || []).map(q => ({ ...q, type: 'short', isSpotDiff: Boolean(q.isSpotDiff || q.mediaUrl2) }))
             ];
             
             if (allQuestions.length === 0) {
