@@ -806,16 +806,38 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
 });
 
 const server = http.createServer(app);
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
+
 const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  pingInterval: 25000,
-  pingTimeout: 30000,
+  pingInterval: 10000,
+  pingTimeout: 20000,
   maxHttpBufferSize: 1e8,
   transports: ['websocket', 'polling']
 });
+
+function broadcastParticipants(pin) {
+  const cleanPin = String(pin || '').trim();
+  const room = rooms[cleanPin];
+  if (!room) return;
+
+  if (room.participantsUpdateTimer) {
+    return;
+  }
+
+  room.participantsUpdateTimer = setTimeout(() => {
+    delete room.participantsUpdateTimer;
+    if (!rooms[cleanPin]) return;
+
+    if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
+    io.to(cleanPin).emit('host:participantsUpdated', room.participants);
+    io.to(cleanPin).emit('room:participantCount', { count: room.participants.length });
+  }, 100);
+}
 
 const MOCK_QUIZZES = {
   'general': {
@@ -1546,7 +1568,7 @@ io.on('connection', (socket) => {
     console.log(`Room ${pin} buzzer judge: Group ${buzzedGroupId} -> ${isCorrect ? 'CORRECT' : 'INCORRECT'}. Scores:`, room.groupScores);
   });
 
-  socket.on('participant:joinRoom', ({ pin, nickname }, callback) => {
+  socket.on('participant:joinRoom', ({ pin, nickname, clientId }, callback) => {
     const cleanPin = String(pin || '').trim();
     let room = rooms[cleanPin] || rooms[pin];
     if (!room) {
@@ -1573,21 +1595,35 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Check if participant with this nickname already exists (reconnection / page refresh)
-    const existingP = room.participants.find(p => p.nickname === nickname);
+    const cleanNickname = String(nickname || '참가자').trim() || '참가자';
+    const effectiveClientId = clientId || ('c_' + socket.id);
+
+    // 1. Identify by clientId FIRST (reconnection / page refresh of the same device)
+    let existingP = null;
+    if (clientId) {
+      existingP = room.participants.find(p => p.clientId === clientId);
+    }
+
     if (existingP) {
       if (existingP.disconnectTimer) {
         clearTimeout(existingP.disconnectTimer);
         delete existingP.disconnectTimer;
       }
       existingP.id = socket.id;
+      // If user provided a different non-colliding nickname upon reconnect, allow update
+      if (cleanNickname && cleanNickname !== existingP.nickname) {
+        const nickTaken = room.participants.some(p => p !== existingP && p.nickname.toLowerCase() === cleanNickname.toLowerCase());
+        if (!nickTaken) {
+          existingP.nickname = cleanNickname;
+        }
+      }
       socket.join(cleanPin);
-      if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-      io.to(cleanPin).emit('host:participantsUpdated', room.participants);
-      io.to(cleanPin).emit('stock_game:participant_joined', { participants: room.participants, participant: existingP });
+      broadcastParticipants(cleanPin);
+      if (room.hostId) io.to(room.hostId).emit('stock_game:participant_joined', { participants: room.participants, participant: existingP });
       const currentQ = room.quiz?.questions?.[room.currentQuestionIndex];
       if (callback) callback({ 
         success: true, 
+        nickname: existingP.nickname,
         roomState: room.state === 'lobby' ? 'waiting' : room.state, 
         isBuzzerMode: room.isBuzzerMode,
         quizType: room.quiz?.quizType || 'mcq',
@@ -1616,14 +1652,24 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // 2. New participant joining: check if game already started
     if (room.state !== 'lobby' && !room.isGame) {
       if (callback) callback({ success: false, message: '게임이 이미 시작되었습니다.' });
       return;
     }
 
+    // 3. Ensure nickname is 100% unique (Never overwrite or steal another participant's session)
+    let uniqueNickname = cleanNickname;
+    let counter = 2;
+    while (room.participants.some(p => p.nickname.toLowerCase() === uniqueNickname.toLowerCase())) {
+      uniqueNickname = `${cleanNickname} #${counter}`;
+      counter++;
+    }
+
     const newParticipant = {
       id: socket.id,
-      nickname,
+      clientId: effectiveClientId,
+      nickname: uniqueNickname,
       score: 0,
       hasAnswered: false,
       currentAnswer: null,
@@ -1634,11 +1680,11 @@ io.on('connection', (socket) => {
     room.participants.push(newParticipant);
     socket.join(cleanPin);
 
-    if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-    io.to(cleanPin).emit('host:participantsUpdated', room.participants);
-    io.to(cleanPin).emit('stock_game:participant_joined', { participants: room.participants, participant: newParticipant });
+    broadcastParticipants(cleanPin);
+    if (room.hostId) io.to(room.hostId).emit('stock_game:participant_joined', { participants: room.participants, participant: newParticipant });
     if (callback) callback({ 
       success: true, 
+      nickname: uniqueNickname,
       roomState: room.state === 'lobby' ? 'waiting' : room.state, 
       isBuzzerMode: room.isBuzzerMode,
       quizType: room.quiz?.quizType || 'mcq',
@@ -1847,8 +1893,7 @@ io.on('connection', (socket) => {
 
               if (p.score !== newScore) {
                 p.score = newScore;
-                if (room.hostId) io.to(room.hostId).emit('host:participantsUpdated', room.participants);
-                io.to(cleanPin).emit('host:participantsUpdated', room.participants);
+                broadcastParticipants(cleanPin);
               }
             }
           }
@@ -1884,65 +1929,39 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- STOCK GAME DIRECT SOCKET RELAYS (Always broadcast to room PIN so host/screen/reconnected sockets never miss) ---
+  // --- STOCK GAME DIRECT SOCKET RELAYS (Relayed cleanly to room PIN without duplicate payload flooding) ---
   socket.on('stock_game:execute_order', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      const room = rooms[cleanPin] || rooms[data.pin];
-      // Relay to all sockets in the room (guarantees delivery even if host reconnected with new socket.id)
       io.to(cleanPin).emit('stock_game:execute_order', data);
-      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:execute_order', payload: data });
-      if (room && room.hostId && room.hostId !== socket.id) {
-        io.to(room.hostId).emit('stock_game:execute_order', data);
-      }
     }
   });
 
   socket.on('stock_game:predict', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      const room = rooms[cleanPin] || rooms[data.pin];
       io.to(cleanPin).emit('stock_game:predict', data);
-      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:predict', payload: data });
-      if (room && room.hostId && room.hostId !== socket.id) {
-        io.to(room.hostId).emit('stock_game:predict', data);
-      }
     }
   });
 
   socket.on('stock_game:vip_hint_selected', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      const room = rooms[cleanPin] || rooms[data.pin];
       io.to(cleanPin).emit('stock_game:vip_hint_selected', data);
-      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:vip_hint_selected', payload: data });
-      if (room && room.hostId && room.hostId !== socket.id) {
-        io.to(room.hostId).emit('stock_game:vip_hint_selected', data);
-      }
     }
   });
 
   socket.on('stock_game:participant_activity', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      const room = rooms[cleanPin] || rooms[data.pin];
       io.to(cleanPin).emit('stock_game:participant_activity', data);
-      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:participant_activity', payload: data });
-      if (room && room.hostId && room.hostId !== socket.id) {
-        io.to(room.hostId).emit('stock_game:participant_activity', data);
-      }
     }
   });
 
   socket.on('stock_game:request_sync', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      const room = rooms[cleanPin] || rooms[data.pin];
       io.to(cleanPin).emit('stock_game:request_sync', data);
-      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:request_sync', payload: data });
-      if (room && room.hostId && room.hostId !== socket.id) {
-        io.to(room.hostId).emit('stock_game:request_sync', data);
-      }
     }
   });
 
@@ -1951,10 +1970,9 @@ io.on('connection', (socket) => {
       const cleanPin = String(data.pin).trim();
       const room = rooms[cleanPin] || rooms[data.pin];
       if (room) {
-        room.hostId = socket.id; // Refresh host socket ID so it never points to dead socket
+        room.hostId = socket.id;
       }
       io.to(cleanPin).emit('stock_game:state_sync', data);
-      io.to(cleanPin).emit('room:message', { sender: socket.id, event: 'stock_game:state_sync', payload: data });
     }
   });
 

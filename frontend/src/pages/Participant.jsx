@@ -17,6 +17,20 @@ import AirplaneGame from '../components/AirplaneGame';
 
 export { CardMatchGame, TetrisGame, BrickBreakerGame, AirplaneGame };
 
+function getOrCreateClientId() {
+    let cid = null;
+    try {
+        cid = sessionStorage.getItem('quizrun_client_id');
+        if (!cid) {
+            cid = 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
+            sessionStorage.setItem('quizrun_client_id', cid);
+        }
+    } catch (e) {
+        cid = 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
+    }
+    return cid;
+}
+
 export default function Participant({ socket }) {
     const location = useLocation();
     const navigate = useNavigate();
@@ -26,6 +40,7 @@ export default function Participant({ socket }) {
     const [currentPoints, setCurrentPoints] = useState(10);
     const [autoReconnecting, setAutoReconnecting] = useState(false);
     const hasAttemptedAutoJoin = useRef(false);
+    const clientIdRef = useRef(getOrCreateClientId());
 
     const [gameState, setGameState] = useState('join');
     const [hasJoined, setHasJoined] = useState(false);
@@ -68,15 +83,26 @@ export default function Participant({ socket }) {
         const p = params.get('pin');
         if (p) setPin(p);
 
-        // Auto-reconnect when scanning QR code with saved nickname
+        // Pre-fill nickname from localStorage if present
         const savedNickname = localStorage.getItem('quizrun_nickname');
-        if (p && savedNickname && socketConnected && !hasJoined && !hasAttemptedAutoJoin.current) {
+        if (savedNickname && !nickname) {
+            setNickname(savedNickname);
+        }
+
+        // Auto-reconnect when scanning QR code ONLY if this session had ALREADY joined this room
+        const hasJoinedSession = sessionStorage.getItem('quizrun_joined') === 'true' && sessionStorage.getItem('quizrun_pin') === String(p).trim();
+        if (p && savedNickname && socketConnected && hasJoinedSession && !hasJoined && !hasAttemptedAutoJoin.current) {
             hasAttemptedAutoJoin.current = true;
             setAutoReconnecting(true);
-            socket.emit('participant:joinRoom', { pin: String(p).trim(), nickname: savedNickname }, (res) => {
+            const myClientId = clientIdRef.current || getOrCreateClientId();
+            socket.emit('participant:joinRoom', { pin: String(p).trim(), nickname: savedNickname, clientId: myClientId }, (res) => {
                 setAutoReconnecting(false);
                 if (res.success) {
                     setHasJoined(true);
+                    if (res.nickname) {
+                        setNickname(res.nickname);
+                        localStorage.setItem('quizrun_nickname', res.nickname);
+                    }
                     setIsBuzzerMode(!!res.isBuzzerMode);
                     const qType = res.quizType || 'mcq';
                     setQuizType(qType);
@@ -189,9 +215,14 @@ export default function Participant({ socket }) {
             const currentNick = nicknameRef.current || localStorage.getItem('quizrun_nickname');
             if (currentPin && currentNick && (hasJoinedRef.current || sessionStorage.getItem('quizrun_joined') === 'true')) {
                 console.log('[Auto-Rejoin] Socket reconnected, re-joining room:', currentPin, currentNick);
-                socket.emit('participant:joinRoom', { pin: String(currentPin).trim(), nickname: currentNick }, (res) => {
+                const myClientId = clientIdRef.current || getOrCreateClientId();
+                socket.emit('participant:joinRoom', { pin: String(currentPin).trim(), nickname: currentNick, clientId: myClientId }, (res) => {
                     if (res && res.success) {
                         setHasJoined(true);
+                        if (res.nickname) {
+                            setNickname(res.nickname);
+                            localStorage.setItem('quizrun_nickname', res.nickname);
+                        }
                         if (res.myScore !== undefined) setMyScore(res.myScore);
                         if (res.groupId !== undefined && res.groupId !== null) setGroupId(res.groupId);
                         if (res.roomState) {
@@ -213,7 +244,8 @@ export default function Participant({ socket }) {
         const timeout = setTimeout(() => setIsLoading(false), 5000);
         socket.on('room:stateUpdate', (data) => {
             if (data.participants && Array.isArray(data.participants)) {
-                const me = data.participants.find(p => p.id === socket.id || (p.nickname && p.nickname === nickname));
+                const myClientId = clientIdRef.current || sessionStorage.getItem('quizrun_client_id');
+                const me = data.participants.find(p => (myClientId && p.clientId === myClientId) || p.id === socket.id || (p.nickname && p.nickname === nickname));
                 if (me) {
                     setHasJoined(true);
                     if (me.score !== undefined) {
@@ -476,7 +508,8 @@ export default function Participant({ socket }) {
 
         const onParticipantsUpdated = (updated) => {
             if (Array.isArray(updated)) {
-                const me = updated.find(p => p.id === socket.id || (p.nickname && p.nickname === nickname));
+                const myClientId = clientIdRef.current || sessionStorage.getItem('quizrun_client_id');
+                const me = updated.find(p => (myClientId && p.clientId === myClientId) || p.id === socket.id || (p.nickname && p.nickname === nickname));
                 if (me && me.score !== undefined) {
                     setMyScore(me.score);
                 }
@@ -538,11 +571,18 @@ export default function Participant({ socket }) {
 
         const doEmitJoin = () => {
             setIsLoading(true);
-            socket.emit('participant:joinRoom', { pin: cleanPin, nickname }, (res) => {
+            const myClientId = clientIdRef.current || getOrCreateClientId();
+            socket.emit('participant:joinRoom', { pin: cleanPin, nickname, clientId: myClientId }, (res) => {
                 setIsLoading(false);
                 if (res && res.success) {
                     setHasJoined(true);
-                    localStorage.setItem('quizrun_nickname', nickname);
+                    const finalNick = res.nickname || nickname;
+                    setNickname(finalNick);
+                    localStorage.setItem('quizrun_nickname', finalNick);
+                    try {
+                        sessionStorage.setItem('quizrun_joined', 'true');
+                        sessionStorage.setItem('quizrun_pin', cleanPin);
+                    } catch (e) {}
                     setIsBuzzerMode(!!res.isBuzzerMode);
                     const qType = res.quizType || 'mcq';
                     setQuizType(qType);

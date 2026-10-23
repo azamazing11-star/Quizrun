@@ -2791,6 +2791,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
 
     // 서브 모니터 및 브로드캐스트 채널
     const channelRef = useRef(null);
+    const processedOrdersRef = useRef(new Set());
 
     // 실시간 상태 ref (이벤트 리스너 및 브로드캐스트 내 클로저 최신성 100% 보장)
     const stateRef = useRef({
@@ -2940,6 +2941,13 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     const strNick = payload.nickname ? String(payload.nickname).trim() : '';
                     const strTeamId = payload.teamId ? String(payload.teamId).trim() : '';
                     const playerKey = strNick || strTeamId || '1';
+                    const orderId = payload.orderId || `${playerKey}_${payload.stockKey}_${payload.tradeType}_${payload.qty}_${payload.cash}`;
+                    if (processedOrdersRef.current.has(orderId)) return;
+                    processedOrdersRef.current.add(orderId);
+                    if (processedOrdersRef.current.size > 2000) {
+                        const arr = Array.from(processedOrdersRef.current);
+                        processedOrdersRef.current = new Set(arr.slice(arr.length - 1000));
+                    }
                     setPortfolios(prev => {
                         const existing = prev[playerKey] || (strNick && prev[strNick]) || {
                             seedMoney: 1000000,
@@ -3063,15 +3071,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             };
 
             const handleRoomMessage = (msg) => {
-                if (msg && msg.event === 'stock_game:predict' && msg.payload) {
-                    handlePredictMsg(msg.payload);
-                } else if (msg && msg.event === 'stock_game:execute_order' && msg.payload) {
-                    handleExecuteOrderMsg(msg.payload);
-                } else if (msg && msg.event === 'stock_game:vip_hint_selected' && msg.payload) {
-                    handleVipHintMsg(msg.payload);
-                } else if (msg && msg.event === 'stock_game:participant_activity' && msg.payload) {
-                    // Handled exclusively by dedicated socket listener to prevent duplicate counting
-                } else if (msg && (msg.event === 'stock_game:request_sync' || msg.type === 'stock_game:request_sync')) {
+                if (msg && (msg.event === 'stock_game:request_sync' || msg.type === 'stock_game:request_sync')) {
                     broadcastStockState();
                 }
             };
@@ -5576,6 +5576,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         }));
 
         const orderData = {
+            orderId: 'ord_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8),
             pin,
             teamId: myPlayerKey,
             nickname: nickname || myPlayerKey,
@@ -5590,11 +5591,6 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
 
         if (socket && pin) {
             socket.emit('stock_game:execute_order', orderData);
-            socket.emit('room:message', {
-                pin,
-                event: 'stock_game:execute_order',
-                payload: orderData
-            });
         }
 
         setTradeQty(0);
