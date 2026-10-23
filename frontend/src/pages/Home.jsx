@@ -120,27 +120,54 @@ export default function Home({ socket }) {
     const [isCopied, setIsCopied] = useState(false);
     const [showGitModal, setShowGitModal] = useState(false);
     const [currentMode, setCurrentMode] = useState('intro'); // 'intro', 'quizrun', 'gamerun'
-    const [activeSession, setActiveSession] = useState(() => {
+    const getValidActiveSession = () => {
         try {
-            const raw = localStorage.getItem('quizrun_active_game_session') || sessionStorage.getItem('quizrun_last_host_state');
-            return raw ? JSON.parse(raw) : null;
+            const raw = localStorage.getItem('quizrun_active_game_session');
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || !parsed.pin) return null;
+
+            // 1. Casual / single-round widgets that have no continuous multi-round sessions
+            if (['fortune', 'ladder'].includes(parsed.gameId)) {
+                localStorage.removeItem('quizrun_active_game_session');
+                sessionStorage.removeItem('quizrun_last_host_state');
+                return null;
+            }
+
+            // 2. Expiration: If session was saved more than 20 minutes ago, consider it ended/abandoned
+            if (parsed.savedAt && (Date.now() - parsed.savedAt > 20 * 60 * 1000)) {
+                localStorage.removeItem('quizrun_active_game_session');
+                sessionStorage.removeItem('quizrun_last_host_state');
+                return null;
+            }
+
+            // 3. If gameState was already ended/leaderboard
+            if (['leaderboard', 'final_leaderboard', 'terminated', 'ended'].includes(parsed.gameState)) {
+                localStorage.removeItem('quizrun_active_game_session');
+                sessionStorage.removeItem('quizrun_last_host_state');
+                return null;
+            }
+
+            return parsed;
         } catch (e) {
             return null;
         }
-    });
+    };
+
+    const [activeSession, setActiveSession] = useState(() => getValidActiveSession());
 
     // Check periodically for active session updates
     useEffect(() => {
         const checkSession = () => {
-            try {
-                const raw = localStorage.getItem('quizrun_active_game_session') || sessionStorage.getItem('quizrun_last_host_state');
-                const parsed = raw ? JSON.parse(raw) : null;
-                setActiveSession(parsed);
-            } catch (e) {}
+            setActiveSession(getValidActiveSession());
         };
         checkSession();
         window.addEventListener('storage', checkSession);
-        return () => window.removeEventListener('storage', checkSession);
+        window.addEventListener('quizrun_session_ended', checkSession);
+        return () => {
+            window.removeEventListener('storage', checkSession);
+            window.removeEventListener('quizrun_session_ended', checkSession);
+        };
     }, []);
 
     // Detect if this window is the Sub-Monitor screen
@@ -1214,14 +1241,6 @@ export default function Home({ socket }) {
                             if (isGameLobby) {
                                 // Online mode: ALL GameRun games launch via /host (like Mini Tetris) so online participants play and Top 1-2-3 show on Main & Sub monitors
                                 if (!isOffline) {
-                                    try {
-                                        sessionStorage.setItem('quizrun_last_host_state', JSON.stringify({ 
-                                            isGame: true, 
-                                            gameId: normalizedGameId, 
-                                            gameTitle: quiz.title, 
-                                            pin: onlinePin 
-                                        }));
-                                    } catch (e) {}
                                     handleNavWithSync('/host', { isGame: true, gameId: normalizedGameId, gameTitle: quiz.title, pin: onlinePin });
                                 } else if (quiz.id === 'fortune') {
                                     handleNavWithSync('/fortune');
@@ -1234,14 +1253,6 @@ export default function Home({ socket }) {
                                 } else if (quiz.id === 'card_game' || quiz.id === 'card_poker' || quiz.title === '카드 게임') {
                                     handleNavWithSync('/card-game');
                                 } else {
-                                    try {
-                                        sessionStorage.setItem('quizrun_last_host_state', JSON.stringify({ 
-                                            isGame: true, 
-                                            gameId: normalizedGameId, 
-                                            gameTitle: quiz.title, 
-                                            pin: onlinePin 
-                                        }));
-                                    } catch (e) {}
                                     handleNavWithSync('/host', { isGame: true, gameId: normalizedGameId, gameTitle: quiz.title, pin: onlinePin });
                                 }
                             } else {
@@ -1257,14 +1268,6 @@ export default function Home({ socket }) {
                                         const specialGameId = (quiz.id === 'ladder' || quiz.title === '사다리')
                                             ? 'ladder'
                                             : 'timeattack';
-                                        try {
-                                            sessionStorage.setItem('quizrun_last_host_state', JSON.stringify({
-                                                isGame: true,
-                                                gameId: specialGameId,
-                                                gameTitle: quiz.title,
-                                                pin: onlinePin
-                                            }));
-                                        } catch (e) {}
                                         handleNavWithSync('/host', { isGame: true, gameId: specialGameId, gameTitle: quiz.title, pin: onlinePin });
                                     } else if (quiz.id === 'ladder' || quiz.title === '사다리') {
                                         handleNavWithSync('/ladder');

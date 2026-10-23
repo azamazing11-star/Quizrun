@@ -1087,6 +1087,13 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                     )}
                     <button
                         onClick={() => {
+                            try {
+                                localStorage.removeItem('quizrun_active_game_session');
+                                sessionStorage.removeItem('quizrun_last_host_state');
+                                localStorage.removeItem('quizrun_active_game_id');
+                                window.dispatchEvent(new Event('storage'));
+                                window.dispatchEvent(new Event('quizrun_session_ended'));
+                            } catch (e) {}
                             if (onEndGame) onEndGame();
                             handleOpenWinnerModal();
                         }}

@@ -1693,6 +1693,13 @@ export default function Host({ socket }) {
 
     const endGeneralMultiplayerGame = () => {
         setGameState('leaderboard');
+        try {
+            localStorage.removeItem('quizrun_active_game_session');
+            sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new Event('quizrun_session_ended'));
+        } catch (e) {}
         const currentPin = location.state?.pin || pin;
         socket.emit('room:message', {
             pin: currentPin,
@@ -1737,26 +1744,34 @@ export default function Host({ socket }) {
 
     const handleExitToLobby = () => {
         try {
-            // Save active session so host can return from Home lobby without resetting
-            const sessionData = {
-                pin,
-                isGame,
-                gameId,
-                gameTitle: location.state?.gameTitle || initialGameTitle || '',
-                gameState,
-                currentQuestionIndex,
-                totalQuestions,
-                quizId,
-                customQuiz: location.state?.customQuiz || null,
-                isOffline,
-                isBuzzerMode,
-                quizType,
-                publicUrl,
-                serverIp,
-                savedAt: Date.now()
-            };
-            sessionStorage.setItem('quizrun_last_host_state', JSON.stringify(sessionData));
-            localStorage.setItem('quizrun_active_game_session', JSON.stringify(sessionData));
+            const isOngoing = (gameState !== 'leaderboard' && gameState !== 'final_leaderboard' && !['fortune', 'ladder'].includes(gameId));
+            if (isOngoing) {
+                const sessionData = {
+                    pin,
+                    isGame,
+                    gameId,
+                    gameTitle: location.state?.gameTitle || initialGameTitle || '',
+                    gameState,
+                    currentQuestionIndex,
+                    totalQuestions,
+                    quizId,
+                    customQuiz: location.state?.customQuiz || null,
+                    isOffline,
+                    isBuzzerMode,
+                    quizType,
+                    publicUrl,
+                    serverIp,
+                    savedAt: Date.now()
+                };
+                sessionStorage.setItem('quizrun_last_host_state', JSON.stringify(sessionData));
+                localStorage.setItem('quizrun_active_game_session', JSON.stringify(sessionData));
+            } else {
+                localStorage.removeItem('quizrun_active_game_session');
+                sessionStorage.removeItem('quizrun_last_host_state');
+                localStorage.removeItem('quizrun_active_game_id');
+                window.dispatchEvent(new Event('storage'));
+                window.dispatchEvent(new Event('quizrun_session_ended'));
+            }
 
             const bc = new BroadcastChannel('quizrun_screen_sync');
             bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
