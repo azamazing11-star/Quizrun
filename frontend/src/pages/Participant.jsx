@@ -290,7 +290,7 @@ export default function Participant({ socket }) {
                 setCurrentMediaUrl2(data.mediaUrl2 || data.question?.mediaUrl2 || '');
                 setCurrentDiffSpots(data.diffSpots || data.question?.diffSpots || []);
                 setCurrentTimeLimit(data.timeLimit || data.question?.timeLimit || 60);
-                setIsSpotDiff(Boolean(data.isSpotDiff || data.question?.isSpotDiff || data.mediaUrl2 || data.question?.mediaUrl2));
+                setIsSpotDiff(Boolean(data.isSpotDiff || data.question?.isSpotDiff || data.mediaUrl2 || data.question?.mediaUrl2 || (typeof data.question === 'string' && (data.question.includes('다른 곳') || data.question.includes('틀린 곳')))));
                 setCurrentMediaType(data.mediaType || data.question?.mediaType || '');
                 setCurrentMediaName(data.mediaName || data.question?.mediaName || '');
                 setCurrentMediaDisplayMode(data.mediaDisplayMode || data.question?.mediaDisplayMode || 'audio');
@@ -1659,7 +1659,7 @@ export default function Participant({ socket }) {
                 )}
 
                 {gameState === 'question' && (() => {
-                    if (isSpotDiff || currentMediaUrl2) {
+                    if (isSpotDiff || currentMediaUrl2 || currentQuestion?.includes('다른 곳') || currentQuestion?.includes('틀린 곳')) {
                         return (
                             <SpotDifferenceQuiz
                                 isHost={false}

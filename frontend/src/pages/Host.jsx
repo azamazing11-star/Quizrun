@@ -652,17 +652,32 @@ export default function Host({ socket }) {
             if (data.currentQuestionIndex !== undefined) setCurrentQuestionIndex(data.currentQuestionIndex);
             if (data.totalQuestions !== undefined) setTotalQuestions(data.totalQuestions);
             if (data.state === 'question') {
-                setCurrentQuestion(typeof data.question === 'object' ? data.question.text : data.question);
-                setCurrentMediaUrl(data.mediaUrl || data.question?.mediaUrl || '');
-                setCurrentMediaUrl2(data.mediaUrl2 || data.question?.mediaUrl2 || '');
-                setCurrentDiffSpots(data.diffSpots || data.question?.diffSpots || []);
-                setCurrentTimeLimit(data.timeLimit || data.question?.timeLimit || 60);
-                setIsSpotDiff(Boolean(data.isSpotDiff || data.question?.isSpotDiff || data.mediaUrl2 || data.question?.mediaUrl2));
-                setCurrentMediaType(data.mediaType || data.question?.mediaType || '');
-                setCurrentMediaName(data.mediaName || data.question?.mediaName || '');
-                setCurrentMediaDisplayMode(data.mediaDisplayMode || data.question?.mediaDisplayMode || 'audio');
-                setCurrentAutoplay(data.autoplay !== undefined ? data.autoplay : (data.question?.autoplay !== undefined ? data.question.autoplay : true));
-                setShowChosung(data.showChosung !== undefined ? data.showChosung : (data.question?.showChosung !== undefined ? data.question.showChosung : true));
+                const qIdx = data.currentQuestionIndex !== undefined ? data.currentQuestionIndex : currentQuestionIndex;
+                const localQ = (allQuizQuestions && (allQuizQuestions[qIdx] || allQuizQuestions[0])) || {};
+                const qText = typeof data.question === 'object' ? data.question.text : (data.question || localQ.text || '');
+                const effMediaUrl = data.mediaUrl || data.question?.mediaUrl || localQ.mediaUrl || '';
+                const effMediaUrl2 = data.mediaUrl2 || data.question?.mediaUrl2 || localQ.mediaUrl2 || '';
+                const effDiffSpots = (data.diffSpots && data.diffSpots.length > 0) ? data.diffSpots : (data.question?.diffSpots || localQ.diffSpots || []);
+                const effTimeLimit = data.timeLimit || data.question?.timeLimit || localQ.timeLimit || 60;
+                const effIsSpotDiff = Boolean(
+                    data.isSpotDiff || 
+                    data.question?.isSpotDiff || 
+                    localQ.isSpotDiff || 
+                    effMediaUrl2 || 
+                    (effDiffSpots && effDiffSpots.length > 0) ||
+                    (qText && (qText.includes('다른 곳') || qText.includes('다른 그림') || qText.includes('틀린 곳') || qText.includes('틀린 그림')))
+                );
+                setCurrentQuestion(qText);
+                setCurrentMediaUrl(effMediaUrl);
+                setCurrentMediaUrl2(effMediaUrl2);
+                setCurrentDiffSpots(effDiffSpots);
+                setCurrentTimeLimit(effTimeLimit);
+                setIsSpotDiff(effIsSpotDiff);
+                setCurrentMediaType(data.mediaType || data.question?.mediaType || localQ.mediaType || '');
+                setCurrentMediaName(data.mediaName || data.question?.mediaName || localQ.mediaName || '');
+                setCurrentMediaDisplayMode(data.mediaDisplayMode || data.question?.mediaDisplayMode || localQ.mediaDisplayMode || 'audio');
+                setCurrentAutoplay(data.autoplay !== undefined ? data.autoplay : (data.question?.autoplay !== undefined ? data.question.autoplay : (localQ.autoplay ?? true)));
+                setShowChosung(effIsSpotDiff ? false : (data.showChosung !== undefined ? data.showChosung : (data.question?.showChosung !== undefined ? data.question.showChosung : (localQ.showChosung ?? true))));
                 if (data.points !== undefined) setCurrentPoints(data.points);
                 if (data.totalPoints !== undefined) setTotalScore(data.totalPoints);
                 setCurrentOptions(currentOpts);
@@ -3058,7 +3073,7 @@ export default function Host({ socket }) {
 
                             {/* Question Media/Link Reference */}
                             {!showOfflineWinner && gameState === 'question' && (
-                                (isSpotDiff || currentMediaUrl2) ? (
+                                (isSpotDiff || currentMediaUrl2 || currentQuestion?.includes('다른 곳') || currentQuestion?.includes('틀린 곳')) ? (
                                     <div style={{ width: '100%', maxWidth: '1200px', margin: '0 auto 1.5rem auto' }}>
                                         <SpotDifferenceQuiz
                                             isHost={true}
@@ -3118,7 +3133,7 @@ export default function Host({ socket }) {
                                 )}
 
                                 {/* 초성 힌트: 청중용이므로 항상 표시 (단, 다른그림찾기는 제외) */}
-                                {!isSpotDiff && !currentMediaUrl2 && showChosung !== false && quizType === 'short' && correctAnswer && (
+                                {!isSpotDiff && !currentMediaUrl2 && !String(correctAnswer).includes('틀린') && !String(currentQuestion).includes('다른') && !String(currentQuestion).includes('틀린') && showChosung !== false && quizType === 'short' && correctAnswer && (
                                     <div style={{
                                         display: 'inline-flex',
                                         alignItems: 'center',

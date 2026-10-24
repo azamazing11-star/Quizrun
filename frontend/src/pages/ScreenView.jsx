@@ -1011,7 +1011,7 @@ export default function ScreenView({ socket }) {
                                 {currentQuestion}
                             </h2>
 
-                            {(isSpotDiff || mediaUrl2) ? (
+                            {(isSpotDiff || mediaUrl2 || currentQuestion?.includes('다른 곳') || currentQuestion?.includes('틀린 곳')) ? (
                                 <div style={{ width: '100%', maxWidth: '1400px', margin: '20px auto 0 auto' }}>
                                     <SpotDifferenceQuiz
                                         isHost={false}
@@ -1042,7 +1042,7 @@ export default function ScreenView({ socket }) {
                                 )
                             )}
 
-                            {!isSpotDiff && !mediaUrl2 && quizType === 'short' && showChosung && correctAnswer && (
+                            {!isSpotDiff && !mediaUrl2 && !String(correctAnswer).includes('틀린') && !String(currentQuestion).includes('다른') && !String(currentQuestion).includes('틀린') && quizType === 'short' && showChosung && correctAnswer && (
                                 <div style={{
                                     marginTop: '22px',
                                     display: 'inline-flex',
