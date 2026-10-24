@@ -36,7 +36,9 @@ export default function Create({ socket }) {
     const { onlinePin } = useGlobalSession();
     const { topicId, subId, subTopicTitle } = location.state || {};
     const isSpotDiffFolder = Boolean(
-        subTopicTitle?.includes('숨은그림찾기') || 
+        subTopicTitle?.includes('다른그림') ||
+        subTopicTitle?.includes('숨은그림') || 
+        subTopicTitle?.includes('틀린그림') || 
         subId === 'sub-11' || 
         location.state?.isSpotDiff
     );
@@ -1209,6 +1211,7 @@ export default function Create({ socket }) {
                     ...q,
                     isSpotDiff: true,
                     type: 'short',
+                    showChosung: false,
                     text: (q.text && q.text.trim()) ? q.text.trim() : '두 그림을 비교하여 틀린 부분을 모두 찾아보세요!',
                     answer: (q.answer && q.answer.trim()) ? q.answer.trim() : `틀린 곳 ${(q.diffSpots || []).length || 3}군데`,
                     timeLimit: q.timeLimit || 60,
@@ -1285,7 +1288,7 @@ export default function Create({ socket }) {
             } else {
                 if (q.isSpotDiff) {
                     if (!q.mediaUrl && !q.mediaUrl2) {
-                        alert(`${i + 1}번째 숨은그림찾기 문제의 이미지를 최소 1장 이상 등록해주세요.`);
+                        alert(`${i + 1}번째 다른그림찾기 문제의 이미지를 최소 1장 이상 등록해주세요.`);
                         return;
                     }
                 } else if (!q.answer || !q.answer.trim()) {
@@ -1961,7 +1964,7 @@ export default function Create({ socket }) {
                                                 gap: '6px'
                                             }}
                                         >
-                                            🔍 {(q.isSpotDiff ?? isSpotDiffFolder) ? '숨은그림찾기 켜짐 (2장 비교)' : '숨은그림찾기 모드로 전환'}
+                                            🔍 {(q.isSpotDiff ?? isSpotDiffFolder) ? '다른그림찾기 켜짐 (2장 비교)' : '다른그림찾기 모드로 전환'}
                                         </button>
                                         <span style={{ fontSize: '0.82rem', color: '#7c2d12', fontWeight: 'bold' }}>
                                             {(q.isSpotDiff ?? isSpotDiffFolder) && '두 이미지를 비교해 틀린 부분을 맞추는 퀴즈입니다.'}

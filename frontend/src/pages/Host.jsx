@@ -880,6 +880,9 @@ export default function Host({ socket }) {
 
     const nextQuestion = () => {
         setCurrentMediaUrl('');
+        setCurrentMediaUrl2('');
+        setCurrentDiffSpots([]);
+        setIsSpotDiff(false);
         socket.emit('host:nextQuestion', pin);
         setAnsweredCount(0);
         setBuzzedInfo(null);
@@ -891,6 +894,9 @@ export default function Host({ socket }) {
     const prevQuestion = () => {
         if (currentQuestionIndex <= 0) return;
         setCurrentMediaUrl('');
+        setCurrentMediaUrl2('');
+        setCurrentDiffSpots([]);
+        setIsSpotDiff(false);
         socket.emit('host:prevQuestion', pin);
         setAnsweredCount(0);
         setBuzzedInfo(null);
@@ -910,6 +916,9 @@ export default function Host({ socket }) {
                 try { el.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }), '*'); } catch(e) {}
             });
             setCurrentMediaUrl('');
+            setCurrentMediaUrl2('');
+            setCurrentDiffSpots([]);
+            setIsSpotDiff(false);
             setCurrentAutoplay(false);
 
             // Trigger winner screen
@@ -3049,16 +3058,32 @@ export default function Host({ socket }) {
 
                             {/* Question Media/Link Reference */}
                             {!showOfflineWinner && gameState === 'question' && (
-                                <MediaViewer
-                                    key={`${currentQuestionIndex}_${currentMediaUrl}`}
-                                    mediaUrl={currentMediaUrl}
-                                    mediaType={currentMediaType}
-                                    mediaName={currentMediaName}
-                                    displayMode={currentMediaDisplayMode}
-                                    autoplay={currentAutoplay}
-                                    isMuted={isScreenConnected && (audioOutputTarget === 'screen' || audioOutputTarget === 'none')}
-                                    onMediaAction={broadcastMediaAction}
-                                />
+                                (isSpotDiff || currentMediaUrl2) ? (
+                                    <div style={{ width: '100%', maxWidth: '1200px', margin: '0 auto 1.5rem auto' }}>
+                                        <SpotDifferenceQuiz
+                                            isHost={true}
+                                            mediaUrl={currentMediaUrl}
+                                            mediaUrl2={currentMediaUrl2}
+                                            diffSpots={currentDiffSpots}
+                                            timeLimit={currentTimeLimit}
+                                            questionText={currentQuestion}
+                                            socket={socket}
+                                            pin={pin}
+                                            nickname="진행자"
+                                        />
+                                    </div>
+                                ) : (
+                                    <MediaViewer
+                                        key={`${currentQuestionIndex}_${currentMediaUrl}`}
+                                        mediaUrl={currentMediaUrl}
+                                        mediaType={currentMediaType}
+                                        mediaName={currentMediaName}
+                                        displayMode={currentMediaDisplayMode}
+                                        autoplay={currentAutoplay}
+                                        isMuted={isScreenConnected && (audioOutputTarget === 'screen' || audioOutputTarget === 'none')}
+                                        onMediaAction={broadcastMediaAction}
+                                    />
+                                )
                             )}
 
                             {/* Question Central Info: Presenter Answer Badge & Chosung Hint */}
@@ -3092,8 +3117,8 @@ export default function Host({ socket }) {
                                     </div>
                                 )}
 
-                                {/* 초성 힌트: 청중용이므로 항상 표시 */}
-                                {showChosung !== false && quizType === 'short' && correctAnswer && (
+                                {/* 초성 힌트: 청중용이므로 항상 표시 (단, 다른그림찾기는 제외) */}
+                                {!isSpotDiff && !currentMediaUrl2 && showChosung !== false && quizType === 'short' && correctAnswer && (
                                     <div style={{
                                         display: 'inline-flex',
                                         alignItems: 'center',

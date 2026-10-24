@@ -167,6 +167,10 @@ export default function ScreenView({ socket }) {
         points: 10,
         totalPoints: 100,
         currentMediaUrl: '',
+        mediaUrl2: '',
+        diffSpots: [],
+        timeLimit: 60,
+        isSpotDiff: false,
         currentMediaType: '',
         currentMediaName: '',
         currentMediaDisplayMode: 'auto',
@@ -239,6 +243,10 @@ export default function ScreenView({ socket }) {
         totalQuestions,
         points,
         currentMediaUrl,
+        mediaUrl2,
+        diffSpots,
+        timeLimit,
+        isSpotDiff,
         currentMediaType,
         currentMediaName,
         currentMediaDisplayMode,
@@ -1003,22 +1011,38 @@ export default function ScreenView({ socket }) {
                                 {currentQuestion}
                             </h2>
 
-                            {currentMediaUrl && (
-                                <div style={{ marginTop: '20px', maxHeight: '360px', display: 'flex', justifyContent: 'center' }}>
-                                    <MediaViewer
-                                        mediaUrl={currentMediaUrl}
-                                        mediaType={currentMediaType}
-                                        mediaName={currentMediaName}
-                                        displayMode={currentMediaDisplayMode}
-                                        autoplay={true}
-                                        isMuted={isMediaMutedOnScreen}
-                                        remoteCommand={mediaRemoteCommand}
+                            {(isSpotDiff || mediaUrl2) ? (
+                                <div style={{ width: '100%', maxWidth: '1400px', margin: '20px auto 0 auto' }}>
+                                    <SpotDifferenceQuiz
+                                        isHost={false}
                                         isScreenView={true}
+                                        mediaUrl={currentMediaUrl}
+                                        mediaUrl2={mediaUrl2}
+                                        diffSpots={diffSpots}
+                                        timeLimit={timeLimit || 60}
+                                        questionText={currentQuestion}
+                                        socket={socket}
+                                        pin={activePin}
                                     />
                                 </div>
+                            ) : (
+                                currentMediaUrl && (
+                                    <div style={{ marginTop: '20px', maxHeight: '360px', display: 'flex', justifyContent: 'center' }}>
+                                        <MediaViewer
+                                            mediaUrl={currentMediaUrl}
+                                            mediaType={currentMediaType}
+                                            mediaName={currentMediaName}
+                                            displayMode={currentMediaDisplayMode}
+                                            autoplay={true}
+                                            isMuted={isMediaMutedOnScreen}
+                                            remoteCommand={mediaRemoteCommand}
+                                            isScreenView={true}
+                                        />
+                                    </div>
+                                )
                             )}
 
-                            {quizType === 'short' && showChosung && correctAnswer && (
+                            {!isSpotDiff && !mediaUrl2 && quizType === 'short' && showChosung && correctAnswer && (
                                 <div style={{
                                     marginTop: '22px',
                                     display: 'inline-flex',
