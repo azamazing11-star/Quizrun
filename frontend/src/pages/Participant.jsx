@@ -890,7 +890,7 @@ export default function Participant({ socket }) {
     // Floating universal back button for all mobile participants
     const renderUniversalBackButton = () => {
         if (gameState === 'join') return null; // 'join' already has its dedicated back button
-        if (gameId === 'stock_game') return null; // 주식 게임에서는 이전 단계 버튼 숨김
+        if (gameId === 'stock_game' || gameState === 'question' || isSpotDiff) return null; // 퀴즈 및 다른그림찾기 진행 중에는 버튼 숨김
         return (
             <button
                 type="button"

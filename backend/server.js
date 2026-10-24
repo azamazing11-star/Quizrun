@@ -1619,6 +1619,13 @@ io.on('connection', (socket) => {
     if (clientId) {
       existingP = room.participants.find(p => p.clientId === clientId);
     }
+    // Reconnection fallback: match by cleanNickname
+    if (!existingP && cleanNickname) {
+      existingP = room.participants.find(p => p.nickname && p.nickname.toLowerCase() === cleanNickname.toLowerCase());
+      if (existingP) {
+        existingP.clientId = effectiveClientId;
+      }
+    }
 
     if (existingP) {
       if (existingP.disconnectTimer) {
@@ -1672,11 +1679,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // 2. New participant joining: check if game already started
-    if (room.state !== 'lobby' && !room.isGame) {
-      if (callback) callback({ success: false, message: '게임이 이미 시작되었습니다.' });
-      return;
-    }
+    // 2. Mid-game join allowed: participants joining or reconnecting mid-game immediately receive active state
+    const currentQ = room.quiz?.questions?.[room.currentQuestionIndex];
 
     // 3. Ensure nickname is 100% unique (Never overwrite or steal another participant's session)
     let uniqueNickname = cleanNickname;
@@ -1709,7 +1713,24 @@ io.on('connection', (socket) => {
       isBuzzerMode: room.isBuzzerMode,
       quizType: room.quiz?.quizType || 'mcq',
       isGame: room.isGame || false,
-      gameId: room.gameId || null
+      gameId: room.gameId || null,
+      groupId: null,
+      myScore: 0,
+      question: currentQ ? currentQ.text : '',
+      options: currentQ ? currentQ.options : [],
+      currentQuestionIndex: room.currentQuestionIndex || 0,
+      totalQuestions: room.quiz?.questions?.length || 0,
+      points: currentQ?.points || 10,
+      mediaUrl: currentQ?.mediaUrl || '',
+      mediaUrl2: currentQ?.mediaUrl2 || '',
+      diffSpots: currentQ?.diffSpots || [],
+      timeLimit: currentQ?.timeLimit || 60,
+      isSpotDiff: Boolean(currentQ?.isSpotDiff || currentQ?.mediaUrl2),
+      mediaType: currentQ?.mediaType || '',
+      mediaName: currentQ?.mediaName || '',
+      mediaDisplayMode: currentQ?.mediaDisplayMode || 'audio',
+      autoplay: currentQ?.autoplay ?? true,
+      showChosung: Boolean(currentQ?.isSpotDiff || currentQ?.mediaUrl2) ? false : (currentQ?.showChosung ?? true)
     });
     if (room.isGame && room.state === 'game_active') {
       socket.emit('room:message', {

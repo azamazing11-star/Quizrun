@@ -20,7 +20,6 @@ export default function SpotDifferenceQuiz({
     const [myFoundSpotIds, setMyFoundSpotIds] = useState(new Set());
     const [allFoundSpots, setAllFoundSpots] = useState([]); // [{ spotId, nickname, x, y }]
     const [firstFinisher, setFirstFinisher] = useState(null);
-    const [activeTab, setActiveTab] = useState('diff'); // 'diff' | 'orig' (for mobile tabs)
     const [missRipple, setMissRipple] = useState(null);
     const [confettiActive, setConfettiActive] = useState(false);
     const imgRef = useRef(null);
@@ -61,7 +60,11 @@ export default function SpotDifferenceQuiz({
             bc.onmessage = (e) => {
                 const { type, payload } = e.data || {};
                 if (type === 'SPOT_HIT') {
-                    setAllFoundSpots(prev => [...prev, payload]);
+                    setAllFoundSpots(prev => {
+                        const exists = prev.some(s => s.spotId === payload.spotId && s.nickname === payload.nickname);
+                        if (exists) return prev;
+                        return [...prev, payload];
+                    });
                     try { playSound('correct'); } catch(e){}
                 } else if (type === 'FINISH_ALL') {
                     setFirstFinisher(payload.nickname);
@@ -107,29 +110,31 @@ export default function SpotDifferenceQuiz({
         };
     }, [socket, firstFinisher, isHost, isScreenView]);
 
-    // Handle Tap on Image (Participant Mobile or Solo Host)
+    // Handle Tap on Difference Image (Participant Mobile, Host, or ScreenView)
     const handleImageClick = (e) => {
         if (timeLeft <= 0) return;
         if (!imgRef.current) return;
 
         const rect = imgRef.current.getBoundingClientRect();
-        const clientX = e.clientX || (e.touches && e.touches[0]?.clientX);
-        const clientY = e.clientY || (e.touches && e.touches[0]?.clientY);
+        const clientX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
+        const clientY = e.clientY ?? (e.touches && e.touches[0]?.clientY);
         if (clientX === undefined || clientY === undefined) return;
 
         const clickX = ((clientX - rect.left) / rect.width) * 100;
         const clickY = ((clientY - rect.top) / rect.height) * 100;
 
-        // Check if click is close to any spot
+        // Check if click is close to any spot (generous hit tolerance: 14% of dimension)
         let hitSpot = null;
         for (const spot of effectiveSpots) {
             const dist = Math.hypot(clickX - spot.x, clickY - spot.y);
-            const r = spot.radius || 10;
+            const r = Math.max(spot.radius || 10, 14);
             if (dist <= r && !myFoundSpotIds.has(spot.id)) {
                 hitSpot = spot;
                 break;
             }
         }
+
+        const effectiveNickname = nickname || (isHost ? '진행자' : isScreenView ? '서브스크린' : '참가자');
 
         if (hitSpot) {
             // SUCCESS HIT!
@@ -142,11 +147,11 @@ export default function SpotDifferenceQuiz({
             // Award +10 points
             if (onScoreAdjust) onScoreAdjust(10);
             if (socket && pin) {
-                socket.emit('host:adjustScore', { pin, nickname, amount: 10 });
+                socket.emit('host:adjustScore', { pin, nickname: effectiveNickname, amount: 10 });
                 socket.emit('room:message', {
                     pin,
                     event: 'quiz:spot_diff_hit',
-                    payload: { spotId: hitSpot.id, nickname: nickname || '참가자', x: hitSpot.x, y: hitSpot.y }
+                    payload: { spotId: hitSpot.id, nickname: effectiveNickname, x: hitSpot.x, y: hitSpot.y }
                 });
             }
 
@@ -155,7 +160,7 @@ export default function SpotDifferenceQuiz({
                 const bc = new BroadcastChannel('quizrun_spot_quiz_sync');
                 bc.postMessage({
                     type: 'SPOT_HIT',
-                    payload: { spotId: hitSpot.id, nickname: nickname || '참가자', x: hitSpot.x, y: hitSpot.y }
+                    payload: { spotId: hitSpot.id, nickname: effectiveNickname, x: hitSpot.x, y: hitSpot.y }
                 });
                 setTimeout(() => bc.close(), 200);
             } catch(e){}
@@ -167,14 +172,14 @@ export default function SpotDifferenceQuiz({
                 const bonus = baseEarned; // 맞춘 점수의 2배를 더해서 획득
                 if (onScoreAdjust) onScoreAdjust(bonus);
                 if (socket && pin) {
-                    socket.emit('host:adjustScore', { pin, nickname, amount: bonus });
+                    socket.emit('host:adjustScore', { pin, nickname: effectiveNickname, amount: bonus });
                     socket.emit('room:message', {
                         pin,
                         event: 'quiz:spot_diff_first_finish',
-                        payload: { nickname: nickname || '참가자', bonus }
+                        payload: { nickname: effectiveNickname, bonus }
                     });
                 }
-                setFirstFinisher(nickname || '참가자');
+                setFirstFinisher(effectiveNickname);
                 setConfettiActive(true);
                 try { playSound('fanfare'); } catch(e){}
 
@@ -182,7 +187,7 @@ export default function SpotDifferenceQuiz({
                     const bc = new BroadcastChannel('quizrun_spot_quiz_sync');
                     bc.postMessage({
                         type: 'FINISH_ALL',
-                        payload: { nickname: nickname || '참가자', bonus }
+                        payload: { nickname: effectiveNickname, bonus }
                     });
                     setTimeout(() => bc.close(), 200);
                 } catch(e){}
@@ -195,9 +200,7 @@ export default function SpotDifferenceQuiz({
         }
     };
 
-    const isFinishedAll = myFoundSpotIds.size === effectiveSpots.length;
-
-    // --- HOST & SCREEN VIEW ---
+    // --- HOST & SCREEN VIEW (DESKTOP DUAL DISPLAY) ---
     if (isHost || isScreenView) {
         return (
             <div style={{
@@ -205,7 +208,7 @@ export default function SpotDifferenceQuiz({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '16px'
+                gap: '14px'
             }}>
                 {confettiActive && <Confetti recycle={false} numberOfPieces={500} />}
 
@@ -215,16 +218,16 @@ export default function SpotDifferenceQuiz({
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     width: '100%',
-                    maxWidth: '1100px',
+                    maxWidth: '1200px',
                     background: 'white',
-                    padding: '12px 24px',
+                    padding: '10px 24px',
                     borderRadius: '20px',
                     border: '2px solid #fed7aa',
                     boxShadow: '0 4px 15px rgba(0,0,0,0.04)'
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={{ fontSize: '1.25rem', fontWeight: '900', color: '#ea580c' }}>
-                            🔍 틀린 그림 찾기
+                            🔍 다른 그림 찾기
                         </span>
                         <span style={{
                             padding: '4px 12px',
@@ -235,7 +238,7 @@ export default function SpotDifferenceQuiz({
                             fontWeight: '800',
                             fontSize: '0.95rem'
                         }}>
-                            총 {effectiveSpots.length}군데 틀린 곳 찾기
+                            총 {effectiveSpots.length}군데 다른 곳 찾기 (클릭하여 체크 가능)
                         </span>
                     </div>
 
@@ -244,12 +247,12 @@ export default function SpotDifferenceQuiz({
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
-                            fontSize: '1.4rem',
+                            fontSize: '1.35rem',
                             fontWeight: '900',
                             fontFamily: 'Jua, sans-serif',
                             color: timeLeft <= 10 ? '#ef4444' : '#1e293b'
                         }}>
-                            <Clock size={24} color={timeLeft <= 10 ? '#ef4444' : '#ea580c'} />
+                            <Clock size={22} color={timeLeft <= 10 ? '#ef4444' : '#ea580c'} />
                             <span>{timeLeft}초</span>
                         </div>
                     </div>
@@ -259,7 +262,7 @@ export default function SpotDifferenceQuiz({
                 {firstFinisher && (
                     <div style={{
                         width: '100%',
-                        maxWidth: '1100px',
+                        maxWidth: '1200px',
                         padding: '12px 24px',
                         background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
                         border: '3px solid #f59e0b',
@@ -275,7 +278,7 @@ export default function SpotDifferenceQuiz({
                         animation: 'bounce 0.8s infinite'
                     }}>
                         <Trophy size={26} color="#d97706" />
-                        <span>🏆 {firstFinisher}님이 모든 틀린 부분을 가장 먼저 찾았습니다! (보너스 2배 점수 획득!)</span>
+                        <span>🏆 {firstFinisher}님이 모든 다른 부분을 가장 먼저 찾았습니다! (보너스 2배 점수 획득!)</span>
                     </div>
                 )}
 
@@ -285,7 +288,7 @@ export default function SpotDifferenceQuiz({
                     gridTemplateColumns: '1fr 1fr',
                     gap: '20px',
                     width: '100%',
-                    maxWidth: '1100px'
+                    maxWidth: '1200px'
                 }}>
                     {/* Image 1: Original */}
                     <div style={{
@@ -305,12 +308,12 @@ export default function SpotDifferenceQuiz({
                             <img
                                 src={mediaUrl || '/logo.png'}
                                 alt="Original"
-                                style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain', borderRadius: '16px' }}
+                                style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain', borderRadius: '16px', userSelect: 'none' }}
                             />
                         </div>
                     </div>
 
-                    {/* Image 2: Diff Image with Live Markers */}
+                    {/* Image 2: Diff Image with Click and Live Markers */}
                     <div style={{
                         background: 'white',
                         padding: '12px',
@@ -323,7 +326,7 @@ export default function SpotDifferenceQuiz({
                         position: 'relative'
                     }}>
                         <div style={{ fontWeight: '900', color: '#ea580c', marginBottom: '8px', fontSize: '1.05rem' }}>
-                            [ 🔍 2. 틀린 그림 (참여자 터치 영역) ]
+                            [ 🔍 2. 틀린 그림 (클릭/터치하여 체크) ]
                         </div>
                         <div
                             style={{
@@ -336,40 +339,70 @@ export default function SpotDifferenceQuiz({
                                 borderRadius: '16px'
                             }}
                         >
-                            <img
-                                src={mediaUrl2 || mediaUrl || '/logo.png'}
-                                alt="Difference"
-                                style={{ maxWidth: '100%', maxHeight: '420px', objectFit: 'contain', borderRadius: '16px' }}
-                            />
+                            <div
+                                ref={imgRef}
+                                onClick={handleImageClick}
+                                style={{
+                                    position: 'relative',
+                                    display: 'inline-block',
+                                    lineHeight: 0,
+                                    cursor: 'crosshair',
+                                    maxWidth: '100%'
+                                }}
+                            >
+                                <img
+                                    src={mediaUrl2 || mediaUrl || '/logo.png'}
+                                    alt="Difference"
+                                    style={{ display: 'block', maxWidth: '100%', maxHeight: '420px', objectFit: 'contain', borderRadius: '16px', userSelect: 'none' }}
+                                />
 
-                            {/* Render Found Spots as Green Glowing Circles */}
-                            {allFoundSpots.map((s, idx) => (
-                                <div
-                                    key={idx}
-                                    style={{
-                                        position: 'absolute',
-                                        left: `${s.x}%`,
-                                        top: `${s.y}%`,
-                                        width: '44px',
-                                        height: '44px',
-                                        transform: 'translate(-50%, -50%)',
-                                        border: '3.5px solid #22c55e',
-                                        borderRadius: '50%',
-                                        background: 'rgba(34, 197, 94, 0.25)',
-                                        boxShadow: '0 0 16px rgba(34, 197, 94, 0.8)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#15803d',
-                                        fontWeight: '900',
-                                        fontSize: '0.85rem',
-                                        pointerEvents: 'none',
-                                        animation: 'pulse 1s infinite'
-                                    }}
-                                >
-                                    ✓
-                                </div>
-                            ))}
+                                {/* Render Found Spots as Green Glowing Circles */}
+                                {allFoundSpots.map((s, idx) => (
+                                    <div
+                                        key={idx}
+                                        style={{
+                                            position: 'absolute',
+                                            left: `${s.x}%`,
+                                            top: `${s.y}%`,
+                                            width: '44px',
+                                            height: '44px',
+                                            transform: 'translate(-50%, -50%)',
+                                            border: '3.5px solid #22c55e',
+                                            borderRadius: '50%',
+                                            background: 'rgba(34, 197, 94, 0.25)',
+                                            boxShadow: '0 0 16px rgba(34, 197, 94, 0.8)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: '#15803d',
+                                            fontWeight: '900',
+                                            fontSize: '0.85rem',
+                                            pointerEvents: 'none',
+                                            animation: 'pulse 1s infinite'
+                                        }}
+                                    >
+                                        ✓
+                                    </div>
+                                ))}
+
+                                {missRipple && (
+                                    <div
+                                        style={{
+                                            position: 'absolute',
+                                            left: `${missRipple.x}%`,
+                                            top: `${missRipple.y}%`,
+                                            width: '36px',
+                                            height: '36px',
+                                            transform: 'translate(-50%, -50%)',
+                                            borderRadius: '50%',
+                                            border: '3px solid #ef4444',
+                                            background: 'rgba(239, 68, 68, 0.3)',
+                                            pointerEvents: 'none',
+                                            animation: 'ping 0.8s cubic-bezier(0, 0, 0.2, 1) infinite'
+                                        }}
+                                    />
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -377,34 +410,34 @@ export default function SpotDifferenceQuiz({
                 {/* Live Found Notice Log */}
                 <div style={{
                     width: '100%',
-                    maxWidth: '1100px',
+                    maxWidth: '1200px',
                     background: '#f8fafc',
                     borderRadius: '16px',
-                    padding: '10px 16px',
+                    padding: '8px 16px',
                     border: '1px solid #e2e8f0',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
                     overflowX: 'auto',
-                    minHeight: '44px'
+                    minHeight: '40px'
                 }}>
-                    <span style={{ fontWeight: '900', fontSize: '0.9rem', color: '#475569', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontWeight: '900', fontSize: '0.88rem', color: '#475569', whiteSpace: 'nowrap' }}>
                         발견 현황:
                     </span>
                     {allFoundSpots.length === 0 ? (
-                        <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                        <span style={{ color: '#94a3b8', fontSize: '0.84rem' }}>
                             참여자가 틀린 부분을 찾으면 실시간으로 여기에 표시됩니다.
                         </span>
                     ) : (
                         allFoundSpots.map((s, i) => (
                             <span key={i} style={{
-                                padding: '4px 10px',
+                                padding: '3px 8px',
                                 background: '#ecfdf5',
                                 border: '1px solid #86efac',
-                                borderRadius: '10px',
+                                borderRadius: '8px',
                                 color: '#166534',
                                 fontWeight: 'bold',
-                                fontSize: '0.85rem',
+                                fontSize: '0.82rem',
                                 whiteSpace: 'nowrap'
                             }}>
                                 🎯 {s.nickname} (+10점)
@@ -416,7 +449,7 @@ export default function SpotDifferenceQuiz({
         );
     }
 
-    // --- PARTICIPANT (MOBILE) VIEW ---
+    // --- PARTICIPANT (MOBILE) VIEW: TOP = DIFFERENCE IMAGE, BOTTOM = ORIGINAL IMAGE ---
     return (
         <div style={{
             width: '100%',
@@ -425,8 +458,8 @@ export default function SpotDifferenceQuiz({
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: '12px',
-            padding: '10px'
+            gap: '8px',
+            padding: '4px'
         }}>
             {confettiActive && <Confetti recycle={false} numberOfPieces={400} />}
 
@@ -437,20 +470,20 @@ export default function SpotDifferenceQuiz({
                 alignItems: 'center',
                 width: '100%',
                 background: 'white',
-                padding: '10px 16px',
-                borderRadius: '16px',
+                padding: '8px 14px',
+                borderRadius: '14px',
                 border: '1.5px solid #fed7aa',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+                boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{
-                        padding: '4px 10px',
+                        padding: '3px 10px',
                         background: '#ecfdf5',
                         border: '1.5px solid #86efac',
                         borderRadius: '10px',
                         color: '#15803d',
                         fontWeight: '900',
-                        fontSize: '0.9rem'
+                        fontSize: '0.88rem'
                     }}>
                         찾은 개수: {myFoundSpotIds.size} / {effectiveSpots.length}
                     </span>
@@ -461,161 +494,208 @@ export default function SpotDifferenceQuiz({
                     alignItems: 'center',
                     gap: '4px',
                     fontWeight: '900',
-                    fontSize: '1.2rem',
+                    fontSize: '1.15rem',
                     color: timeLeft <= 10 ? '#ef4444' : '#ea580c'
                 }}>
-                    <Clock size={18} />
+                    <Clock size={16} />
                     <span>{timeLeft}초</span>
                 </div>
             </div>
 
-            {/* View Switcher: Compare between Original and Diff */}
-            <div style={{ display: 'flex', width: '100%', gap: '8px' }}>
-                <button
-                    onClick={() => setActiveTab('diff')}
-                    style={{
-                        flex: 1,
-                        padding: '10px',
-                        borderRadius: '12px',
-                        border: activeTab === 'diff' ? '2px solid #ea580c' : '1px solid #cbd5e1',
-                        background: activeTab === 'diff' ? '#fff7ed' : 'white',
-                        color: activeTab === 'diff' ? '#ea580c' : '#64748b',
-                        fontWeight: '900',
-                        fontSize: '0.92rem',
-                        cursor: 'pointer'
-                    }}
-                >
-                    🔍 틀린 그림 터치하기
-                </button>
-                <button
-                    onClick={() => setActiveTab('orig')}
-                    style={{
-                        flex: 1,
-                        padding: '10px',
-                        borderRadius: '12px',
-                        border: activeTab === 'orig' ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                        background: activeTab === 'orig' ? '#eff6ff' : 'white',
-                        color: activeTab === 'orig' ? '#2563eb' : '#64748b',
-                        fontWeight: '900',
-                        fontSize: '0.92rem',
-                        cursor: 'pointer'
-                    }}
-                >
-                    🖼️ 원본 그림 보기
-                </button>
-            </div>
-
-            {/* Interactive Image Container */}
-            <div
-                style={{
-                    width: '100%',
-                    background: 'white',
-                    borderRadius: '20px',
-                    border: '2px solid #e2e8f0',
-                    padding: '8px',
+            {/* Top: 🔍 틀린 그림 (터치 영역) */}
+            <div style={{
+                width: '100%',
+                background: 'white',
+                borderRadius: '16px',
+                border: '2px solid #fdba74',
+                padding: '6px 8px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                boxShadow: '0 4px 14px rgba(234, 88, 12, 0.08)'
+            }}>
+                <div style={{
                     display: 'flex',
-                    justifyContent: 'center',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.05)',
-                    touchAction: 'manipulation'
-                }}
-            >
-                <img
-                    ref={imgRef}
-                    src={activeTab === 'diff' ? (mediaUrl2 || mediaUrl) : mediaUrl}
-                    alt="Game Area"
-                    onClick={activeTab === 'diff' ? handleImageClick : undefined}
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    alignItems: 'center',
+                    marginBottom: '4px',
+                    padding: '0 4px'
+                }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#ea580c' }}>
+                        🔍 [틀린 그림 - 터치하여 정답 체크]
+                    </span>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 'bold', color: '#9a3412' }}>
+                        맞출 때마다 +10점 획득
+                    </span>
+                </div>
+
+                <div
                     style={{
+                        display: 'flex',
+                        justifyContent: 'center',
                         width: '100%',
-                        height: 'auto',
-                        maxHeight: '380px',
-                        objectFit: 'contain',
-                        borderRadius: '14px',
-                        cursor: activeTab === 'diff' ? 'crosshair' : 'default',
-                        userSelect: 'none'
+                        overflow: 'hidden'
                     }}
-                />
-
-                {/* Markers for user found spots */}
-                {activeTab === 'diff' && Array.from(myFoundSpotIds).map(id => {
-                    const spot = effectiveSpots.find(s => s.id === id);
-                    if (!spot) return null;
-                    return (
-                        <div
-                            key={id}
-                            style={{
-                                position: 'absolute',
-                                left: `${spot.x}%`,
-                                top: `${spot.y}%`,
-                                width: '40px',
-                                height: '40px',
-                                transform: 'translate(-50%, -50%)',
-                                border: '3.5px solid #22c55e',
-                                borderRadius: '50%',
-                                background: 'rgba(34, 197, 94, 0.3)',
-                                boxShadow: '0 0 14px rgba(34, 197, 94, 0.8)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: '#15803d',
-                                fontWeight: '900',
-                                fontSize: '0.85rem',
-                                pointerEvents: 'none'
-                            }}
-                        >
-                            ✓
-                        </div>
-                    );
-                })}
-
-                {/* Miss Ripple */}
-                {missRipple && (
+                >
                     <div
+                        ref={imgRef}
+                        onClick={handleImageClick}
                         style={{
-                            position: 'absolute',
-                            left: `${missRipple.x}%`,
-                            top: `${missRipple.y}%`,
-                            width: '32px',
-                            height: '32px',
-                            transform: 'translate(-50%, -50%)',
-                            border: '3px solid #ef4444',
-                            borderRadius: '50%',
-                            background: 'rgba(239, 68, 68, 0.3)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#b91c1c',
-                            fontWeight: '900',
-                            fontSize: '0.8rem',
-                            pointerEvents: 'none',
-                            animation: 'bounce 0.4s'
+                            position: 'relative',
+                            display: 'inline-block',
+                            lineHeight: 0,
+                            cursor: 'crosshair',
+                            maxWidth: '100%',
+                            touchAction: 'manipulation'
                         }}
                     >
-                        ✕
+                        <img
+                            src={mediaUrl2 || mediaUrl || '/logo.png'}
+                            alt="Difference Area"
+                            style={{
+                                display: 'block',
+                                maxWidth: '100%',
+                                maxHeight: '27vh',
+                                objectFit: 'contain',
+                                borderRadius: '10px',
+                                userSelect: 'none'
+                            }}
+                        />
+
+                        {/* Markers for user found spots */}
+                        {Array.from(myFoundSpotIds).map(id => {
+                            const spot = effectiveSpots.find(s => s.id === id);
+                            if (!spot) return null;
+                            return (
+                                <div
+                                    key={id}
+                                    style={{
+                                        position: 'absolute',
+                                        left: `${spot.x}%`,
+                                        top: `${spot.y}%`,
+                                        width: '36px',
+                                        height: '36px',
+                                        transform: 'translate(-50%, -50%)',
+                                        border: '3px solid #22c55e',
+                                        borderRadius: '50%',
+                                        background: 'rgba(34, 197, 94, 0.3)',
+                                        boxShadow: '0 0 14px rgba(34, 197, 94, 0.8)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#15803d',
+                                        fontWeight: '900',
+                                        fontSize: '0.85rem',
+                                        pointerEvents: 'none'
+                                    }}
+                                >
+                                    ✓
+                                </div>
+                            );
+                        })}
+
+                        {/* Miss Ripple */}
+                        {missRipple && (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    left: `${missRipple.x}%`,
+                                    top: `${missRipple.y}%`,
+                                    width: '32px',
+                                    height: '32px',
+                                    transform: 'translate(-50%, -50%)',
+                                    borderRadius: '50%',
+                                    border: '3px solid #ef4444',
+                                    background: 'rgba(239, 68, 68, 0.3)',
+                                    pointerEvents: 'none',
+                                    animation: 'ping 0.8s cubic-bezier(0, 0, 0.2, 1) infinite'
+                                }}
+                            />
+                        )}
                     </div>
-                )}
+                </div>
             </div>
 
-            {/* Bottom Status Guide */}
-            {isFinishedAll ? (
+            {/* Bottom: 🖼️ 원본 그림 (비교 참고용) */}
+            <div style={{
+                width: '100%',
+                background: 'white',
+                borderRadius: '16px',
+                border: '2px solid #bfdbfe',
+                padding: '6px 8px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.05)'
+            }}>
+                <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    alignItems: 'center',
+                    marginBottom: '4px',
+                    padding: '0 4px'
+                }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#2563eb' }}>
+                        🖼️ [원본 그림 - 비교 참고용]
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                        위 틀린 그림과 비교해보세요
+                    </span>
+                </div>
+
+                <div
+                    style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        width: '100%',
+                        overflow: 'hidden'
+                    }}
+                >
+                    <div
+                        style={{
+                            position: 'relative',
+                            display: 'inline-block',
+                            lineHeight: 0,
+                            maxWidth: '100%'
+                        }}
+                    >
+                        <img
+                            src={mediaUrl || '/logo.png'}
+                            alt="Original Reference"
+                            style={{
+                                display: 'block',
+                                maxWidth: '100%',
+                                maxHeight: '27vh',
+                                objectFit: 'contain',
+                                borderRadius: '10px',
+                                userSelect: 'none'
+                            }}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* First Finisher Announcement Banner */}
+            {firstFinisher && (
                 <div style={{
                     width: '100%',
-                    padding: '14px',
-                    borderRadius: '16px',
-                    background: '#ecfdf5',
-                    border: '2px solid #10b981',
-                    color: '#065f46',
+                    padding: '8px 12px',
+                    background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                    border: '2px solid #f59e0b',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    fontSize: '0.86rem',
                     fontWeight: '900',
-                    fontSize: '1.05rem',
-                    textAlign: 'center'
+                    color: '#92400e'
                 }}>
-                    🎉 축하합니다! 모든 틀린 부분을 전부 찾았습니다!
+                    <Trophy size={18} color="#d97706" />
+                    <span>🏆 {firstFinisher}님이 1등으로 모두 찾았습니다! (보너스 2배)</span>
                 </div>
-            ) : (
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b', textAlign: 'center' }}>
-                    💡 틀린 그림에서 다른 곳을 손가락으로 터치하세요 (+10점)
-                </p>
             )}
         </div>
     );

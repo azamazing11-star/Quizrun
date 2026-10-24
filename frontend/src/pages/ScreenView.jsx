@@ -1156,7 +1156,7 @@ export default function ScreenView({ socket }) {
                         )}
 
                             {/* Short Answer Direct Input on Secondary Screen (Online only) */}
-                            {quizType === 'short' && !isOffline && !showAnswer && (
+                            {quizType === 'short' && !isOffline && !showAnswer && !isSpotDiff && !mediaUrl2 && !currentQuestion?.includes('다른 곳') && !currentQuestion?.includes('틀린 곳') && (
                                 <form
                                     onSubmit={handleShortSubmit}
                                     style={{

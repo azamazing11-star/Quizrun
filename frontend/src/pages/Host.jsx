@@ -591,7 +591,7 @@ export default function Host({ socket }) {
     }, [
         gameState, currentQuestion, currentOptions, correctIndex, correctAnswer, 
         currentExplanation, offlineShowAnswer, showAnswer, currentQuestionIndex, 
-        totalQuestions, currentPoints, currentMediaUrl, buzzedInfo, judgeResult, 
+        totalQuestions, currentPoints, currentMediaUrl, currentMediaUrl2, currentDiffSpots, isSpotDiff, buzzedInfo, judgeResult, 
         groupScores, participants, offlineScores, offlineConfetti, audioOutputTarget, isScreenConnected,
         gameId, gameSyllable, gameTimeLeft, gameEliminated, gameUsedWords, gameWinner, activePlayerIndex, gameRankings,
         playerStreams, cardMatchThemeId, answeredCount, firstCorrectInfo,

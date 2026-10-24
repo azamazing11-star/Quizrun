@@ -2082,61 +2082,59 @@ export default function Create({ socket }) {
                                                     </span>
                                                 </div>
 
-                                                <div
-                                                    onClick={(e) => {
-                                                        const rect = e.currentTarget.getBoundingClientRect();
-                                                        const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-                                                        const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-                                                        const nq = [...questions];
-                                                        const spots = nq[qIndex].diffSpots || [];
-                                                        nq[qIndex].diffSpots = [...spots, { id: spots.length + 1, x, y, radius: 8 }];
-                                                        setQuestions(nq);
-                                                    }}
-                                                    style={{
-                                                        position: 'relative',
-                                                        display: 'inline-block',
-                                                        width: '100%',
-                                                        maxHeight: '340px',
-                                                        cursor: 'crosshair',
-                                                        borderRadius: '10px',
-                                                        overflow: 'hidden',
-                                                        textAlign: 'center',
-                                                        background: '#f8fafc'
-                                                    }}
-                                                >
-                                                    <img
-                                                        src={q.mediaUrl2 || q.mediaUrl}
-                                                        alt="Marking canvas"
-                                                        style={{ maxWidth: '100%', maxHeight: '340px', objectFit: 'contain', userSelect: 'none' }}
-                                                    />
-
-                                                    {/* Target Marker Circles */}
-                                                    {(q.diffSpots || []).map((spot, sIdx) => (
-                                                        <div
-                                                            key={sIdx}
-                                                            style={{
-                                                                position: 'absolute',
-                                                                left: `${spot.x}%`,
-                                                                top: `${spot.y}%`,
-                                                                width: '32px',
-                                                                height: '32px',
-                                                                transform: 'translate(-50%, -50%)',
-                                                                border: '3px solid #ef4444',
-                                                                borderRadius: '50%',
-                                                                background: 'rgba(239, 68, 68, 0.3)',
-                                                                color: 'white',
-                                                                fontWeight: '900',
-                                                                fontSize: '0.8rem',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                textShadow: '0 1px 3px rgba(0,0,0,0.8)'
-                                                            }}
-                                                        >
-                                                            {sIdx + 1}
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'center', width: '100%', background: '#f8fafc', borderRadius: '10px', padding: '10px', overflow: 'hidden' }}>
+    <div
+        onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+            const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+            const nq = [...questions];
+            const spots = nq[qIndex].diffSpots || [];
+            nq[qIndex].diffSpots = [...spots, { id: spots.length + 1, x, y, radius: 10 }];
+            setQuestions(nq);
+        }}
+        style={{
+            position: 'relative',
+            display: 'inline-block',
+            lineHeight: 0,
+            cursor: 'crosshair',
+            userSelect: 'none',
+            maxWidth: '100%'
+        }}
+    >
+        <img
+            src={q.mediaUrl2 || q.mediaUrl}
+            alt="Marking canvas"
+            style={{ display: 'block', maxWidth: '100%', maxHeight: '340px', objectFit: 'contain', userSelect: 'none', borderRadius: '8px' }}
+        />
+        {(q.diffSpots || []).map((spot, sIdx) => (
+            <div
+                key={sIdx}
+                style={{
+                    position: 'absolute',
+                    left: `${spot.x}%`,
+                    top: `${spot.y}%`,
+                    width: '32px',
+                    height: '32px',
+                    transform: 'translate(-50%, -50%)',
+                    border: '3px solid #ef4444',
+                    borderRadius: '50%',
+                    background: 'rgba(239, 68, 68, 0.3)',
+                    color: 'white',
+                    fontWeight: '900',
+                    fontSize: '0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 10px rgba(239, 68, 68, 0.8)'
+                }}
+            >
+                {sIdx + 1}
+            </div>
+        ))}
+    </div>
+</div>
 
                                                 {/* Chips of Marked Spots */}
                                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px', alignItems: 'center' }}>
