@@ -2019,18 +2019,21 @@ io.on('connection', (socket) => {
 
   // --- HOST DIRECT SCORE ADJUSTMENT ---
   socket.on('host:adjustScore', ({ pin, nickname, delta, exactScore }) => {
-    const room = rooms[pin];
-    if (room && room.hostId === socket.id) {
-      const p = room.participants.find(p => p.nickname === nickname);
+    const cleanPin = pin ? String(pin).trim() : '';
+    const room = cleanPin ? (rooms[cleanPin] || rooms[pin]) : null;
+    if (room) {
+      if (!room.hostId) room.hostId = socket.id;
+      const cleanNick = String(nickname || '').trim();
+      const p = room.participants.find(p => String(p.nickname || '').trim() === cleanNick || String(p.id || '').trim() === cleanNick);
       if (p) {
         if (typeof exactScore === 'number') {
           p.score = exactScore;
         } else if (typeof delta === 'number') {
           p.score += delta;
         }
-        io.to(pin).emit('host:participantsUpdated', room.participants);
+        io.to(cleanPin).emit('host:participantsUpdated', room.participants);
         const resolvedState = room.isGame ? (room.state || 'game_active') : (room.state === 'lobby' ? 'waiting' : room.state);
-        io.to(pin).emit('room:stateUpdate', {
+        io.to(cleanPin).emit('room:stateUpdate', {
           state: resolvedState,
           isGame: room.isGame || false,
           gameId: room.gameId || null,

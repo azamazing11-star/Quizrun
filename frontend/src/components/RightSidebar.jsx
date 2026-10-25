@@ -672,9 +672,9 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             const isEditing = editingNum === p.num;
                                             const isGold = !isHost && hasAnyScore && realRankIdx === 0 && p.score > 0;
                                             const rankBadge = isHost
-                                                ? '👑'
+                                                ? 'Host'
                                                 : (hasAnyScore 
-                                                    ? (realRankIdx === 0 && p.score > 0 ? '🥇' : realRankIdx === 1 && p.score > 0 ? '🥈' : realRankIdx === 2 && p.score > 0 ? '🥉' : `#${realRankIdx + 1}`) 
+                                                    ? (realRankIdx === 0 && p.score > 0 ? '👑 1위' : realRankIdx === 1 && p.score > 0 ? '🥈 2위' : realRankIdx === 2 && p.score > 0 ? '🥉 3위' : `#${realRankIdx + 1}`) 
                                                     : `${realRankIdx + 1}`);
 
                                             return (
@@ -698,9 +698,12 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
                                                         <span style={{
                                                             fontWeight: '900',
-                                                            fontSize: isHost ? '1.1rem' : (realRankIdx < 3 ? '1.05rem' : '0.82rem'),
-                                                            color: isHost ? '#4f46e5' : (realRankIdx < 3 ? 'inherit' : '#64748b'),
-                                                            minWidth: '24px',
+                                                            fontSize: isHost ? '0.76rem' : (realRankIdx < 3 ? '0.98rem' : '0.82rem'),
+                                                            color: isHost ? '#3730a3' : (realRankIdx < 3 ? 'inherit' : '#64748b'),
+                                                            background: isHost ? '#e0e7ff' : 'transparent',
+                                                            padding: isHost ? '2px 5px' : '0',
+                                                            borderRadius: isHost ? '5px' : '0',
+                                                            minWidth: isHost ? '36px' : '24px',
                                                             textAlign: 'center'
                                                         }}>
                                                             {rankBadge}
@@ -1272,7 +1275,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                 boxShadow: '0 2px 8px rgba(99, 102, 241, 0.08)'
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontSize: '1.3rem' }}>👑</span>
+                                    <span style={{ fontSize: '1.25rem' }}>📊</span>
                                     <div style={{ textAlign: 'left' }}>
                                         <div style={{ fontWeight: '900', color: '#4338ca', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                             Host (진행자 시연 자산)
@@ -1344,7 +1347,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             {isStockGame ? formatKoreanMoney(sortedParticipants[0].score) : `${sortedParticipants[0].score}점`}
                                         </span>
                                         <span style={{ fontSize: '0.78rem', fontWeight: '900', color: '#d97706', background: 'white', padding: '2px 8px', borderRadius: '10px', marginTop: '4px' }}>
-                                            {isStockGame ? '🥇 1위 (최고 투자왕)' : '🥇 1위 (챔피언)'}
+                                            {isStockGame ? '👑 1위 (최고 투자왕)' : '👑 1위 (챔피언)'}
                                         </span>
                                     </div>
                                 )}
@@ -1390,8 +1393,8 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                 const realIdx = hostEntry ? idx - 1 : idx;
                                 const isWinner = !isHost && p.score === maxScore && maxScore > 0;
                                 const rankTitle = isHost 
-                                    ? '👑 Host' 
-                                    : (realIdx === 0 ? '🥇 1위 ' : realIdx === 1 ? '🥈 2위 ' : realIdx === 2 ? '🥉 3위 ' : `#${realIdx + 1} `);
+                                    ? 'Host' 
+                                    : (realIdx === 0 ? '👑 1위 ' : realIdx === 1 ? '🥈 2위 ' : realIdx === 2 ? '🥉 3위 ' : `#${realIdx + 1} `);
                                 const displayName = isHost ? '' : (gameMode === 'online' ? p.num : `${p.num}번`);
 
                                 return (

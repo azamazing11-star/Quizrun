@@ -2400,22 +2400,36 @@ export function StockGameScreenView({
             };
             try {
                 sessionStorage.setItem('quizrun_stock_host_portfolio', JSON.stringify(nextPortfolio));
+                localStorage.setItem('quizrun_stock_host_portfolio', JSON.stringify(nextPortfolio));
             } catch (e) {}
+
+            try {
+                const bc = new BroadcastChannel('quizrun_screen_sync');
+                bc.postMessage({
+                    type: 'HOST_PORTFOLIO_SYNC',
+                    hostPortfolio: nextPortfolio
+                });
+                setTimeout(() => bc.close(), 300);
+            } catch (e) {}
+
+            if (socket && pin) {
+                try {
+                    socket.emit('stock_game:execute_order', {
+                        pin,
+                        teamId: 'Host',
+                        nickname: 'Host',
+                        stockKey,
+                        tradeType,
+                        qty,
+                        price: currentPrice,
+                        cash: nextCash,
+                        holdings: nextPortfolio.holdings
+                    });
+                } catch (e) {}
+            }
+
             return nextPortfolio;
         });
-
-        if (socket && pin) {
-            try {
-                socket.emit('stock_game:execute_order', {
-                    pin,
-                    teamId: 'Host',
-                    stockKey,
-                    type: tradeType,
-                    quantity: qty,
-                    price: currentPrice
-                });
-            } catch (e) {}
-        }
     };
 
     return (
@@ -2737,13 +2751,91 @@ export function StockGameScreenView({
                     </div>
                 )}
 
-                {/* Stock Cards Grid (2열 x 5행: 10개 종목 화면 전체 와이드 배치) */}
+                {/* 실시간 Host(진행자) 자산 현황 요약 바 */}
+                {(() => {
+                    let hostStockVal = 0;
+                    Object.entries(hostPortfolio?.holdings || {}).forEach(([k, qty]) => {
+                        const s = stocks[k] || stockList.find(item => item.key === k);
+                        const p = s?.prices ? (s.prices[year] ?? s.prices[2015] ?? 0) : 0;
+                        hostStockVal += (qty || 0) * p;
+                    });
+                    const hostTot = (hostPortfolio?.cash || 0) + hostStockVal;
+                    const hostSeed = hostPortfolio?.seedMoney || 1000000;
+                    const hostRet = hostSeed > 0 ? (((hostTot - hostSeed) / hostSeed) * 100).toFixed(1) : '0.0';
+                    const owned = stockList.filter(s => (hostPortfolio?.holdings?.[s.key] || 0) > 0);
+
+                    return (
+                        <div style={{
+                            background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)',
+                            border: '1.5px solid #38bdf8',
+                            borderRadius: '12px',
+                            padding: '6px 14px',
+                            marginBottom: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            boxShadow: '0 4px 14px rgba(56, 189, 248, 0.15)',
+                            flexShrink: 0
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <DollarSign size={17} color="#38bdf8" />
+                                <span style={{ fontSize: '0.86rem', fontWeight: '900', color: '#f8fafc' }}>
+                                    Host 실시간 내 자산 현황
+                                </span>
+                                <span style={{
+                                    fontSize: '0.76rem',
+                                    fontWeight: '900',
+                                    color: Number(hostRet) >= 0 ? '#f43f5e' : '#38bdf8',
+                                    background: 'rgba(0,0,0,0.4)',
+                                    padding: '2px 8px',
+                                    borderRadius: '5px',
+                                    border: Number(hostRet) >= 0 ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid rgba(56, 189, 248, 0.3)'
+                                }}>
+                                    수익률: {Number(hostRet) >= 0 ? `+${hostRet}%` : `${hostRet}%`}
+                                </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                                    <span style={{ color: '#94a3b8' }}>총 자산:</span>
+                                    <span style={{ fontWeight: '900', color: '#ffffff', fontSize: '0.94rem' }}>
+                                        {formatKoreanMoney(hostTot)}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                                    <span style={{ color: '#94a3b8' }}>예수금:</span>
+                                    <span style={{ fontWeight: '900', color: '#10b981', fontSize: '0.94rem' }}>
+                                        {formatKoreanMoney(hostPortfolio?.cash || 0)}
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                                    <span style={{ color: '#94a3b8' }}>주식 평가액:</span>
+                                    <span style={{ fontWeight: '900', color: '#f59e0b', fontSize: '0.94rem' }}>
+                                        {formatKoreanMoney(hostStockVal)}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div style={{ fontSize: '0.76rem', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <span style={{ color: '#38bdf8', fontWeight: '800' }}>보유:</span>
+                                <span>
+                                    {owned.length > 0
+                                        ? owned.map(s => `[${s.key}] ${hostPortfolio.holdings[s.key]}주`).join(', ')
+                                        : '없음 (예수금 100%)'}
+                                </span>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Stock Cards Grid (2열 x 5행: 10개 종목 화면 전체 와이드 배치, 패딩 및 여백 최적화) */}
                 <div style={{
                     flex: 1,
                     display: 'grid',
                     gridTemplateColumns: 'repeat(2, 1fr)',
                     gridTemplateRows: 'repeat(5, 1fr)',
-                    gap: '10px',
+                    gap: '6px',
                     minHeight: 0,
                     overflow: 'hidden'
                 }}>
@@ -2755,6 +2847,10 @@ export function StockGameScreenView({
                         const pct = prevPrice > 0 ? ((diff / prevPrice) * 100).toFixed(1) : '0.0';
                         const isUp = diff > 0;
                         const isDown = diff < 0;
+
+                        const hostQty = hostPortfolio?.holdings?.[item.key] || 0;
+                        const isHostHeld = hostQty > 0;
+                        const hostVote = activePredictions[item.key];
 
                         const displayName = isPubliclyRevealed
                             ? `${item.sectorDisplayName || `${item.key} ${item.sector}`} (${item.realName})`
@@ -2771,77 +2867,114 @@ export function StockGameScreenView({
                                     }
                                 }}
                                 style={{
-                                    background: 'rgba(30, 41, 59, 0.75)',
-                                    border: '1.5px solid rgba(255, 255, 255, 0.12)',
-                                    borderRadius: '16px',
-                                    padding: '10px 20px',
+                                    background: isHostHeld
+                                        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(30, 41, 59, 0.88) 100%)'
+                                        : 'rgba(30, 41, 59, 0.75)',
+                                    border: isHostHeld
+                                        ? '2.5px solid #10b981'
+                                        : (hostVote ? '1.5px solid #38bdf8' : '1.5px solid rgba(255, 255, 255, 0.12)'),
+                                    borderRadius: '14px',
+                                    padding: '7px 16px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
-                                    boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+                                    boxShadow: isHostHeld ? '0 0 16px rgba(16, 185, 129, 0.35)' : '0 3px 10px rgba(0,0,0,0.18)',
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease',
                                     userSelect: 'none'
                                 }}
                                 onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = item.badgeColor || '#38bdf8';
-                                    e.currentTarget.style.transform = 'translateY(-2px) scale(1.008)';
-                                    e.currentTarget.style.background = 'rgba(51, 65, 85, 0.85)';
-                                    e.currentTarget.style.boxShadow = `0 6px 18px ${item.badgeColor ? item.badgeColor + '40' : 'rgba(56, 189, 248, 0.25)'}`;
+                                    e.currentTarget.style.borderColor = isHostHeld ? '#34d399' : (item.badgeColor || '#38bdf8');
+                                    e.currentTarget.style.transform = 'translateY(-1px) scale(1.005)';
+                                    e.currentTarget.style.background = isHostHeld
+                                        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(51, 65, 85, 0.9) 100%)'
+                                        : 'rgba(51, 65, 85, 0.85)';
                                 }}
                                 onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                                    e.currentTarget.style.borderColor = isHostHeld ? '#10b981' : (hostVote ? '#38bdf8' : 'rgba(255, 255, 255, 0.12)');
                                     e.currentTarget.style.transform = 'translateY(0) scale(1)';
-                                    e.currentTarget.style.background = 'rgba(30, 41, 59, 0.75)';
-                                    e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,0,0,0.18)';
+                                    e.currentTarget.style.background = isHostHeld
+                                        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(30, 41, 59, 0.88) 100%)'
+                                        : 'rgba(30, 41, 59, 0.75)';
                                 }}
                                 title={`${item.key} 종목 뉴스 보기 (클릭)`}
                             >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                                     <div style={{
-                                        width: '52px',
-                                        height: '52px',
-                                        minWidth: '52px',
-                                        borderRadius: '14px',
+                                        width: '44px',
+                                        height: '44px',
+                                        minWidth: '44px',
+                                        borderRadius: '12px',
                                         background: item.badgeColor || '#3b82f6',
                                         color: 'white',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        fontSize: '1.85rem',
+                                        fontSize: '1.55rem',
                                         fontWeight: '900',
-                                        boxShadow: `0 4px 12px ${item.badgeColor}50`
+                                        boxShadow: isHostHeld ? '0 0 12px rgba(16, 185, 129, 0.5)' : `0 3px 8px ${item.badgeColor}50`
                                     }}>
                                         {item.key}
                                     </div>
                                     <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#f8fafc', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {displayName}
+                                        <div style={{ fontSize: '1.45rem', fontWeight: '900', color: '#f8fafc', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span>{displayName}</span>
+                                            {isHostHeld && (
+                                                <span style={{
+                                                    fontSize: '0.72rem',
+                                                    padding: '2px 7px',
+                                                    borderRadius: '6px',
+                                                    background: 'rgba(16, 185, 129, 0.35)',
+                                                    border: '1px solid #10b981',
+                                                    color: '#34d399',
+                                                    fontWeight: '900'
+                                                }}>
+                                                    보유 {hostQty.toLocaleString()}주
+                                                </span>
+                                            )}
+                                            {hostVote && (
+                                                <span style={{
+                                                    fontSize: '0.7rem',
+                                                    padding: '2px 5px',
+                                                    borderRadius: '5px',
+                                                    background: hostVote === 'UP' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)',
+                                                    border: hostVote === 'UP' ? '1px solid #ef4444' : '1px solid #3b82f6',
+                                                    color: hostVote === 'UP' ? '#fca5a5' : '#93c5fd',
+                                                    fontWeight: '900'
+                                                }}>
+                                                    {hostVote === 'UP' ? '▲상승' : '▼하락'}
+                                                </span>
+                                            )}
                                         </div>
-                                        <div style={{ fontSize: '1.05rem', color: '#94a3b8', fontWeight: '700', marginTop: '2px' }}>
-                                            {item.sector}
+                                        <div style={{ fontSize: '0.92rem', color: '#94a3b8', fontWeight: '700', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <span>{item.sector}</span>
+                                            {isHostHeld && (
+                                                <span style={{ color: '#34d399', fontWeight: '800' }}>
+                                                    (평가액: {(hostQty * curPrice).toLocaleString()}원)
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
 
                                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                    <div style={{ fontSize: '2.35rem', fontWeight: '900', color: '#ffffff', letterSpacing: '0.5px' }}>
+                                    <div style={{ fontSize: '1.95rem', fontWeight: '900', color: '#ffffff', letterSpacing: '0.5px' }}>
                                         {curPrice.toLocaleString()}
-                                        <span style={{ fontSize: '1.35rem', marginLeft: '3px', opacity: 0.85, fontWeight: '700' }}>원</span>
+                                        <span style={{ fontSize: '1.15rem', marginLeft: '3px', opacity: 0.85, fontWeight: '700' }}>원</span>
                                     </div>
                                     {year > 2015 && (
                                         <div style={{
-                                            fontSize: '1.2rem',
+                                            fontSize: '1.05rem',
                                             fontWeight: '900',
                                             color: isUp ? '#f43f5e' : (isDown ? '#38bdf8' : '#94a3b8'),
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'flex-end',
-                                            gap: '4px',
-                                            marginTop: '2px'
+                                            gap: '3px',
+                                            marginTop: '1px'
                                         }}>
-                                            {isUp && <ArrowUpRight size={18} />}
-                                            {isDown && <ArrowDownRight size={18} />}
+                                            {isUp && <ArrowUpRight size={16} />}
+                                            {isDown && <ArrowDownRight size={16} />}
                                             <span>{diff > 0 ? `+${diff.toLocaleString()}` : diff.toLocaleString()}원</span>
                                             <span>({diff > 0 ? `+${pct}` : pct}%)</span>
                                         </div>
@@ -3081,7 +3214,10 @@ export function TradingProgressModal({ isOpen, onClose, currentYear, teamList, p
                         </h2>
                     </div>
                     <button
-                        onClick={onClose}
+                        onClick={() => {
+                            if (onApplySettlement) onApplySettlement(processedTeams);
+                            onClose();
+                        }}
                         style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '10px', padding: '6px 14px', cursor: 'pointer', fontWeight: 'bold' }}
                     >
                         ✕ 닫기
@@ -3249,7 +3385,7 @@ export function TradingProgressModal({ isOpen, onClose, currentYear, teamList, p
 // =============================================================================
 // 모달 컴포넌트: 모든 주문 체결 확정 및 자산 정산 결과 보고서 (AllOrdersResultModal)
 // =============================================================================
-export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios, stockList, teamList }) {
+export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios, stockList, teamList, onApplySettlement }) {
     if (!isOpen) return null;
 
     const baseTeams = (teamList && teamList.length > 0)
@@ -3310,10 +3446,10 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
 
     const getRankBadge = (item, idx) => {
         if (item.isHost) {
-            return { label: '👑 Host', bg: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#ffffff' };
+            return { label: 'Host', bg: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#ffffff' };
         }
         const realRankIdx = hostItem ? idx - 1 : idx;
-        if (realRankIdx === 0) return { label: '🥇 1위', bg: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#1e293b' };
+        if (realRankIdx === 0) return { label: '👑 1위', bg: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#1e293b' };
         if (realRankIdx === 1) return { label: '🥈 2위', bg: 'linear-gradient(135deg, #94a3b8, #64748b)', color: '#0f172a' };
         if (realRankIdx === 2) return { label: '🥉 3위', bg: 'linear-gradient(135deg, #b45309, #78350f)', color: '#fef3c7' };
         return { label: `${realRankIdx + 1}위`, bg: '#334155', color: '#cbd5e1' };
@@ -3464,7 +3600,10 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
                     <button
-                        onClick={onClose}
+                        onClick={() => {
+                            if (onApplySettlement) onApplySettlement(processedTeams);
+                            onClose();
+                        }}
                         style={{
                             background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
                             color: 'white',
@@ -3490,7 +3629,40 @@ export function AllOrdersResultModal({ isOpen, onClose, currentYear, portfolios,
 // 4. 호스트 관리 컴포넌트 (StockGameHost) - 세련된 트레이딩 터미널 대시보드
 // =============================================================================
 export function StockGameHost({ socket, pin, participants = [] }) {
-    const { scores: contextScores, setExactScore } = useGlobalSession();
+    const { scores: contextScores, setExactScore, setOnlineParticipants } = useGlobalSession();
+
+    // Host 진행자 포트폴리오 (서브모니터와 실시간 동기화)
+    const [hostPortfolio, setHostPortfolio] = useState(() => {
+        let saved = null;
+        try {
+            saved = localStorage.getItem('quizrun_stock_host_portfolio') || sessionStorage.getItem('quizrun_stock_host_portfolio');
+        } catch (e) {}
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) {}
+        }
+        const seed = Number(sessionStorage.getItem('quizrun_stock_seed_amount')) || 1000000;
+        return {
+            seedMoney: seed,
+            cash: seed,
+            holdings: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0, H: 0, I: 0, J: 0 },
+            history: { 2015: { asset: seed, rank: 1, returnRate: 0 } }
+        };
+    });
+
+    useEffect(() => {
+        let syncBc;
+        try {
+            syncBc = new BroadcastChannel('quizrun_screen_sync');
+            syncBc.onmessage = (event) => {
+                if (event.data?.type === 'HOST_PORTFOLIO_SYNC' && event.data.hostPortfolio) {
+                    setHostPortfolio(event.data.hostPortfolio);
+                }
+            };
+        } catch (e) {}
+        return () => {
+            try { syncBc?.close(); } catch (e) {}
+        };
+    }, []);
 
     // 100개 기업 중 10개 랜덤 선택 상태 (게임 시작 시 항상 신규 랜덤 추출)
     const [activeStocks, setActiveStocks] = useState(() => {
@@ -3936,6 +4108,19 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         const arr = Array.from(processedOrdersRef.current);
                         processedOrdersRef.current = new Set(arr.slice(arr.length - 1000));
                     }
+                    if (playerKey.toLowerCase() === 'host') {
+                        setHostPortfolio(prev => {
+                            const updated = {
+                                ...prev,
+                                cash: payload.cash !== undefined ? payload.cash : prev.cash,
+                                holdings: payload.holdings || prev.holdings
+                            };
+                            try {
+                                localStorage.setItem('quizrun_stock_host_portfolio', JSON.stringify(updated));
+                            } catch (e) {}
+                            return updated;
+                        });
+                    }
                     setPortfolios(prev => {
                         const existing = prev[playerKey] || (strNick && prev[strNick]) || {
                             seedMoney: 1000000,
@@ -4246,6 +4431,36 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         });
 
         setPortfolios(nextPortfolios);
+
+        // 온라인 참여자 누적 점수 즉시 동기화 (RightSidebar 및 브로드캐스트)
+        if (setOnlineParticipants) {
+            setOnlineParticipants(prev => prev.map(p => {
+                const matchTeam = teamList.find(t => String(t.name).trim() === String(p.nickname).trim() || String(t.id).trim() === String(p.nickname).trim());
+                if (matchTeam) {
+                    const pData = nextPortfolios[matchTeam.id] || nextPortfolios[matchTeam.name];
+                    const assetVal = pData?.history?.[nextYear]?.asset;
+                    if (assetVal !== undefined) {
+                        return { ...p, score: Math.round(assetVal) };
+                    }
+                }
+                return p;
+            }));
+        }
+
+        // Host 진행자 다음 연도 자산 재평가 및 우측바 동기화
+        let hostStockValNext = 0;
+        stockList.forEach(s => {
+            const q = hostPortfolio?.holdings?.[s.key] || 0;
+            const price = s.prices ? (s.prices[nextYear] ?? s.prices[2015] ?? 0) : 0;
+            hostStockValNext += q * price;
+        });
+        const hostNextTotal = (hostPortfolio?.cash || 0) + hostStockValNext;
+        try {
+            sessionStorage.setItem('quizrun_stock_host_asset', String(hostNextTotal));
+            const screenBc = new BroadcastChannel('quizrun_screen_sync');
+            screenBc.postMessage({ type: 'STOCK_GAME_HOST_PORTFOLIO_UPDATE', asset: Math.round(hostNextTotal) });
+            screenBc.close();
+        } catch (e) {}
 
         broadcastStockState({ 
             year: nextYear,
@@ -5810,9 +6025,51 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 isOpen={allOrdersModalOpen}
                 onClose={handleCloseAllOrdersModal}
                 currentYear={currentYear}
-                portfolios={portfolios}
+                portfolios={{
+                    ...portfolios,
+                    Host: hostPortfolio
+                }}
                 stockList={stockList}
-                teamList={teamList}
+                teamList={[
+                    { id: 'Host', name: 'Host (진행자 시연)', isHost: true },
+                    ...teamList
+                ]}
+                onApplySettlement={(teams) => {
+                    // 정산 결과 확인 완료 시 온라인 참여자 점수 및 오프라인 점수 즉시 동기화
+                    if (setOnlineParticipants) {
+                        setOnlineParticipants(prev => prev.map(p => {
+                            const found = teams.find(t => !t.isHost && (String(t.team.name).trim() === String(p.nickname).trim() || String(t.team.id).trim() === String(p.nickname).trim()));
+                            if (found) {
+                                return { ...p, score: Math.round(found.totalAssetVal) };
+                            }
+                            return p;
+                        }));
+                    }
+                    if (setExactScore) {
+                        teams.forEach((t, idx) => {
+                            if (!t.isHost) {
+                                const numKey = Number(t.team.id) || (idx + 1);
+                                setExactScore(numKey, Math.round(t.totalAssetVal));
+                            }
+                        });
+                    }
+                    if (socket && pin) {
+                        teams.forEach(t => {
+                            if (!t.isHost) {
+                                socket.emit('host:adjustScore', { pin, nickname: t.team.name || t.team.id, exactScore: Math.round(t.totalAssetVal) });
+                            }
+                        });
+                    }
+                    const hostT = teams.find(t => t.isHost);
+                    if (hostT) {
+                        try {
+                            sessionStorage.setItem('quizrun_stock_host_asset', String(hostT.totalAssetVal));
+                            const bc = new BroadcastChannel('quizrun_screen_sync');
+                            bc.postMessage({ type: 'STOCK_GAME_HOST_PORTFOLIO_UPDATE', asset: Math.round(hostT.totalAssetVal) });
+                            bc.close();
+                        } catch (e) {}
+                    }
+                }}
             />
 
             {/* 💰 초기 투자금 설정 모달 (일괄 100만 vs 점수 곱하기 100,000) */}
