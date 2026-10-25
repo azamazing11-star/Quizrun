@@ -44,6 +44,46 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
         }
     });
 
+    // 주식 게임 모드에서 Host(진행자)의 시연용 실시간 자산 상태
+    const [hostStockAsset, setHostStockAsset] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem('quizrun_stock_host_total_asset');
+            if (saved) return Number(saved);
+            const pSaved = sessionStorage.getItem('quizrun_stock_host_portfolio');
+            if (pSaved) {
+                const p = JSON.parse(pSaved);
+                return p.cash !== undefined ? p.cash : 1000000;
+            }
+        } catch (e) {}
+        return 1000000;
+    });
+
+    useEffect(() => {
+        let seedBc;
+        try {
+            seedBc = new BroadcastChannel('quizrun_stock_seed_sync');
+            seedBc.onmessage = (event) => {
+                const { type, amount } = event.data || {};
+                if (type === 'BULK_SET_SEED' && amount) {
+                    setHostStockAsset(amount);
+                    try { sessionStorage.setItem('quizrun_stock_host_total_asset', String(amount)); } catch (e) {}
+                }
+            };
+        } catch (e) {}
+
+        const handleHostEvt = (e) => {
+            if (e.detail?.totalAsset !== undefined) {
+                setHostStockAsset(Number(e.detail.totalAsset));
+            }
+        };
+        window.addEventListener('quizrun:host_portfolio_update', handleHostEvt);
+
+        return () => {
+            if (seedBc) try { seedBc.close(); } catch (e) {}
+            window.removeEventListener('quizrun:host_portfolio_update', handleHostEvt);
+        };
+    }, []);
+
     useEffect(() => {
         let bc;
         try {
@@ -64,6 +104,10 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                 } else if (type === 'MODE_CHANGE' && payload?.mode && payload.mode !== 'stock_game') {
                     setIsStockGameSynced(false);
                     try { sessionStorage.removeItem('quizrun_active_game_mode'); } catch (e) {}
+                } else if (type === 'STOCK_GAME_HOST_PORTFOLIO_UPDATE') {
+                    if (payload?.totalAsset !== undefined) {
+                        setHostStockAsset(Number(payload.totalAsset));
+                    }
                 } else if (type === 'STATE_UPDATE' || type === 'HOST_PONG') {
                     if (payload?.mode === 'stock_game') {
                         setIsStockGameSynced(true);
@@ -370,16 +414,31 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
             isOnline: false 
           }));
 
+    // 순위 산정 시 Host는 제외하여 참가자 순위(1위, 2위, 3위...)를 순수하게 보장
+    const realParticipants = isStockGame
+        ? activeScores.filter(s => String(s.num).toLowerCase() !== 'host')
+        : activeScores;
+
     const hasAnyScore = isStockGame
-        ? activeScores.some(s => Number(s.score) > 0 && Number(s.score) !== (activeScores[0]?.score || 0))
-        : activeScores.some(s => Number(s.score) > 0);
+        ? realParticipants.some(s => Number(s.score) > 0 && Number(s.score) !== (realParticipants[0]?.score || 0))
+        : realParticipants.some(s => Number(s.score) > 0);
 
-    const displayScores = hasAnyScore
-        ? [...activeScores].sort((a, b) => Number(b.score) - Number(a.score))
-        : [...activeScores];
+    const sortedParticipants = hasAnyScore
+        ? [...realParticipants].sort((a, b) => Number(b.score) - Number(a.score))
+        : [...realParticipants];
 
-    const sortedScores = displayScores;
-    const maxScore = sortedScores.length > 0 ? Math.max(...activeScores.map(s => s.score)) : 0;
+    // Host는 맨 위에 표시되지만 순위(메달)에는 포함되지 않음 (진행자 시연용)
+    const hostEntry = isStockGame ? {
+        num: 'Host',
+        score: hostStockAsset !== undefined ? hostStockAsset : 1000000,
+        isHost: true
+    } : null;
+
+    const sortedScores = hostEntry
+        ? [hostEntry, ...sortedParticipants]
+        : sortedParticipants;
+
+    const maxScore = sortedParticipants.length > 0 ? Math.max(...sortedParticipants.map(s => s.score)) : 0;
 
 
 
@@ -608,11 +667,15 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                     paddingRight: '2px'
                                 }}>
                                         {sortedScores.map((p, idx) => {
+                                            const isHost = !!p.isHost;
+                                            const realRankIdx = hostEntry ? idx - 1 : idx;
                                             const isEditing = editingNum === p.num;
-                                            const isGold = hasAnyScore && idx === 0 && p.score > 0;
-                                            const rankBadge = hasAnyScore 
-                                                ? (idx === 0 && p.score > 0 ? '🥇' : idx === 1 && p.score > 0 ? '🥈' : idx === 2 && p.score > 0 ? '🥉' : `#${idx + 1}`) 
-                                                : `${idx + 1}`;
+                                            const isGold = !isHost && hasAnyScore && realRankIdx === 0 && p.score > 0;
+                                            const rankBadge = isHost
+                                                ? '👑'
+                                                : (hasAnyScore 
+                                                    ? (realRankIdx === 0 && p.score > 0 ? '🥇' : realRankIdx === 1 && p.score > 0 ? '🥈' : realRankIdx === 2 && p.score > 0 ? '🥉' : `#${realRankIdx + 1}`) 
+                                                    : `${realRankIdx + 1}`);
 
                                             return (
                                                 <div
@@ -622,17 +685,21 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                         alignItems: 'center',
                                                         justifyContent: 'space-between',
                                                         padding: '8px 10px',
-                                                        background: isGold ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)' : 'white',
+                                                        background: isHost 
+                                                            ? 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)' 
+                                                            : (isGold ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)' : 'white'),
                                                         borderRadius: '14px',
-                                                        border: isGold ? '1.5px solid #fcd34d' : '1.5px solid #e2e8f0',
-                                                        boxShadow: '0 2px 5px rgba(0,0,0,0.02)'
+                                                        border: isHost 
+                                                            ? '1.5px solid #c4b5fd' 
+                                                            : (isGold ? '1.5px solid #fcd34d' : '1.5px solid #e2e8f0'),
+                                                        boxShadow: isHost ? '0 2px 8px rgba(99,102,241,0.08)' : '0 2px 5px rgba(0,0,0,0.02)'
                                                     }}
                                                 >
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
                                                         <span style={{
                                                             fontWeight: '900',
-                                                            fontSize: idx < 3 ? '1.05rem' : '0.82rem',
-                                                            color: idx < 3 ? 'inherit' : '#64748b',
+                                                            fontSize: isHost ? '1.1rem' : (realRankIdx < 3 ? '1.05rem' : '0.82rem'),
+                                                            color: isHost ? '#4f46e5' : (realRankIdx < 3 ? 'inherit' : '#64748b'),
                                                             minWidth: '24px',
                                                             textAlign: 'center'
                                                         }}>
@@ -641,18 +708,50 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                         <span style={{
                                                             fontWeight: '800',
                                                             fontSize: '0.88rem',
-                                                            color: 'var(--text)',
+                                                            color: isHost ? '#4f46e5' : 'var(--text)',
                                                             overflow: 'hidden',
                                                             textOverflow: 'ellipsis',
-                                                            whiteSpace: 'nowrap'
+                                                            whiteSpace: 'nowrap',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px'
                                                         }}>
                                                             {p.num}
+                                                            {isHost && (
+                                                                <span style={{
+                                                                    fontSize: '0.68rem',
+                                                                    background: '#c7d2fe',
+                                                                    color: '#3730a3',
+                                                                    padding: '1px 5px',
+                                                                    borderRadius: '4px',
+                                                                    fontWeight: '900'
+                                                                }}>
+                                                                    진행자 시연
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </div>
 
                                                     {/* Score / Amount & Direct Host Controls */}
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                        {isEditing ? (
+                                                        {isHost ? (
+                                                            <span
+                                                                style={{
+                                                                    fontSize: isStockGame ? '0.82rem' : '0.92rem',
+                                                                    fontWeight: '900',
+                                                                    color: '#4338ca',
+                                                                    padding: '3px 8px',
+                                                                    borderRadius: '8px',
+                                                                    background: 'rgba(255, 255, 255, 0.9)',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '2px',
+                                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                                                                }}
+                                                            >
+                                                                {isStockGame ? formatKoreanMoney(p.score) : `${p.score}점`}
+                                                            </span>
+                                                        ) : isEditing ? (
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                                                                 <input
                                                                     type="number"
@@ -704,7 +803,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                             </span>
                                                         )}
 
-                                                        {isStockGame ? (
+                                                        {!isHost && (isStockGame ? (
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                                                                 <input
                                                                     type="number"
@@ -783,7 +882,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                                     }}
                                                                 >+</button>
                                                             </div>
-                                                        )}
+                                                        ))}
                                                     </div>
                                                 </div>
                                             );
@@ -1159,8 +1258,39 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                             {isStockGame ? '모든 연도의 투자 게임이 종료되었습니다. 최종 투자 자산 순위표를 확인하세요!' : '모든 라운드가 종료되었습니다. 최종 순위표를 확인하세요!'}
                         </p>
 
-                        {/* Top 3 Podium (if >= 2 participants) */}
-                        {sortedScores.length >= 2 && (
+                        {/* Host Demonstration Banner (Stock Game) */}
+                        {hostEntry && (
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '10px 16px',
+                                background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)',
+                                borderRadius: '14px',
+                                border: '1.5px solid #c4b5fd',
+                                marginBottom: '1.2rem',
+                                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.08)'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '1.3rem' }}>👑</span>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <div style={{ fontWeight: '900', color: '#4338ca', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                            Host (진행자 시연 자산)
+                                            <span style={{ fontSize: '0.7rem', background: '#c7d2fe', color: '#3730a3', padding: '1px 5px', borderRadius: '4px', fontWeight: '900' }}>순위 제외</span>
+                                        </div>
+                                        <div style={{ fontSize: '0.73rem', color: '#6366f1', fontWeight: '700' }}>
+                                            * 설명/시연용으로 순위 메달 산정에서 제외됩니다.
+                                        </div>
+                                    </div>
+                                </div>
+                                <span style={{ fontWeight: '900', color: '#4338ca', fontSize: '1.15rem' }}>
+                                    {formatKoreanMoney(hostEntry.score)}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Top 3 Podium (Real Participants Only) */}
+                        {sortedParticipants.length >= 2 && (
                             <div style={{
                                 display: 'flex',
                                 alignItems: 'flex-end',
@@ -1170,7 +1300,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                 padding: '10px 0'
                             }}>
                                 {/* 2nd Place */}
-                                {sortedScores[1] && (
+                                {sortedParticipants[1] && (
                                     <div style={{
                                         flex: 1,
                                         display: 'flex',
@@ -1183,17 +1313,17 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                     }}>
                                         <span style={{ fontSize: '1.8rem' }}>🥈</span>
                                         <span style={{ fontWeight: '900', fontSize: '0.92rem', color: '#475569', marginTop: '2px', wordBreak: 'break-all' }}>
-                                            {gameMode === 'online' ? sortedScores[1].num : `${sortedScores[1].num}번`}
+                                            {gameMode === 'online' ? sortedParticipants[1].num : `${sortedParticipants[1].num}번`}
                                         </span>
                                         <span style={{ fontSize: isStockGame ? '0.95rem' : '1.1rem', fontWeight: '900', color: isStockGame ? '#059669' : 'var(--primary)', marginTop: '4px' }}>
-                                            {isStockGame ? formatKoreanMoney(sortedScores[1].score) : `${sortedScores[1].score}점`}
+                                            {isStockGame ? formatKoreanMoney(sortedParticipants[1].score) : `${sortedParticipants[1].score}점`}
                                         </span>
                                         <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#64748b' }}>2위</span>
                                     </div>
                                 )}
 
                                 {/* 1st Place */}
-                                {sortedScores[0] && (
+                                {sortedParticipants[0] && (
                                     <div style={{
                                         flex: 1.2,
                                         display: 'flex',
@@ -1208,10 +1338,10 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                     }}>
                                         <span style={{ fontSize: '2.4rem' }}>👑</span>
                                         <span style={{ fontWeight: '900', fontSize: '1.05rem', color: '#92400e', marginTop: '2px', wordBreak: 'break-all' }}>
-                                            {gameMode === 'online' ? sortedScores[0].num : `${sortedScores[0].num}번`}
+                                            {gameMode === 'online' ? sortedParticipants[0].num : `${sortedParticipants[0].num}번`}
                                         </span>
                                         <span style={{ fontSize: isStockGame ? '1.15rem' : '1.4rem', fontWeight: '900', color: '#b45309', marginTop: '4px' }}>
-                                            {isStockGame ? formatKoreanMoney(sortedScores[0].score) : `${sortedScores[0].score}점`}
+                                            {isStockGame ? formatKoreanMoney(sortedParticipants[0].score) : `${sortedParticipants[0].score}점`}
                                         </span>
                                         <span style={{ fontSize: '0.78rem', fontWeight: '900', color: '#d97706', background: 'white', padding: '2px 8px', borderRadius: '10px', marginTop: '4px' }}>
                                             {isStockGame ? '🥇 1위 (최고 투자왕)' : '🥇 1위 (챔피언)'}
@@ -1220,7 +1350,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                 )}
 
                                 {/* 3rd Place */}
-                                {sortedScores[2] && (
+                                {sortedParticipants[2] && (
                                     <div style={{
                                         flex: 1,
                                         display: 'flex',
@@ -1233,10 +1363,10 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                     }}>
                                         <span style={{ fontSize: '1.6rem' }}>🥉</span>
                                         <span style={{ fontWeight: '900', fontSize: '0.88rem', color: '#9a3412', marginTop: '2px', wordBreak: 'break-all' }}>
-                                            {gameMode === 'online' ? sortedScores[2].num : `${sortedScores[2].num}번`}
+                                            {gameMode === 'online' ? sortedParticipants[2].num : `${sortedParticipants[2].num}번`}
                                         </span>
                                         <span style={{ fontSize: isStockGame ? '0.92rem' : '1.05rem', fontWeight: '900', color: '#c2410c', marginTop: '4px' }}>
-                                            {isStockGame ? formatKoreanMoney(sortedScores[2].score) : `${sortedScores[2].score}점`}
+                                            {isStockGame ? formatKoreanMoney(sortedParticipants[2].score) : `${sortedParticipants[2].score}점`}
                                         </span>
                                         <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#ea580c' }}>3위</span>
                                     </div>
@@ -1256,7 +1386,14 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                             maxHeight: '220px'
                         }}>
                             {sortedScores.map((p, idx) => {
-                                const isWinner = p.score === maxScore && maxScore > 0;
+                                const isHost = !!p.isHost;
+                                const realIdx = hostEntry ? idx - 1 : idx;
+                                const isWinner = !isHost && p.score === maxScore && maxScore > 0;
+                                const rankTitle = isHost 
+                                    ? '👑 Host' 
+                                    : (realIdx === 0 ? '🥇 1위 ' : realIdx === 1 ? '🥈 2위 ' : realIdx === 2 ? '🥉 3위 ' : `#${realIdx + 1} `);
+                                const displayName = isHost ? '' : (gameMode === 'online' ? p.num : `${p.num}번`);
+
                                 return (
                                     <div
                                         key={p.num}
@@ -1266,17 +1403,23 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             alignItems: 'center',
                                             padding: '0.75rem 1.2rem',
                                             borderRadius: '14px',
-                                            background: isWinner ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : '#f8fafc',
-                                            color: isWinner ? 'white' : 'var(--text)',
-                                            border: isWinner ? 'none' : '1.5px solid #e2e8f0',
+                                            background: isHost
+                                                ? 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)'
+                                                : (isWinner ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : '#f8fafc'),
+                                            color: isHost ? '#4338ca' : (isWinner ? 'white' : 'var(--text)'),
+                                            border: isHost ? '1.5px solid #c4b5fd' : (isWinner ? 'none' : '1.5px solid #e2e8f0'),
                                             boxShadow: isWinner ? '0 4px 14px rgba(245,158,11,0.35)' : 'none'
                                         }}
                                     >
-                                        <span style={{ fontWeight: '800', fontSize: '1rem' }}>
-                                            {idx === 0 ? '🥇 1위 ' : idx === 1 ? '🥈 2위 ' : idx === 2 ? '🥉 3위 ' : `#${idx + 1} `}
-                                            {gameMode === 'online' ? p.num : `${p.num}번`}
+                                        <span style={{ fontWeight: '800', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            {rankTitle} {displayName}
+                                            {isHost && (
+                                                <span style={{ fontSize: '0.7rem', background: '#c7d2fe', color: '#3730a3', padding: '1px 6px', borderRadius: '4px', fontWeight: '900' }}>
+                                                    진행자 시연 [순위 제외]
+                                                </span>
+                                            )}
                                         </span>
-                                        <span style={{ fontSize: isStockGame ? '1.1rem' : '1.25rem', fontWeight: '900', color: isStockGame && !isWinner ? '#059669' : 'inherit' }}>
+                                        <span style={{ fontSize: isStockGame ? '1.1rem' : '1.25rem', fontWeight: '900', color: isHost ? '#4338ca' : (isStockGame && !isWinner ? '#059669' : 'inherit') }}>
                                             {isStockGame ? formatKoreanMoney(p.score) : `${p.score}점`}
                                         </span>
                                     </div>

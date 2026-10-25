@@ -591,6 +591,7 @@ export default function ScreenView({ socket }) {
                 pin={stockGameData.pin || activePin}
                 serverIp={activeServerIp}
                 publicUrl={activePublicUrl}
+                socket={socket}
             />
         );
     }
