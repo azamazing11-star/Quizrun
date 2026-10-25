@@ -343,6 +343,772 @@ export function FundamentalTechnicalAnalysis({ stockItem, currentYear, newsItem 
     );
 }
 
+export function ParticipantStockDetailModal({
+    stockItem,
+    currentYear,
+    newsItem,
+    onClose,
+    hasVipHint = false,
+    isPubliclyRevealed = false,
+    autoCycleTimeLeft = null
+}) {
+    if (!stockItem) return null;
+
+    const [isEasyNews, setIsEasyNews] = useState(true);
+    const [demoVote, setDemoVote] = useState(null);
+    const [showAnalysis, setShowAnalysis] = useState(false);
+    const [demoTradeType, setDemoTradeType] = useState('BUY');
+    const [demoTradeQty, setDemoTradeQty] = useState(0);
+    const [demoCash, setDemoCash] = useState(10000000);
+    const [demoHoldings, setDemoHoldings] = useState(0);
+    const [demoToast, setDemoToast] = useState(null);
+
+    const price = stockItem.prices ? (stockItem.prices[currentYear] ?? stockItem.prices[2015] ?? 10000) : 10000;
+    const prevPrice = stockItem.prices ? (stockItem.prices[currentYear > 2015 ? currentYear - 1 : 2015] ?? price) : price;
+    const diff = price - prevPrice;
+    const pct = prevPrice > 0 ? ((diff / prevPrice) * 100).toFixed(1) : '0.0';
+
+    const numQty = parseInt(demoTradeQty, 10) || 0;
+    const orderTotalCost = numQty * price;
+    const afterCash = demoTradeType === 'BUY' ? demoCash - orderTotalCost : demoCash + orderTotalCost;
+    const isOverBudget = demoTradeType === 'BUY' && orderTotalCost > demoCash;
+    const isOverShares = demoTradeType === 'SELL' && numQty > demoHoldings;
+
+    const handleSetPercentage = (pctVal) => {
+        if (price <= 0) return;
+        if (demoTradeType === 'BUY') {
+            const targetCash = demoCash * (pctVal / 100);
+            setDemoTradeQty(Math.floor(targetCash / price));
+        } else {
+            setDemoTradeQty(Math.floor(demoHoldings * (pctVal / 100)));
+        }
+    };
+
+    const handleExecuteTrade = () => {
+        if (numQty <= 0) return;
+        if (demoTradeType === 'BUY') {
+            if (isOverBudget) return;
+            setDemoCash(prev => prev - orderTotalCost);
+            setDemoHoldings(prev => prev + numQty);
+            setDemoTradeQty(0);
+            setDemoToast(`🔔 [강의 시연] ${stockItem.key} 종목 ${numQty.toLocaleString()}주 매수가 체결되었습니다! (잔여 예수금: ${(demoCash - orderTotalCost).toLocaleString()}원)`);
+        } else {
+            if (isOverShares) return;
+            setDemoCash(prev => prev + orderTotalCost);
+            setDemoHoldings(prev => Math.max(0, prev - numQty));
+            setDemoTradeQty(0);
+            setDemoToast(`🔔 [강의 시연] ${stockItem.key} 종목 ${numQty.toLocaleString()}주 매도가 체결되었습니다! (예수금: ${(demoCash + orderTotalCost).toLocaleString()}원)`);
+        }
+        setTimeout(() => setDemoToast(null), 3500);
+    };
+
+    return (
+        <div
+            onClick={onClose}
+            style={{
+                position: 'fixed',
+                inset: 0,
+                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 3500,
+                padding: '16px',
+                boxSizing: 'border-box'
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                className="animate-pop-in"
+                style={{
+                    background: '#090d16',
+                    borderRadius: '24px',
+                    maxWidth: '640px',
+                    width: '100%',
+                    maxHeight: '92vh',
+                    overflowY: 'auto',
+                    boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.8)',
+                    border: '1.5px solid #334155',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                    padding: '18px 20px',
+                    color: '#ffffff',
+                    boxSizing: 'border-box'
+                }}
+            >
+                {/* Top Back Header Bar */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: '#0f172a',
+                    padding: '8px 12px',
+                    borderRadius: '12px',
+                    border: '1px solid #1e293b'
+                }}>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: '#334155',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '8px 12px',
+                            fontWeight: '800',
+                            fontSize: '0.86rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}
+                    >
+                        <ArrowLeft size={16} /> 목록으로
+                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {autoCycleTimeLeft != null && (
+                            <span style={{
+                                background: '#f59e0b',
+                                color: '#0f172a',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: '900'
+                            }}>
+                                ⏱ 뉴스 순환: {autoCycleTimeLeft}초
+                            </span>
+                        )}
+                        <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: '700' }}>
+                            종목 상세 및 뉴스 / 주문
+                        </span>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: '#1e293b',
+                            border: 'none',
+                            borderRadius: '8px',
+                            width: '32px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: '#cbd5e1',
+                            fontSize: '1rem',
+                            fontWeight: 'bold'
+                        }}
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                {/* 보유 주식 상태 배너 (시연용 보유 주식이 있을 때 표시) */}
+                {demoHoldings > 0 && (
+                    <div style={{
+                        background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.1) 100%)',
+                        border: '2px solid #10b981',
+                        borderRadius: '16px',
+                        padding: '14px 16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        boxShadow: '0 4px 20px rgba(16, 185, 129, 0.25)'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '1.25rem' }}>🔥</span>
+                                <span style={{ fontSize: '1.05rem', fontWeight: '900', color: '#34d399' }}>
+                                    현재 보유 중인 주식입니다!
+                                </span>
+                            </div>
+                            <span style={{
+                                background: '#10b981',
+                                color: '#ffffff',
+                                padding: '3px 10px',
+                                borderRadius: '8px',
+                                fontSize: '0.85rem',
+                                fontWeight: '900',
+                                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
+                            }}>
+                                총 {demoHoldings.toLocaleString()}주 보유 중
+                            </span>
+                        </div>
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: 'rgba(0,0,0,0.35)',
+                            padding: '10px 14px',
+                            borderRadius: '10px',
+                            fontSize: '0.88rem'
+                        }}>
+                            <span style={{ color: '#cbd5e1' }}>현재 평가 금액 ({price.toLocaleString()}원 × {demoHoldings}주)</span>
+                            <span style={{ fontWeight: '900', color: '#ffffff', fontSize: '1.15rem' }}>
+                                {(demoHoldings * price).toLocaleString()}원
+                            </span>
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: '#6ee7b7', lineHeight: '1.45', background: 'rgba(16, 185, 129, 0.1)', padding: '8px 10px', borderRadius: '8px' }}>
+                            💡 <strong>투자 의사결정 안내:</strong> {currentYear}년 뉴스 이슈와 주가 전망을 분석하여<br/>
+                            👉 이익 실현 또는 손절을 원하시면 <strong>[🔵 매도]</strong>로 주식을 팔아 현금화하고,<br/>
+                            👉 추가 상승이 기대되면 <strong>[🔴 매수]</strong>로 더 사거나 <strong>[그대로 보유]</strong>하세요!
+                        </div>
+                    </div>
+                )}
+
+                {/* Stock Info Main Card */}
+                <div style={{
+                    background: '#0f172a',
+                    border: demoHoldings > 0 ? '1.5px solid #10b981' : '1px solid #1e293b',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '10px',
+                                background: stockItem.badgeColor || '#3b82f6',
+                                color: 'white',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: '900',
+                                fontSize: '1.25rem'
+                            }}>
+                                {stockItem.key}
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#f8fafc' }}>
+                                    {isPubliclyRevealed ? (stockItem.sectorDisplayName || `${stockItem.sector} (${stockItem.realName})`) : (stockItem.sectorDisplayName || `${stockItem.key} ${stockItem.sector}`)}
+                                </h3>
+                                <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
+                                    내 보유: {demoHoldings > 0 ? (
+                                        <strong style={{ color: '#10b981', fontWeight: '900' }}>
+                                            🔥 {demoHoldings.toLocaleString()}주 (평가액: {(demoHoldings * price).toLocaleString()}원)
+                                        </strong>
+                                    ) : (
+                                        <strong style={{ color: '#64748b' }}>0주</strong>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#ffffff' }}>
+                                {price.toLocaleString()}원
+                            </div>
+                            {currentYear > 2015 && (
+                                <div style={{
+                                    fontSize: '0.8rem',
+                                    fontWeight: '800',
+                                    color: diff > 0 ? '#f43f5e' : (diff < 0 ? '#38bdf8' : '#94a3b8')
+                                }}>
+                                    {diff > 0 ? `▲ +${diff.toLocaleString()}` : (diff < 0 ? `▼ ${diff.toLocaleString()}` : '-')}
+                                    <span> ({diff > 0 ? `+${pct}` : pct}%)</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Stock Specific News Section */}
+                <div style={{
+                    background: '#0f172a',
+                    border: '1px solid #1e293b',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Newspaper size={17} color="#f59e0b" />
+                            <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '900', color: '#f8fafc' }}>
+                                [{stockItem.key}] {currentYear}년 뉴스 이슈
+                            </h4>
+                        </div>
+                        <button
+                            onClick={() => setIsEasyNews(!isEasyNews)}
+                            style={{
+                                background: isEasyNews ? '#f59e0b' : '#334155',
+                                color: isEasyNews ? '#1e293b' : '#f8fafc',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '3px 8px',
+                                fontSize: '0.74rem',
+                                fontWeight: '800',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {isEasyNews ? '📰 원본 뉴스 보기' : '🐣 쉬운 뉴스 보기'}
+                        </button>
+                    </div>
+
+                    {newsItem ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{
+                                    background: '#f43f5e',
+                                    color: 'white',
+                                    padding: '2px 8px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '800'
+                                }}>
+                                    {newsItem.tag || stockItem.sector || '속보'}
+                                </span>
+                                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                    {newsItem.media || '경제종합'} · {newsItem.date || `${currentYear}.06`}
+                                </span>
+                            </div>
+
+                            <div style={{ fontSize: '0.98rem', fontWeight: '800', color: '#f1f5f9', lineHeight: '1.4' }}>
+                                {newsItem.headline}
+                            </div>
+
+                            <div style={{
+                                background: isEasyNews ? 'rgba(245, 158, 11, 0.1)' : '#1e293b',
+                                borderRadius: '10px',
+                                padding: '10px 12px',
+                                fontSize: '0.88rem',
+                                color: isEasyNews ? '#fef3c7' : '#cbd5e1',
+                                lineHeight: '1.6',
+                                border: isEasyNews ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.05)',
+                                whiteSpace: 'pre-line',
+                                wordBreak: 'keep-all',
+                                overflowWrap: 'break-word'
+                            }}>
+                                {isEasyNews ? (newsItem.easyContent || newsItem.content) : newsItem.content}
+                            </div>
+
+                            {/* Term Glossary Footnotes */}
+                            {newsItem.glossary && newsItem.glossary.length > 0 && (
+                                <div style={{
+                                    background: 'rgba(59, 130, 246, 0.08)',
+                                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                                    borderRadius: '10px',
+                                    padding: '8px 12px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px'
+                                }}>
+                                    <div style={{ fontSize: '0.78rem', fontWeight: '900', color: '#60a5fa' }}>
+                                        📌 주요 경제/산업 용어 해설
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        {newsItem.glossary.map((g, idx) => (
+                                            <div key={idx} style={{ fontSize: '0.75rem', color: '#93c5fd', lineHeight: '1.35' }}>
+                                                <strong style={{ color: '#bfdbfe' }}>• {g.term}:</strong> {g.def}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Prediction Vote Bar */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: 'rgba(30, 41, 59, 0.6)',
+                                padding: '8px 12px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                marginTop: '2px'
+                            }}>
+                                <span style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: '800' }}>
+                                    당해 연도 등락 예측:
+                                </span>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                        onClick={() => setDemoVote(demoVote === 'UP' ? null : 'UP')}
+                                        style={{
+                                            background: demoVote === 'UP' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(239, 68, 68, 0.12)',
+                                            color: demoVote === 'UP' ? 'white' : '#fca5a5',
+                                            border: demoVote === 'UP' ? '1.5px solid #f87171' : '1px solid rgba(239, 68, 68, 0.3)',
+                                            borderRadius: '8px',
+                                            padding: '6px 14px',
+                                            fontSize: '0.84rem',
+                                            fontWeight: '900',
+                                            cursor: 'pointer',
+                                            boxShadow: demoVote === 'UP' ? '0 2px 10px rgba(239, 68, 68, 0.4)' : 'none'
+                                        }}
+                                    >
+                                        ▲ 상승 {demoVote === 'UP' && '✓'}
+                                    </button>
+                                    <button
+                                        onClick={() => setDemoVote(demoVote === 'DOWN' ? null : 'DOWN')}
+                                        style={{
+                                            background: demoVote === 'DOWN' ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'rgba(59, 130, 246, 0.12)',
+                                            color: demoVote === 'DOWN' ? 'white' : '#93c5fd',
+                                            border: demoVote === 'DOWN' ? '1.5px solid #60a5fa' : '1px solid rgba(59, 130, 246, 0.3)',
+                                            borderRadius: '8px',
+                                            padding: '6px 14px',
+                                            fontSize: '0.84rem',
+                                            fontWeight: '900',
+                                            cursor: 'pointer',
+                                            boxShadow: demoVote === 'DOWN' ? '0 2px 10px rgba(59, 130, 246, 0.4)' : 'none'
+                                        }}
+                                    >
+                                        ▼ 하락 {demoVote === 'DOWN' && '✓'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Collapsible Fundamental & Technical Analysis Toggle */}
+                            <button
+                                onClick={() => setShowAnalysis(!showAnalysis)}
+                                style={{
+                                    background: showAnalysis ? '#334155' : 'rgba(56, 189, 248, 0.12)',
+                                    color: showAnalysis ? '#cbd5e1' : '#38bdf8',
+                                    border: showAnalysis ? '1px solid #475569' : '1px solid rgba(56, 189, 248, 0.35)',
+                                    borderRadius: '10px',
+                                    padding: '8px 12px',
+                                    fontSize: '0.82rem',
+                                    fontWeight: '800',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                    width: '100%',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <BarChart3 size={15} />
+                                <span>{showAnalysis ? '📊 기업 분석 및 10년 차트 닫기 ▲' : '📊 기업 분석 및 10년 차트 보기 ▼'}</span>
+                            </button>
+
+                            {showAnalysis && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                                    <StockPriceTrendChart stockItem={stockItem} currentYear={currentYear} />
+                                    <FundamentalTechnicalAnalysis stockItem={stockItem} currentYear={currentYear} newsItem={newsItem} />
+                                </div>
+                            )}
+
+                            {/* VIP Hint Box */}
+                            {hasVipHint && newsItem?.vipHint && (
+                                <div style={{
+                                    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.12) 100%)',
+                                    border: '2px solid #f59e0b',
+                                    borderRadius: '14px',
+                                    padding: '12px 14px',
+                                    fontSize: '0.88rem',
+                                    color: '#fef3c7',
+                                    fontWeight: '700',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '6px',
+                                    boxShadow: '0 4px 15px rgba(245, 158, 11, 0.2)'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontWeight: '900', fontSize: '0.92rem' }}>
+                                        <Sparkles size={18} color="#fbbf24" /> 100% VIP 특급 확정 정보
+                                    </div>
+                                    <div style={{ lineHeight: '1.5' }}>
+                                        {newsItem.vipHint}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                            2015년은 기준가 연도입니다. 2016년부터 뉴스가 제공됩니다.
+                        </div>
+                    )}
+                </div>
+
+                {/* Trading Console (매수 / 매도 주문 시연) */}
+                <div style={{
+                    background: '#0f172a',
+                    border: '1.5px solid #3b82f6',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+                }}>
+                    {demoToast && (
+                        <div style={{
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: '#ffffff',
+                            padding: '10px 14px',
+                            borderRadius: '10px',
+                            fontSize: '0.86rem',
+                            fontWeight: '800',
+                            textAlign: 'center',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                        }}>
+                            {demoToast}
+                        </div>
+                    )}
+
+                    {/* Mode Switcher: 매수 / 매도 */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                            onClick={() => {
+                                setDemoTradeType('BUY');
+                                setDemoTradeQty(0);
+                            }}
+                            style={{
+                                flex: 1,
+                                padding: '10px',
+                                borderRadius: '10px',
+                                background: demoTradeType === 'BUY' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : '#1e293b',
+                                color: 'white',
+                                border: demoTradeType === 'BUY' ? '2px solid #f87171' : '1px solid #334155',
+                                fontWeight: '900',
+                                fontSize: '1rem',
+                                cursor: 'pointer',
+                                boxShadow: demoTradeType === 'BUY' ? '0 4px 14px rgba(239, 68, 68, 0.4)' : 'none'
+                            }}
+                        >
+                            🔴 매수
+                        </button>
+                        <button
+                            onClick={() => {
+                                setDemoTradeType('SELL');
+                                setDemoTradeQty(0);
+                            }}
+                            style={{
+                                flex: 1,
+                                padding: '10px',
+                                borderRadius: '10px',
+                                background: demoTradeType === 'SELL' ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : '#1e293b',
+                                color: 'white',
+                                border: demoTradeType === 'SELL' ? '2px solid #60a5fa' : '1px solid #334155',
+                                fontWeight: '900',
+                                fontSize: '1rem',
+                                cursor: 'pointer',
+                                boxShadow: demoTradeType === 'SELL' ? '0 4px 14px rgba(59, 130, 246, 0.4)' : 'none'
+                            }}
+                        >
+                            🔵 매도
+                        </button>
+                    </div>
+
+                    {/* Mode status summary */}
+                    <div style={{
+                        fontSize: '0.82rem',
+                        color: demoTradeType === 'SELL' ? '#93c5fd' : '#fca5a5',
+                        background: demoTradeType === 'SELL' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                        border: demoTradeType === 'SELL' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                        padding: '8px 12px',
+                        borderRadius: '10px',
+                        fontWeight: '700'
+                    }}>
+                        {demoTradeType === 'BUY'
+                            ? (demoHoldings > 0
+                                ? `현재 ${demoHoldings.toLocaleString()}주 보유 중이며, 보유 현금(${demoCash.toLocaleString()}원)으로 추가 매수합니다.`
+                                : `보유 현금(${demoCash.toLocaleString()}원)으로 [${stockItem.key} ${stockItem.sector}] 주식을 신규 매수합니다.`)
+                            : `보유 중인 ${demoHoldings.toLocaleString()}주 중 원하는 수량을 매도하여 현금화합니다.`}
+                    </div>
+
+                    {/* Quantity & Percentage Controls */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#e2e8f0' }}>
+                                주문 수량 설정 (주):
+                            </span>
+                            <div style={{ display: 'flex', gap: '3px' }}>
+                                {[10, 25, 50, 75, 100].map(pctVal => {
+                                    let isSelected = false;
+                                    if (price > 0) {
+                                        if (demoTradeType === 'BUY') {
+                                            const targetCash = demoCash * (pctVal / 100);
+                                            const calcQty = Math.floor(targetCash / price);
+                                            isSelected = numQty === calcQty && calcQty > 0;
+                                        } else {
+                                            const calcQty = Math.floor(demoHoldings * (pctVal / 100));
+                                            isSelected = numQty === calcQty && calcQty > 0;
+                                        }
+                                    }
+                                    return (
+                                        <button
+                                            key={pctVal}
+                                            onClick={() => handleSetPercentage(pctVal)}
+                                            style={{
+                                                background: isSelected
+                                                    ? (demoTradeType === 'BUY' ? '#ef4444' : '#3b82f6')
+                                                    : (demoTradeType === 'BUY' ? '#7f1d1d' : '#1e3a8a'),
+                                                color: '#f8fafc',
+                                                border: isSelected ? '1.5px solid #ffffff' : '1px solid rgba(255,255,255,0.2)',
+                                                borderRadius: '6px',
+                                                padding: '3px 6px',
+                                                fontSize: '0.72rem',
+                                                fontWeight: '800',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            {pctVal}%
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Stepper Input row */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', width: '100%' }}>
+                            <button
+                                onClick={() => setDemoTradeQty(Math.max(0, numQty - 100))}
+                                title="100주 빼기"
+                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '52px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                                -100주
+                            </button>
+                            <button
+                                onClick={() => setDemoTradeQty(Math.max(0, numQty - 10))}
+                                title="10주 빼기"
+                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                                -10주
+                            </button>
+                            <div style={{
+                                flex: 1,
+                                minWidth: '80px',
+                                maxWidth: '140px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                background: '#090d16',
+                                border: '1px solid #475569',
+                                borderRadius: '8px',
+                                padding: '4px 8px'
+                            }}>
+                                <input
+                                    type="number"
+                                    value={demoTradeQty || ''}
+                                    placeholder="0"
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value, 10);
+                                        setDemoTradeQty(isNaN(val) ? 0 : Math.max(0, val));
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        minWidth: 0,
+                                        background: 'transparent',
+                                        border: 'none',
+                                        outline: 'none',
+                                        color: '#ffffff',
+                                        textAlign: 'right',
+                                        fontWeight: '900',
+                                        fontSize: '1.15rem'
+                                    }}
+                                />
+                                <span style={{ color: '#94a3b8', fontWeight: '800', fontSize: '0.95rem', marginLeft: '4px' }}>주</span>
+                            </div>
+                            <button
+                                onClick={() => setDemoTradeQty(numQty + 10)}
+                                title="10주 더하기"
+                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '46px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                                +10주
+                            </button>
+                            <button
+                                onClick={() => setDemoTradeQty(numQty + 100)}
+                                title="100주 더하기"
+                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 6px', minWidth: '52px', fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                                +100주
+                            </button>
+                        </div>
+                        <div style={{ textAlign: 'center', fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                            💡 위 버튼으로 매매 수량을 10주, 100주 단위로 빠르게 늘리거나 줄일 수 있습니다.
+                        </div>
+                    </div>
+
+                    {/* Calculation & Difference Panel */}
+                    <div style={{
+                        background: '#1e293b',
+                        borderRadius: '12px',
+                        padding: '10px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '5px',
+                        border: '1px solid #334155'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                            <span style={{ color: '#94a3b8' }}>1주당 시세</span>
+                            <span style={{ fontWeight: '700' }}>{price.toLocaleString()}원</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
+                            <span style={{ color: '#94a3b8' }}>총 {demoTradeType === 'BUY' ? '매수' : '매도'} 금액</span>
+                            <span style={{ fontWeight: '900', color: demoTradeType === 'BUY' ? '#f43f5e' : '#38bdf8' }}>
+                                {orderTotalCost.toLocaleString()}원
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', paddingTop: '4px', borderTop: '1px dashed #334155' }}>
+                            <span style={{ color: '#94a3b8' }}>현재 예수금(보유 현금)</span>
+                            <span style={{ fontWeight: '700', color: '#10b981' }}>{demoCash.toLocaleString()}원</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', fontWeight: '900' }}>
+                            <span style={{ color: '#f8fafc' }}>체결 후 예상 예수금</span>
+                            <span style={{ color: afterCash >= 0 ? '#38bdf8' : '#ef4444' }}>
+                                {afterCash.toLocaleString()}원
+                            </span>
+                        </div>
+
+                        {demoTradeType === 'SELL' && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                                <span>매도 후 남은 주식 수량</span>
+                                <span style={{ fontWeight: '800', color: '#38bdf8' }}>{Math.max(0, demoHoldings - numQty)}주</span>
+                            </div>
+                        )}
+
+                        {isOverBudget && (
+                            <div style={{ color: '#ef4444', fontSize: '0.78rem', fontWeight: 'bold', marginTop: '4px', textAlign: 'center' }}>
+                                ⚠️ 가진 금액(예수금)이 {(orderTotalCost - demoCash).toLocaleString()}원 부족합니다!
+                            </div>
+                        )}
+                        {isOverShares && (
+                            <div style={{ color: '#ef4444', fontSize: '0.78rem', fontWeight: 'bold', marginTop: '4px', textAlign: 'center' }}>
+                                ⚠️ 보유한 주식 수량({demoHoldings}주)보다 많이 매도할 수 없습니다!
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Execute Order Button */}
+                    <button
+                        onClick={handleExecuteTrade}
+                        disabled={numQty <= 0 || isOverBudget || isOverShares}
+                        style={{
+                            width: '100%',
+                            padding: '14px',
+                            borderRadius: '12px',
+                            border: 'none',
+                            background: (numQty <= 0 || isOverBudget || isOverShares)
+                                ? '#334155'
+                                : (demoTradeType === 'BUY'
+                                    ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                                    : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'),
+                            color: (numQty <= 0 || isOverBudget || isOverShares) ? '#94a3b8' : '#ffffff',
+                            fontSize: '1.05rem',
+                            fontWeight: '900',
+                            cursor: (numQty <= 0 || isOverBudget || isOverShares) ? 'not-allowed' : 'pointer',
+                            boxShadow: (numQty <= 0 || isOverBudget || isOverShares)
+                                ? 'none'
+                                : (demoTradeType === 'BUY' ? '0 6px 20px rgba(239, 68, 68, 0.45)' : '0 6px 20px rgba(59, 130, 246, 0.45)'),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            transition: 'all 0.15s ease'
+                        }}
+                    >
+                        {demoTradeType === 'BUY' ? '🔴 매수 주문 전송 (시연)' : '🔵 매도 주문 전송 (시연)'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function StockNewsModal({ newsItem, currentYear, onClose, hasVipHint = false, isHost = false, stocks = {}, autoCycleTimeLeft = null }) {
     if (!newsItem) return null;
     const [isEasyNews, setIsEasyNews] = useState(false);
@@ -445,7 +1211,7 @@ export function StockNewsModal({ newsItem, currentYear, onClose, hasVipHint = fa
                                     gap: '4px'
                                 }}
                             >
-                                {isEasyNews ? '📰 원본 뉴스 보기' : '🐣 Easy 쉬운 뉴스 보기'}
+                                {isEasyNews ? '📰 원본 뉴스 보기' : '🐣 쉬운 뉴스 보기'}
                             </button>
                         </div>
                         <h2 style={{
@@ -1362,6 +2128,7 @@ export function StockGameScreenView({
     const stockList = useMemo(() => Object.values(stocks), [stocks]);
     const sortedStocks = useMemo(() => [...stockList].sort((a, b) => a.key.localeCompare(b.key)), [stockList]);
     const [selectedNews, setSelectedNews] = useState(null);
+    const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
     const [selectedSector, setSelectedSector] = useState(null);
     const [showScreenQrModal, setShowScreenQrModal] = useState(false);
 
@@ -1382,6 +2149,7 @@ export function StockGameScreenView({
     const handleToggleAutoCycle = () => {
         if (isAutoCycling) {
             setIsAutoCycling(false);
+            setSelectedStockForDetail(null);
             setSelectedNews(null);
         } else {
             const firstStock = sortedStocks[0] || stockList[0];
@@ -1391,6 +2159,7 @@ export function StockGameScreenView({
             setCyclePhase('NEWS');
             setCycleTimeLeft(initialNewsSec);
             setSelectedNews(firstNews || null);
+            setSelectedStockForDetail(firstStock || null);
             setIsAutoCycling(true);
         }
     };
@@ -1409,6 +2178,7 @@ export function StockGameScreenView({
                     // 뉴스 종료 ➔ 시세판 확인 단계로 전환
                     setCyclePhase('BOARD');
                     setSelectedNews(null);
+                    setSelectedStockForDetail(null);
                     return Math.max(1, Number(boardDuration) || 10);
                 } else {
                     // 시세판 종료 ➔ 다음 종목 뉴스 단계로 전환
@@ -1418,6 +2188,7 @@ export function StockGameScreenView({
                     const nextStock = sortedStocks[nextIdx] || stockList[nextIdx];
                     const nextNews = yearNewsList.find(n => n.stockKey === nextStock?.key) || null;
                     setSelectedNews(nextNews);
+                    setSelectedStockForDetail(nextStock || null);
                     return Math.max(1, Number(newsDuration) || 10);
                 }
             });
@@ -1820,6 +2591,7 @@ export function StockGameScreenView({
                                 key={item.key}
                                 onClick={() => {
                                     const news = yearNewsList.find(n => n.stockKey === item.key);
+                                    setSelectedStockForDetail(item);
                                     if (news) {
                                         setSelectedNews(news);
                                     }
@@ -1908,17 +2680,18 @@ export function StockGameScreenView({
             </div>
 
             {/* Modals */}
-            {selectedNews && (
-                <StockNewsModal
-                    newsItem={selectedNews}
+            {(selectedStockForDetail || selectedNews) && (
+                <ParticipantStockDetailModal
+                    stockItem={selectedStockForDetail || (selectedNews ? (stocks[selectedNews.stockKey] || sortedStocks.find(s => s.key === selectedNews.stockKey) || { key: selectedNews.stockKey, sector: selectedNews.tag, badgeColor: selectedNews.badgeColor, prices: {} }) : null)}
                     currentYear={year}
+                    newsItem={selectedNews || (selectedStockForDetail ? yearNewsList.find(n => n.stockKey === selectedStockForDetail.key) : null)}
                     onClose={() => {
+                        setSelectedStockForDetail(null);
                         setSelectedNews(null);
                         if (isAutoCycling) setIsAutoCycling(false);
                     }}
                     hasVipHint={allowAllVipHint}
-                    isHost={false}
-                    stocks={stocks}
+                    isPubliclyRevealed={isPubliclyRevealed}
                     autoCycleTimeLeft={isAutoCycling && cyclePhase === 'NEWS' ? cycleTimeLeft : null}
                 />
             )}
@@ -2533,6 +3306,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     
     // 모달 관리
     const [selectedNews, setSelectedNews] = useState(null);
+    const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
     const [selectedSector, setSelectedSector] = useState(null);
     const [showSectorDirectoryModal, setShowSectorDirectoryModal] = useState(false);
     const [allOrdersModalOpen, setAllOrdersModalOpen] = useState(false);
@@ -5217,8 +5991,9 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const [activeTab, setActiveTab] = useState('stocks'); // 'stocks' | 'sectors' | 'portfolio'
     const [selectedStockKey, setSelectedStockKey] = useState(null); // 특정 종목 클릭 시 뉴스 & 매매 상세화면 전환
     const [selectedNews, setSelectedNews] = useState(null);
+    const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
     const [selectedSector, setSelectedSector] = useState(null);
-    const [participantEasyNews, setParticipantEasyNews] = useState(true); // 초등학생 친화형 쉬운 뉴스 기본 활성화
+    const [participantEasyNews, setParticipantEasyNews] = useState(true); // 쉬운 뉴스 기본 활성화
     const [showAnalysis, setShowAnalysis] = useState(false); // 기업 분석 및 차트 접기/펼치기
 
     // 매수 / 매도 주문 상태

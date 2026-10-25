@@ -2763,7 +2763,7 @@ function formatEasyNewsContent(headline, origContent, year, sector = '') {
         const goodPoint = sentences.find(s => s.includes('인기') || s.includes('벌') || s.includes('좋') || s.includes('성공') || s.includes('계약') || s.includes('돌파') || s.includes('증가') || s.includes('수출')) || sentences[0] || '신제품과 기술 개발로 회사 인기가 올라가고 있어요!';
         const badPoint = sentences.find(s => s.includes('하지만') || s.includes('다만') || s.includes('걱정') || s.includes('비싸') || s.includes('줄어') || s.includes('위험') || s.includes('부담') || s.includes('손실')) || sentences[1] || '하지만 재료 값이 오르고 경쟁이 치열해져서 손해를 볼 수 있어요!';
 
-        return `🐣 [초등학생도 이해하는 쉬운 뉴스 요약]
+        return `🐣 [쉬운 뉴스 요약]
 ${year === 2015 ? '2016년' : `${year}년`} [${sector || '관련'}] 시장 뉴스: "${cleanHead}"
 
 [🟢 좋은 소식 (오를 것 같은 이유)]
@@ -2775,7 +2775,7 @@ ${year === 2015 ? '2016년' : `${year}년`} [${sector || '관련'}] 시장 뉴�
 🤔 [알쏭달쏭 생각해 볼 점]: 과연 좋은 소식이 이길까요, 걱정되는 소식이 이길까요? 신중하게 선택해 보세요!`;
     }
 
-    return `🐣 [초등학생도 이해하는 쉬운 뉴스 요약]
+    return `🐣 [쉬운 뉴스 요약]
 ${year === 2015 ? '2016년' : `${year}년`} [${sector || '관련'}] 시장 뉴스: "${cleanHead}"
 
 [🟢 좋은 소식 (오를 것 같은 이유)]
