@@ -225,9 +225,26 @@ export default function Participant({ socket }) {
                         }
                         if (res.myScore !== undefined) setMyScore(res.myScore);
                         if (res.groupId !== undefined && res.groupId !== null) setGroupId(res.groupId);
-                        if (res.roomState) {
+                        if (res.isGame || res.gameId) {
+                            setIsGame(true);
+                            if (res.gameId) setGameId(res.gameId);
+                            setGameState('game_active');
+                        } else if (res.roomState) {
                             setGameState(res.roomState === 'lobby' ? 'waiting' : res.roomState);
                         }
+                        if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
+                        if (res.options) setCurrentOptions(res.options);
+                        if (res.currentQuestionIndex !== undefined) setCurrentQuestionIndex(res.currentQuestionIndex);
+                        if (res.totalQuestions !== undefined) setTotalQuestions(res.totalQuestions);
+                        if (res.points !== undefined) setCurrentPoints(res.points);
+                        if (res.mediaUrl) setCurrentMediaUrl(res.mediaUrl);
+                        if (res.mediaUrl2) setCurrentMediaUrl2(res.mediaUrl2);
+                        if (res.diffSpots) setDiffSpots(res.diffSpots);
+                        if (res.mediaType) setCurrentMediaType(res.mediaType);
+                        if (res.mediaName) setCurrentMediaName(res.mediaName);
+                        if (res.mediaDisplayMode) setCurrentMediaDisplayMode(res.mediaDisplayMode);
+                        if (res.autoplay !== undefined) setCurrentAutoplay(res.autoplay);
+                        if (res.showChosung !== undefined) setShowChosung(res.showChosung);
                     }
                 });
             }
@@ -1645,7 +1662,7 @@ export default function Participant({ socket }) {
                         <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem', color: 'white' }}>준비 완료!</h2>
                         <p style={{ fontSize: '1.2rem', opacity: 0.9 }}>{groupId ? `${groupId}조원들과 함께 방장 화면을 봐주세요!` : '방장 화면에 닉네임이 떴는지 확인해주세요.'}</p>
                         <div style={{
-                            marginTop: '2.5rem',
+                            marginTop: '2rem',
                             display: 'inline-block',
                             padding: '12px 24px',
                             background: 'rgba(255,255,255,0.2)',
@@ -1654,6 +1671,46 @@ export default function Participant({ socket }) {
                             fontWeight: '800'
                         }}>
                             {groupId ? `${groupId}조: ` : ''}{nickname}
+                        </div>
+
+                        <div style={{ marginTop: '2rem' }}>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const myClientId = clientIdRef.current || getOrCreateClientId();
+                                    const currentPin = pinRef.current || new URLSearchParams(window.location.search).get('pin') || sessionStorage.getItem('quizrun_pin') || pin;
+                                    socket.emit('participant:joinRoom', { pin: String(currentPin).trim(), nickname, clientId: myClientId }, (res) => {
+                                        if (res && res.success) {
+                                            if (res.isGame || res.gameId) {
+                                                setIsGame(true);
+                                                if (res.gameId) setGameId(res.gameId);
+                                                setGameState('game_active');
+                                            } else if (res.roomState && res.roomState !== 'lobby' && res.roomState !== 'waiting') {
+                                                setGameState(res.roomState);
+                                            }
+                                            if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
+                                            if (res.options) setCurrentOptions(res.options);
+                                            if (res.currentQuestionIndex !== undefined) setCurrentQuestionIndex(res.currentQuestionIndex);
+                                        }
+                                    });
+                                }}
+                                style={{
+                                    padding: '12px 24px',
+                                    borderRadius: '14px',
+                                    border: 'none',
+                                    background: 'white',
+                                    color: '#4f46e5',
+                                    fontWeight: '900',
+                                    fontSize: '1rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                }}
+                            >
+                                🔄 진행 중인 게임 / 퀴즈 바로 입장하기
+                            </button>
                         </div>
                     </div>
                 )}
@@ -2696,7 +2753,31 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
     const [roundScore, setRoundScore] = useState(0);
     const [showWinBanner, setShowWinBanner] = useState(false);
     const [expandNotice, setExpandNotice] = useState(null);
+    const [winCount, setWinCount] = useState(0);
+    const [aiThinking, setAiThinking] = useState(false);
+    const [tournamentResult, setTournamentResult] = useState(null);
+    const [turnNotice, setTurnNotice] = useState(null);
+
+    // Match Info: 1:1 opponent or Computer AI
+    const [matchInfo, setMatchInfo] = useState({
+        matchId: 'm_ai_' + (nickname || 'player'),
+        opponent: '컴퓨터 (AI)',
+        opponentId: 'ai',
+        myColor: 'black',
+        isAI: true,
+        isStandby: false,
+        rule: 'tournament'
+    });
+
     const initialBaseRef = useRef(baseScore);
+    const matchInfoRef = useRef(matchInfo);
+    matchInfoRef.current = matchInfo;
+    const stonesRef = useRef(stones);
+    stonesRef.current = stones;
+    const boundsRef = useRef(bounds);
+    boundsRef.current = bounds;
+    const isBlackTurnRef = useRef(isBlackTurn);
+    isBlackTurnRef.current = isBlackTurn;
 
     // Zoom & Pan viewport state
     const [scale, setScale] = useState(1.0);
@@ -2719,14 +2800,250 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
         startTime: 0
     });
 
+    // 4-in-a-row Win check helper
+    const checkWinOnBoard = (board, row, col, color) => {
+        const directions = [
+            [0, 1],   // 가로
+            [1, 0],   // 세로
+            [1, 1],   // 대각선 ↘
+            [1, -1]   // 대각선 ↙
+        ];
+        for (const [dr, dc] of directions) {
+            const line = [`${row},${col}`];
+            let i = 1;
+            while (board[`${row + dr * i},${col + dc * i}`] === color) {
+                line.push(`${row + dr * i},${col + dc * i}`);
+                i++;
+            }
+            i = 1;
+            while (board[`${row - dr * i},${col - dc * i}`] === color) {
+                line.push(`${row - dr * i},${col - dc * i}`);
+                i++;
+            }
+            if (line.length >= 4) {
+                return line;
+            }
+        }
+        return null;
+    };
+
+    // Smart Computer AI Move Calculator
+    const calculateBestAIMove = (currentStones, currentBounds, aiColor, humanColor) => {
+        const candidateMoves = [];
+        const checked = new Set();
+
+        const dirs = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+        ];
+
+        // Evaluate around all placed stones
+        const stoneKeys = Object.keys(currentStones);
+        if (stoneKeys.length === 0) {
+            return { r: 4, c: 4 }; // Center
+        }
+
+        stoneKeys.forEach(k => {
+            const [r, c] = k.split(',').map(Number);
+            dirs.forEach(([dr, dc]) => {
+                const nr = r + dr;
+                const nc = c + dc;
+                const nkey = `${nr},${nc}`;
+                if (!currentStones[nkey] && !checked.has(nkey)) {
+                    checked.add(nkey);
+                    candidateMoves.push({ r: nr, c: nc });
+                }
+            });
+        });
+
+        if (candidateMoves.length === 0) {
+            return { r: 4, c: 4 };
+        }
+
+        let bestMove = candidateMoves[0];
+        let bestScore = -Infinity;
+
+        candidateMoves.forEach(({ r, c }) => {
+            let score = 0;
+
+            // 1. Can AI win immediately (4-in-a-row)?
+            const aiSim = { ...currentStones, [`${r},${c}`]: aiColor };
+            if (checkWinOnBoard(aiSim, r, c, aiColor)) {
+                score += 100000;
+            }
+
+            // 2. Can Human win immediately? Must block!
+            const humanSim = { ...currentStones, [`${r},${c}`]: humanColor };
+            if (checkWinOnBoard(humanSim, r, c, humanColor)) {
+                score += 50000;
+            }
+
+            // 3. Proximity bonus towards center
+            const centerDist = Math.hypot(r - 4, c - 4);
+            score += Math.max(0, 30 - centerDist * 3);
+
+            // 4. Random variation for natural feel
+            score += Math.random() * 8;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = { r, c };
+            }
+        });
+
+        return bestMove;
+    };
+
+    // Computer AI Trigger
+    const triggerAIMove = (latestStones, latestBounds, aiColor, humanColor) => {
+        setAiThinking(true);
+        setTimeout(() => {
+            setAiThinking(false);
+            const { r, c } = calculateBestAIMove(latestStones, latestBounds, aiColor, humanColor);
+            const key = `${r},${c}`;
+            const nextStones = { ...latestStones, [key]: aiColor };
+            setStones(nextStones);
+            setLastMove({ r, c });
+
+            // Auto-expand board
+            let { minR, maxR, minC, maxC } = latestBounds;
+            let expanded = false;
+            let expandedDirs = [];
+            if (r - minR <= 1) { minR -= 2; expanded = true; expandedDirs.push('위쪽'); }
+            if (maxR - r <= 1) { maxR += 2; expanded = true; expandedDirs.push('아래쪽'); }
+            if (c - minC <= 1) { minC -= 2; expanded = true; expandedDirs.push('왼쪽'); }
+            if (maxC - c <= 1) { maxC += 2; expanded = true; expandedDirs.push('오른쪽'); }
+            if (expanded) {
+                setBounds({ minR, maxR, minC, maxC });
+                setExpandNotice(`✨ 바둑판 ${expandedDirs.join(', ')} 확장!`);
+                setTimeout(() => setExpandNotice(null), 2500);
+            }
+
+            // Win check
+            const winLine = checkWinOnBoard(nextStones, r, c, aiColor);
+            if (winLine) {
+                setWinner('컴퓨터 (AI)');
+                setWinningLine(winLine);
+                setShowWinBanner(true);
+                try { playSound('wrong'); } catch (e) {}
+                if (socket && pin) {
+                    socket.emit('samok:match_finish', {
+                        pin,
+                        matchId: matchInfoRef.current.matchId,
+                        isWin: false,
+                        winnerNickname: 'AI'
+                    });
+                }
+            } else {
+                setIsBlackTurn(true); // Return turn to player (Black)
+                try { playSound('step'); } catch (e) {}
+            }
+        }, 550);
+    };
+
+    // Initialize Tournament & Request Pairing
     useEffect(() => {
         emitLiveGameStream({
             socket, pin, gameId: 'omok', nickname, groupId,
             baseScore: initialBaseRef.current, roundScore: 0,
             isAlive: true, isFinished: false, updateRoomScore: false,
-            gameData: { statusText: '⚫⚪ 사목 대국 시작 (9x9 동적 확장)', progressPct: 5, moves: 0 }
+            gameData: { statusText: '⚫⚪ 사목 실시간 1:1 대국 참여', progressPct: 10, moves: 0 }
         });
+
+        if (socket && pin) {
+            socket.emit('samok:request_pair', { pin, nickname });
+        }
     }, []);
+
+    // Socket Event Listeners for Real-Time 1:1 Tournament
+    useEffect(() => {
+        if (!socket) return;
+
+        // 1. Match Start / Opponent Paired
+        const handleMatchStart = (data) => {
+            console.log('[Samok] Match started:', data);
+            setBounds({ minR: 0, maxR: 8, minC: 0, maxC: 8 });
+            setStones({});
+            setIsBlackTurn(true);
+            setWinner(null);
+            setWinningLine([]);
+            setLastMove(null);
+            setShowWinBanner(false);
+            setAiThinking(false);
+
+            setMatchInfo({
+                matchId: data.matchId || `m_${Date.now()}`,
+                opponent: data.opponent || '상대방',
+                opponentId: data.opponentId || 'ai',
+                myColor: data.myColor || 'black',
+                isAI: Boolean(data.isAI),
+                isStandby: Boolean(data.isStandby),
+                rule: data.rule || 'tournament'
+            });
+
+            try { playSound('step'); } catch (e) {}
+            const opponentDesc = data.isAI ? '컴퓨터(AI)' : `${data.opponent}`;
+            setTurnNotice(`⚔️ 대결 시작! vs ${opponentDesc} (내 돌: ${data.myColor === 'black' ? '흑돌⚫ 선공' : '백돌⚪ 후공'})`);
+            setTimeout(() => setTurnNotice(null), 3500);
+        };
+
+        // 2. Opponent Move (Human vs Human)
+        const handleOpponentMove = (data) => {
+            if (data.matchId && matchInfoRef.current.matchId && data.matchId !== matchInfoRef.current.matchId) {
+                return;
+            }
+            const { r, c, color } = data;
+            const key = `${r},${c}`;
+            const nextStones = { ...stonesRef.current, [key]: color };
+            setStones(nextStones);
+            setLastMove({ r, c });
+
+            // Auto-expand board
+            let { minR, maxR, minC, maxC } = boundsRef.current;
+            let expanded = false;
+            let expandedDirs = [];
+            if (r - minR <= 1) { minR -= 2; expanded = true; expandedDirs.push('위쪽'); }
+            if (maxR - r <= 1) { maxR += 2; expanded = true; expandedDirs.push('아래쪽'); }
+            if (c - minC <= 1) { minC -= 2; expanded = true; expandedDirs.push('왼쪽'); }
+            if (maxC - c <= 1) { maxC += 2; expanded = true; expandedDirs.push('오른쪽'); }
+            if (expanded) {
+                setBounds({ minR, maxR, minC, maxC });
+                setExpandNotice(`✨ 바둑판 ${expandedDirs.join(', ')} 확장!`);
+                setTimeout(() => setExpandNotice(null), 2500);
+            }
+
+            // Check Win
+            const winLine = checkWinOnBoard(nextStones, r, c, color);
+            if (winLine) {
+                const oppName = matchInfoRef.current.opponent;
+                setWinner(oppName);
+                setWinningLine(winLine);
+                setShowWinBanner(true);
+                try { playSound('wrong'); } catch (e) {}
+            } else {
+                setIsBlackTurn(color === 'white'); // If opponent was white, now black turn
+                try { playSound('step'); } catch (e) {}
+            }
+        };
+
+        // 3. Tournament Complete (Final 3 Announcement)
+        const handleTournamentComplete = (data) => {
+            console.log('[Samok] Tournament complete:', data);
+            setTournamentResult(data);
+            try { playSound('fanfare'); } catch (e) {}
+        };
+
+        socket.on('samok:match_start', handleMatchStart);
+        socket.on('samok:opponent_move', handleOpponentMove);
+        socket.on('samok:tournament_complete', handleTournamentComplete);
+
+        return () => {
+            socket.off('samok:match_start', handleMatchStart);
+            socket.off('samok:opponent_move', handleOpponentMove);
+            socket.off('samok:tournament_complete', handleTournamentComplete);
+        };
+    }, [socket]);
 
     // Desktop Mouse Wheel Zoom
     useEffect(() => {
@@ -2746,12 +3063,7 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
     const handleMouseDown = (e) => {
         if (e.button !== 0) return;
         isDraggingRef.current = true;
-        dragStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
-            panX: pan.x,
-            panY: pan.y
-        };
+        dragStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
         moveDistRef.current = 0;
     };
 
@@ -2760,193 +3072,158 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
         const dx = e.clientX - dragStartRef.current.x;
         const dy = e.clientY - dragStartRef.current.y;
         moveDistRef.current = Math.hypot(dx, dy);
-        setPan({
-            x: dragStartRef.current.panX + dx,
-            y: dragStartRef.current.panY + dy
-        });
+        setPan({ x: dragStartRef.current.panX + dx, y: dragStartRef.current.panY + dy });
     };
 
     const handleMouseUp = () => {
         isDraggingRef.current = false;
     };
 
-    // Mobile Touch: 2-finger Pinch Zoom + 1-finger Drag Pan
+    // Mobile Touch
     const handleTouchStart = (e) => {
         if (e.touches.length === 1) {
             touchStateRef.current = {
-                touches: 1,
-                dist: 0,
-                startScale: scale,
-                startX: e.touches[0].clientX,
-                startY: e.touches[0].clientY,
-                panX: pan.x,
-                panY: pan.y,
-                moveDist: 0,
-                startTime: Date.now()
+                touches: 1, dist: 0, startScale: scale,
+                startX: e.touches[0].clientX, startY: e.touches[0].clientY,
+                panX: pan.x, panY: pan.y, moveDist: 0, startTime: Date.now()
             };
         } else if (e.touches.length === 2) {
-            const d = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
+            const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             touchStateRef.current = {
-                touches: 2,
-                dist: d,
-                startScale: scale,
+                touches: 2, dist: d, startScale: scale,
                 startX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
                 startY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-                panX: pan.x,
-                panY: pan.y,
-                moveDist: 0,
-                startTime: Date.now()
+                panX: pan.x, panY: pan.y, moveDist: 0, startTime: Date.now()
             };
         }
     };
 
     const handleTouchMove = (e) => {
         if (e.touches.length === 2) {
-            // Pinch to zoom
-            const d = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
+            const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             if (touchStateRef.current.dist > 0) {
                 const ratio = d / touchStateRef.current.dist;
-                const nextScale = Math.min(2.5, Math.max(0.35, +(touchStateRef.current.startScale * ratio).toFixed(2)));
-                setScale(nextScale);
+                setScale(Math.min(2.5, Math.max(0.35, +(touchStateRef.current.startScale * ratio).toFixed(2))));
             }
         } else if (e.touches.length === 1 && touchStateRef.current.touches === 1) {
-            // Single finger pan
             const dx = e.touches[0].clientX - touchStateRef.current.startX;
             const dy = e.touches[0].clientY - touchStateRef.current.startY;
             touchStateRef.current.moveDist = Math.hypot(dx, dy);
-            setPan({
-                x: touchStateRef.current.panX + dx,
-                y: touchStateRef.current.panY + dy
-            });
+            setPan({ x: touchStateRef.current.panX + dx, y: touchStateRef.current.panY + dy });
         }
     };
 
     const handleTouchEnd = (e) => {
-        if (e.touches.length === 0) {
-            touchStateRef.current.touches = 0;
-        }
+        if (e.touches.length === 0) touchStateRef.current.touches = 0;
     };
 
-    // Cell Click (Stone Placement & Dynamic Expansion)
+    // Human Turn Check
+    const isMyTurn = matchInfo.myColor === 'black' ? isBlackTurn : !isBlackTurn;
+
+    // Human Cell Click Handler
     const handleCellClick = (r, c) => {
-        // Prevent click if dragging or pinching
         if (moveDistRef.current > 6 || touchStateRef.current.moveDist > 8) return;
         const key = `${r},${c}`;
         if (stones[key] || winner) return;
 
-        const currentStone = isBlackTurn ? 'black' : 'white';
-        const nextStones = { ...stones, [key]: currentStone };
+        // Turn Validation
+        if (!isMyTurn) {
+            setTurnNotice(`⏳ 상대방(${matchInfo.opponent})의 차례입니다! 잠시 기다려주세요.`);
+            setTimeout(() => setTurnNotice(null), 2000);
+            return;
+        }
+
+        const myColor = matchInfo.myColor;
+        const nextStones = { ...stones, [key]: myColor };
         setStones(nextStones);
         setLastMove({ r, c });
 
-        // Auto-expand board when stone is within 2 cells of border
-        // "돌들을 놓을 때 더 이상 돌을 놓을 공간이 없기 두 칸 전까지 가면 그쪽으로 판이 자동으로 넓어지게"
+        // Auto-expand board
         let { minR, maxR, minC, maxC } = bounds;
         let expanded = false;
         let expandedDirs = [];
-
-        if (r - minR <= 1) {
-            minR -= 2;
-            expanded = true;
-            expandedDirs.push('위쪽');
-        }
-        if (maxR - r <= 1) {
-            maxR += 2;
-            expanded = true;
-            expandedDirs.push('아래쪽');
-        }
-        if (c - minC <= 1) {
-            minC -= 2;
-            expanded = true;
-            expandedDirs.push('왼쪽');
-        }
-        if (maxC - c <= 1) {
-            maxC += 2;
-            expanded = true;
-            expandedDirs.push('오른쪽');
-        }
-
+        if (r - minR <= 1) { minR -= 2; expanded = true; expandedDirs.push('위쪽'); }
+        if (maxR - r <= 1) { maxR += 2; expanded = true; expandedDirs.push('아래쪽'); }
+        if (c - minC <= 1) { minC -= 2; expanded = true; expandedDirs.push('왼쪽'); }
+        if (maxC - c <= 1) { maxC += 2; expanded = true; expandedDirs.push('오른쪽'); }
         if (expanded) {
             setBounds({ minR, maxR, minC, maxC });
-            const totalC = maxC - minC + 1;
-            const totalR = maxR - minR + 1;
-            setExpandNotice(`✨ 바둑판 ${expandedDirs.join(', ')} 확장! (${totalC}×${totalR})`);
+            setExpandNotice(`✨ 바둑판 ${expandedDirs.join(', ')} 확장!`);
             setTimeout(() => setExpandNotice(null), 2500);
         }
 
-        // Win check: 4-in-a-row (사목)
-        const checkWin = (row, col, color) => {
-            const directions = [
-                [0, 1],   // 가로
-                [1, 0],   // 세로
-                [1, 1],   // 대각선 ↘
-                [1, -1]   // 대각선 ↙
-            ];
-            for (const [dr, dc] of directions) {
-                const line = [`${row},${col}`];
-                let i = 1;
-                while (nextStones[`${row + dr * i},${col + dc * i}`] === color) {
-                    line.push(`${row + dr * i},${col + dc * i}`);
-                    i++;
-                }
-                i = 1;
-                while (nextStones[`${row - dr * i},${col - dc * i}`] === color) {
-                    line.push(`${row - dr * i},${col - dc * i}`);
-                    i++;
-                }
-                if (line.length >= 4) {
-                    return line;
-                }
-            }
-            return null;
-        };
-
-        const winLine = checkWin(r, c, currentStone);
+        // Win check
+        const winLine = checkWinOnBoard(nextStones, r, c, myColor);
         const movesCount = Object.keys(nextStones).length;
-        const nextRoundScore = roundScore + (winLine ? 50 : 5);
-        setRoundScore(nextRoundScore);
 
         if (winLine) {
-            const winText = isBlackTurn ? '흑돌(⚫)' : '백돌(⚪)';
-            setWinner(winText);
+            // Player Won! Award 10 points per victory
+            const newScore = roundScore + 10;
+            const newWins = winCount + 1;
+            setRoundScore(newScore);
+            setWinCount(newWins);
+            setWinner(nickname);
             setWinningLine(winLine);
             setShowWinBanner(true);
-            try {
-                playSound('fanfare');
-            } catch (e) {}
+            try { playSound('fanfare'); } catch (e) {}
+
+            if (onScoreUpdate) {
+                onScoreUpdate(initialBaseRef.current + newScore);
+            }
 
             emitLiveGameStream({
                 socket, pin, gameId: 'omok', nickname, groupId,
-                baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                baseScore: initialBaseRef.current, roundScore: newScore,
                 isAlive: true, isFinished: true, onScoreUpdate,
                 gameData: {
-                    statusText: `🎉 ${winText} 4목 승리! (${movesCount}수)`,
+                    statusText: `🎉 ${nickname} 4목 승리! (${newWins}승 달성, ${movesCount}수)`,
                     progressPct: 100,
                     moves: movesCount,
-                    winner: winText
+                    winner: nickname
                 }
             });
+
+            if (socket && pin) {
+                socket.emit('samok:match_finish', {
+                    pin,
+                    matchId: matchInfo.matchId,
+                    isWin: true,
+                    winnerNickname: nickname,
+                    moves: movesCount
+                });
+            }
         } else {
-            setIsBlackTurn(!isBlackTurn);
-            try {
-                playSound('step');
-            } catch (e) {}
+            // Switch turn
+            const nextBlackTurn = !isBlackTurn;
+            setIsBlackTurn(nextBlackTurn);
+            try { playSound('step'); } catch (e) {}
+
             emitLiveGameStream({
                 socket, pin, gameId: 'omok', nickname, groupId,
-                baseScore: initialBaseRef.current, roundScore: nextRoundScore,
+                baseScore: initialBaseRef.current, roundScore,
                 isAlive: true, isFinished: false, onScoreUpdate,
                 gameData: {
-                    statusText: `⚫⚪ ${movesCount}수 진행 중 (${isBlackTurn ? '백돌' : '흑돌'} 차례)`,
+                    statusText: `⚫⚪ ${movesCount}수 진행 중 (${nextBlackTurn ? '흑돌' : '백돌'} 차례)`,
                     progressPct: Math.min(95, Math.round((movesCount / 20) * 100)),
                     moves: movesCount
                 }
             });
+
+            // Forward move to opponent or trigger AI
+            if (matchInfo.isAI) {
+                const aiColor = myColor === 'black' ? 'white' : 'black';
+                triggerAIMove(nextStones, { minR, maxR, minC, maxC }, aiColor, myColor);
+            } else {
+                if (socket && pin) {
+                    socket.emit('samok:move', {
+                        pin,
+                        matchId: matchInfo.matchId,
+                        r, c,
+                        color: myColor,
+                        targetSocketId: matchInfo.opponentId
+                    });
+                }
+            }
         }
     };
 
@@ -2960,6 +3237,9 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
         setShowWinBanner(false);
         setScale(1.0);
         setPan({ x: 0, y: 0 });
+        if (socket && pin) {
+            socket.emit('samok:request_pair', { pin, nickname });
+        }
     };
 
     const totalRows = bounds.maxR - bounds.minR + 1;
@@ -2973,65 +3253,100 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
 
     return (
         <div style={{ padding: '0.25rem', userSelect: 'none' }}>
-            {/* Top Status & Zoom Controls */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span 
-                        style={{ 
-                            padding: '4px 10px', 
-                            borderRadius: '8px', 
-                            fontWeight: '800', 
+            {/* Top Match Status Header */}
+            <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                padding: '10px 14px',
+                borderRadius: '16px',
+                marginBottom: '8px',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+                color: 'white'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '8px',
+                            fontSize: '0.76rem',
+                            fontWeight: '900',
+                            background: matchInfo.isAI ? '#3b82f6' : '#10b981',
+                            color: 'white'
+                        }}>
+                            {matchInfo.isAI ? (matchInfo.isStandby ? '🤖 연습 AI 대전' : '🤖 AI 대결') : '⚔️ 1:1 실시간 대전'}
+                        </span>
+                        <span style={{ fontWeight: '900', fontSize: '0.98rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            vs {matchInfo.opponent}
+                        </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.78rem',
+                            fontWeight: '800',
+                            background: matchInfo.myColor === 'black' ? '#0f172a' : '#f8fafc',
+                            color: matchInfo.myColor === 'black' ? '#ffffff' : '#0f172a',
+                            border: '1px solid #64748b'
+                        }}>
+                            내 돌: {matchInfo.myColor === 'black' ? '흑돌⚫' : '백돌⚪'}
+                        </span>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '900', color: '#f59e0b', background: 'rgba(245,158,11,0.15)', padding: '2px 8px', borderRadius: '6px' }}>
+                            🏆 {winCount}승 (+{winCount * 10}점)
+                        </span>
+                    </div>
+                </div>
+
+                {/* Turn Banner */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{
+                            padding: '3px 10px',
+                            borderRadius: '8px',
+                            fontWeight: '900',
                             fontSize: '0.88rem',
-                            background: winner ? '#fef3c7' : isBlackTurn ? '#1e293b' : '#f1f5f9',
-                            color: winner ? '#d97706' : isBlackTurn ? '#ffffff' : '#0f172a',
-                            border: '1.5px solid #cbd5e1'
-                        }}
-                    >
-                        {winner ? `🎉 ${winner} 4목 승리!` : `차례: ${isBlackTurn ? '⚫ 흑돌' : '⚪ 백돌'} (4목 승리)`}
-                    </span>
-                    <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '700' }}>
-                        {totalCols}×{totalRows} 크기
-                    </span>
-                </div>
+                            background: winner ? '#fef3c7' : isMyTurn ? '#10b981' : '#475569',
+                            color: winner ? '#d97706' : 'white',
+                            animation: (!winner && isMyTurn) ? 'pulse 1.5s infinite' : 'none'
+                        }}>
+                            {winner ? `🎉 ${winner} 승리!` : (isMyTurn ? '👉 내 차례! (돌을 터치하세요)' : `⏳ 상대(${matchInfo.opponent}) 차례...`)}
+                        </span>
+                        {aiThinking && (
+                            <span style={{ fontSize: '0.78rem', color: '#38bdf8', animation: 'blink 1s infinite' }}>
+                                🤖 AI 생각 중...
+                            </span>
+                        )}
+                    </div>
 
-                {/* Zoom Control Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <button
-                        type="button"
-                        onClick={() => setScale(s => Math.min(2.5, +(s + 0.15).toFixed(2)))}
-                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontWeight: '800', fontSize: '0.85rem' }}
-                        title="확대"
-                    >
-                        ➕
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setScale(s => Math.max(0.35, +(s - 0.15).toFixed(2)))}
-                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer', fontWeight: '800', fontSize: '0.85rem' }}
-                        title="축소"
-                    >
-                        ➖
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => { setScale(1.0); setPan({ x: 0, y: 0 }); }}
-                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer', fontWeight: '700', fontSize: '0.78rem' }}
-                        title="화면 맞춤"
-                    >
-                        🎯 맞춤 ({Math.round(scale * 100)}%)
-                    </button>
+                    {/* Zoom Buttons */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <button type="button" onClick={() => setScale(s => Math.min(2.5, +(s + 0.15).toFixed(2)))} style={{ padding: '3px 7px', borderRadius: '6px', border: '1px solid #475569', background: '#334155', color: 'white' }}>➕</button>
+                        <button type="button" onClick={() => setScale(s => Math.max(0.35, +(s - 0.15).toFixed(2)))} style={{ padding: '3px 7px', borderRadius: '6px', border: '1px solid #475569', background: '#334155', color: 'white' }}>➖</button>
+                        <button type="button" onClick={() => { setScale(1.0); setPan({ x: 0, y: 0 }); }} style={{ padding: '3px 7px', borderRadius: '6px', border: '1px solid #475569', background: '#334155', color: 'white', fontSize: '0.75rem' }}>맞춤</button>
+                    </div>
                 </div>
             </div>
 
-            {/* Quick helper notice */}
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>💡 PC: 휠/드래그 이동 · 모바일: 두 손가락 핀치 줌</span>
-                {expandNotice && (
-                    <span style={{ color: '#059669', fontWeight: '800', animation: 'bannerFadeIn 0.3s ease' }}>
-                        {expandNotice}
-                    </span>
-                )}
-            </div>
+            {/* Turn & Notice Popup */}
+            {(turnNotice || expandNotice) && (
+                <div style={{
+                    padding: '6px 12px',
+                    borderRadius: '10px',
+                    marginBottom: '6px',
+                    background: expandNotice ? '#ecfdf5' : '#eff6ff',
+                    color: expandNotice ? '#065f46' : '#1d4f91',
+                    fontSize: '0.82rem',
+                    fontWeight: '800',
+                    border: '1px solid',
+                    borderColor: expandNotice ? '#6ee7b7' : '#93c5fd',
+                    textAlign: 'center'
+                }}>
+                    {turnNotice || expandNotice}
+                </div>
+            )}
 
             {/* Viewport Container */}
             <div
@@ -3052,127 +3367,88 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
                     overflow: 'hidden',
                     cursor: isDraggingRef.current ? 'grabbing' : 'grab',
                     touchAction: 'none',
-                    boxShadow: 'inset 0 0 20px rgba(0,0,0,0.5), 0 10px 25px rgba(0,0,0,0.2)'
+                    boxShadow: 'inset 0 0 20px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.15)',
+                    border: '4px solid #451a03'
                 }}
             >
-                {/* Centering Wrapper with Pan and Zoom */}
                 <div
                     style={{
                         position: 'absolute',
-                        top: '50%',
                         left: '50%',
-                        transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${scale})`,
+                        top: '50%',
+                        transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
                         transformOrigin: 'center center',
-                        transition: isDraggingRef.current ? 'none' : 'transform 0.08s ease-out'
+                        transition: isDraggingRef.current ? 'none' : 'transform 0.05s ease-out'
                     }}
                 >
-                    {/* Authentic Baduk Wooden Board */}
                     <div
                         style={{
                             display: 'grid',
                             gridTemplateColumns: `repeat(${totalCols}, ${cellSize}px)`,
                             gridTemplateRows: `repeat(${totalRows}, ${cellSize}px)`,
-                            background: 'linear-gradient(135deg, #d97706, #b45309)',
-                            padding: '12px',
+                            background: '#d97706',
+                            padding: '16px',
                             borderRadius: '10px',
-                            boxShadow: '0 12px 30px rgba(0,0,0,0.45)',
-                            border: '4px solid #451a03'
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+                            position: 'relative'
                         }}
                     >
-                        {rows.map((r, rIdx) => 
-                            cols.map((c, cIdx) => {
+                        {rows.map((r) =>
+                            cols.map((c) => {
                                 const key = `${r},${c}`;
                                 const stone = stones[key];
-                                const isWinning = winningLine.includes(key);
-                                const isLast = lastMove?.r === r && lastMove?.c === c;
-                                const isStarPoint = (r % 4 === 0 && c % 4 === 0);
+                                const isLast = lastMove && lastMove.r === r && lastMove.c === c;
+                                const isWinStone = winningLine && winningLine.includes(key);
+
+                                const isTopEdge = r === bounds.minR;
+                                const isBottomEdge = r === bounds.maxR;
+                                const isLeftEdge = c === bounds.minC;
+                                const isRightEdge = c === bounds.maxC;
 
                                 return (
                                     <div
                                         key={key}
                                         onClick={() => handleCellClick(r, c)}
                                         style={{
-                                            position: 'relative',
                                             width: `${cellSize}px`,
                                             height: `${cellSize}px`,
+                                            position: 'relative',
+                                            cursor: stone || !isMyTurn ? 'default' : 'pointer',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            justifyContent: 'center',
-                                            cursor: stone || winner ? 'default' : 'pointer'
+                                            justifyContent: 'center'
                                         }}
                                     >
-                                        {/* Cross Lines */}
-                                        <div 
-                                            style={{
-                                                position: 'absolute',
-                                                top: '50%',
-                                                left: 0,
-                                                right: 0,
-                                                height: '1.5px',
-                                                background: '#5c2807',
-                                                pointerEvents: 'none'
-                                            }} 
-                                        />
-                                        <div 
-                                            style={{
-                                                position: 'absolute',
-                                                left: '50%',
-                                                top: 0,
-                                                bottom: 0,
-                                                width: '1.5px',
-                                                background: '#5c2807',
-                                                pointerEvents: 'none'
-                                            }} 
-                                        />
+                                        {/* Board Grid Lines */}
+                                        <div style={{ position: 'absolute', left: isLeftEdge ? '50%' : 0, right: isRightEdge ? '50%' : 0, top: '50%', height: '1.5px', background: '#78350f', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                                        <div style={{ position: 'absolute', top: isTopEdge ? '50%' : 0, bottom: isBottomEdge ? '50%' : 0, left: '50%', width: '1.5px', background: '#78350f', transform: 'translateX(-50%)', pointerEvents: 'none' }} />
 
-                                        {/* Star point dot */}
-                                        {isStarPoint && !stone && (
-                                            <div
-                                                style={{
-                                                    position: 'absolute',
-                                                    width: '5px',
-                                                    height: '5px',
-                                                    borderRadius: '50%',
-                                                    background: '#5c2807',
-                                                    pointerEvents: 'none'
-                                                }}
-                                            />
-                                        )}
-
-                                        {/* Placed Stone */}
+                                        {/* Stone Rendering */}
                                         {stone && (
                                             <div
                                                 style={{
                                                     position: 'relative',
-                                                    zIndex: 2,
                                                     width: '34px',
                                                     height: '34px',
                                                     borderRadius: '50%',
+                                                    zIndex: 2,
                                                     background: stone === 'black'
-                                                        ? 'radial-gradient(circle at 35% 35%, #4b5563, #09090b 80%)'
-                                                        : 'radial-gradient(circle at 35% 35%, #ffffff, #e2e8f0 85%)',
-                                                    boxShadow: isWinning
-                                                        ? '0 0 16px 4px #fbbf24, 0 4px 8px rgba(0,0,0,0.6)'
-                                                        : '0 3px 6px rgba(0,0,0,0.4)',
-                                                    border: isWinning
+                                                        ? 'radial-gradient(circle at 35% 35%, #475569 0%, #0f172a 60%, #020617 100%)'
+                                                        : 'radial-gradient(circle at 35% 35%, #ffffff 0%, #e2e8f0 70%, #94a3b8 100%)',
+                                                    boxShadow: isWinStone
+                                                        ? '0 0 16px 4px #fbbf24, 0 4px 8px rgba(0,0,0,0.5)'
+                                                        : (stone === 'black' ? '0 3px 6px rgba(0,0,0,0.6)' : '0 3px 6px rgba(0,0,0,0.3)'),
+                                                    border: isWinStone
                                                         ? '2.5px solid #f59e0b'
-                                                        : stone === 'white' ? '1px solid #cbd5e1' : 'none',
-                                                    animation: isWinning ? 'winningStoneGlow 1.2s infinite ease-in-out' : 'none',
+                                                        : (stone === 'white' ? '1px solid #cbd5e1' : 'none'),
+                                                    animation: isWinStone ? 'winningStoneGlow 1.2s infinite' : 'none',
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center'
                                                 }}
                                             >
-                                                {/* Last move indicator */}
-                                                {isLast && !isWinning && (
-                                                    <div 
-                                                        style={{ 
-                                                            width: '6px', 
-                                                            height: '6px', 
-                                                            borderRadius: '50%', 
-                                                            background: stone === 'black' ? '#ef4444' : '#dc2626' 
-                                                        }} 
-                                                    />
+                                                {isLast && !isWinStone && (
+                                                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: stone === 'black' ? '#ef4444' : '#dc2626' }} />
                                                 )}
                                             </div>
                                         )}
@@ -3192,28 +3468,90 @@ export function SamokGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
                     className="glass-button" 
                     style={{ flex: 1, padding: '10px', fontSize: '0.95rem', fontWeight: '800' }}
                 >
-                    바둑판 초기화 (새 게임)
+                    바둑판 초기화 / 다음 상대 매칭
                 </button>
             </div>
 
-            {/* Victory Celebration Banner with Fanfare and Fireworks */}
+            {/* Victory Celebration Banner */}
             <GameFinishBanner
                 show={showWinBanner && Boolean(winner)}
-                type="win"
-                title={`🎉 ${winner} 4목 승리!`}
-                subtitle={`총 ${Object.keys(stones).length}수 만에 4목을 완성하여 승리했습니다!`}
-                scoreText={`+${roundScore}점`}
+                type={winner === nickname ? 'win' : 'lose'}
+                title={winner === nickname ? `🎉 4목 승리! (+10점 획득)` : `아쉽습니다! ${winner} 승리!`}
+                subtitle={winner === nickname 
+                    ? `총 ${Object.keys(stones).length}수 만에 승리하여 10점을 획득했습니다! (현재 ${winCount}승)`
+                    : `다음 대국에서 다시 도전해보세요!`}
+                scoreText={winner === nickname ? '+10점' : '0점'}
                 onRestart={reset}
                 onClose={() => setShowWinBanner(false)}
-                restartText="새 대국 시작"
-                closeText="바둑판 살펴보기"
+                restartText="다음 대국 진행하기"
+                closeText="바둑판 확인"
             />
+
+            {/* Final 3 Tournament Standings Modal */}
+            {tournamentResult && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+                    background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 9999, backdropFilter: 'blur(8px)', padding: '1rem'
+                }}>
+                    <div style={{
+                        background: 'white', borderRadius: '24px', padding: '2rem', maxWidth: '420px', width: '100%',
+                        textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.3)'
+                    }}>
+                        <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>👑</div>
+                        <h2 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#d97706', margin: '0 0 0.5rem' }}>
+                            사목 토너먼트 최종 결과!
+                        </h2>
+                        <p style={{ color: '#64748b', fontSize: '0.92rem', marginBottom: '1.5rem' }}>
+                            최종 생존 3인 및 순위가 집계되었습니다!
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.5rem' }}>
+                            {(tournamentResult.final3 || tournamentResult.leaderboard || []).slice(0, 3).map((p, idx) => (
+                                <div key={p.nickname || idx} style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    padding: '10px 16px', borderRadius: '12px',
+                                    background: idx === 0 ? '#fef3c7' : idx === 1 ? '#f1f5f9' : '#ffedd5',
+                                    border: idx === 0 ? '1.5px solid #fcd34d' : '1px solid #e2e8f0'
+                                }}>
+                                    <span style={{ fontWeight: '900', fontSize: '1rem' }}>
+                                        {idx === 0 ? '👑 1위' : idx === 1 ? '🥈 2위' : '🥉 3위'} {p.nickname}
+                                    </span>
+                                    <span style={{ fontWeight: '900', color: '#d97706' }}>
+                                        {p.score || 0}점
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setTournamentResult(null)}
+                            style={{
+                                width: '100%', padding: '12px', borderRadius: '14px', border: 'none',
+                                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                color: 'white', fontWeight: '900', fontSize: '1rem', cursor: 'pointer'
+                            }}
+                        >
+                            확인 완료
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <style>{`
                 @keyframes winningStoneGlow {
                     0% { transform: scale(1); box-shadow: 0 0 12px 3px #fbbf24; }
                     50% { transform: scale(1.1); box-shadow: 0 0 20px 6px #f59e0b; }
                     100% { transform: scale(1); box-shadow: 0 0 12px 3px #fbbf24; }
+                }
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.75; }
+                }
+                @keyframes blink {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.3; }
                 }
             `}</style>
         </div>

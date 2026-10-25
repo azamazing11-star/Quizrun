@@ -2259,6 +2259,14 @@ export function StockGameScreenView({
     const [isModalDismissed, setIsModalDismissed] = useState(false);
     const [isProgressDismissed, setIsProgressDismissed] = useState(false);
 
+    // 연도 변경 시 이전 연도 등락 예측(테두리), 선택된 힌트, 상세 모달 초기화
+    useEffect(() => {
+        setScreenVotes({});
+        setChosenHintStock(null);
+        setSelectedStockForDetail(null);
+        setSelectedNews(null);
+    }, [year]);
+
     useEffect(() => {
         setIsModalDismissed(false);
     }, [allOrdersModalOpen]);

@@ -1894,6 +1894,9 @@ io.on('connection', (socket) => {
       const room = rooms[cleanPin] || rooms[data.pin];
       // Track game lifecycle for score accumulation
       if (room && data.event === 'game:start') {
+        room.isGame = true;
+        room.gameId = data.payload?.gameId || room.gameId;
+        room.state = 'game_active';
         if (room.participants) {
           room.participants.forEach(p => {
             p.gameBaseScore = p.score || 0;
@@ -1901,14 +1904,35 @@ io.on('connection', (socket) => {
             p.hasFinishedOfficialRound = false;
           });
         }
+        io.to(cleanPin).emit('room:stateUpdate', {
+          state: 'game_active',
+          isGame: true,
+          gameId: room.gameId,
+          participants: room.participants,
+          leaderboard: [...room.participants].sort((a, b) => b.score - a.score)
+        });
+        if (room.gameId === 'omok' || room.gameId === 'samok') {
+          setupSamokTournament(cleanPin, room);
+        }
       }
       if (room && (data.event === 'game:terminate' || data.event === 'game:catch_mind_terminate')) {
+        room.isGame = false;
+        room.gameId = null;
+        room.state = 'lobby';
         if (room.participants) {
           room.participants.forEach(p => {
             p.gameBaseScore = p.score || 0;
             p.hasFinishedOfficialRound = false;
           });
         }
+        delete room.samokTournament;
+        io.to(cleanPin).emit('room:stateUpdate', {
+          state: 'lobby',
+          isGame: false,
+          gameId: null,
+          participants: room.participants,
+          leaderboard: [...room.participants].sort((a, b) => b.score - a.score)
+        });
       }
       if (room && data.event === 'game:player_stream' && data.payload) {
         const { nickname, score, roundScore, isPractice, isFinished } = data.payload;
@@ -2093,6 +2117,266 @@ io.on('connection', (socket) => {
   });
 
   // --- DISCONNECT ---
+  // --- WINNER MODAL SYNC ---
+  socket.on('game:winner_modal_sync', ({ pin, open }) => {
+    if (pin) {
+      io.to(String(pin).trim()).emit('game:winner_modal_sync', { open: !!open });
+    }
+  });
+
+  // --- SAMOK (FOUR-IN-A-ROW) TOURNAMENT & MATCHING SYSTEM ---
+  function setupSamokTournament(cleanPin, room) {
+    if (!room) return;
+    const participants = room.participants || [];
+    const total = participants.length;
+    room.samokTournament = {
+      round: 1,
+      activeMatches: {},
+      waitingPool: [],
+      isAIOnly: total <= 3
+    };
+
+    console.log(`[Samok] Initializing tournament for room ${cleanPin} with ${total} participants (isAIOnly=${total <= 3})`);
+
+    if (total <= 3) {
+      // 3명 이하: 참가자 전원 컴퓨터(AI)와 1:1 대전 자동 배정
+      participants.forEach(p => {
+        const matchId = `m_ai_${p.id || p.nickname}`;
+        room.samokTournament.activeMatches[matchId] = {
+          matchId,
+          p1: { id: p.id, nickname: p.nickname },
+          p2: { id: 'ai', nickname: '컴퓨터 (AI)' },
+          isAI: true
+        };
+        io.to(p.id).emit('samok:match_start', {
+          matchId,
+          opponent: '컴퓨터 (AI)',
+          opponentId: 'ai',
+          myColor: 'black',
+          isAI: true,
+          totalParticipants: total,
+          rule: 'ai_single'
+        });
+      });
+      return;
+    }
+
+    // 4명 이상: 랜덤 매칭 1:1 대결 진행
+    const shuffled = [...participants].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < shuffled.length; i += 2) {
+      if (i + 1 < shuffled.length) {
+        const p1 = shuffled[i];
+        const p2 = shuffled[i + 1];
+        const matchId = `m_${Date.now()}_${i}`;
+        room.samokTournament.activeMatches[matchId] = {
+          matchId,
+          p1: { id: p1.id, nickname: p1.nickname },
+          p2: { id: p2.id, nickname: p2.nickname },
+          isAI: false
+        };
+        io.to(p1.id).emit('samok:match_start', {
+          matchId,
+          opponent: p2.nickname,
+          opponentId: p2.id,
+          myColor: 'black',
+          isAI: false,
+          totalParticipants: total,
+          rule: 'tournament'
+        });
+        io.to(p2.id).emit('samok:match_start', {
+          matchId,
+          opponent: p1.nickname,
+          opponentId: p1.id,
+          myColor: 'white',
+          isAI: false,
+          totalParticipants: total,
+          rule: 'tournament'
+        });
+      } else {
+        // 홀수 인원일 경우 부전승 또는 즉시 AI 대결 진행
+        const pOdd = shuffled[i];
+        const matchId = `m_ai_${pOdd.id || pOdd.nickname}`;
+        room.samokTournament.activeMatches[matchId] = {
+          matchId,
+          p1: { id: pOdd.id, nickname: pOdd.nickname },
+          p2: { id: 'ai', nickname: '컴퓨터 (AI)' },
+          isAI: true
+        };
+        io.to(pOdd.id).emit('samok:match_start', {
+          matchId,
+          opponent: '컴퓨터 (AI)',
+          opponentId: 'ai',
+          myColor: 'black',
+          isAI: true,
+          totalParticipants: total,
+          rule: 'tournament'
+        });
+      }
+    }
+  }
+
+  socket.on('samok:request_pair', ({ pin, nickname }) => {
+    const cleanPin = String(pin || '').trim();
+    const room = rooms[cleanPin];
+    if (!room) return;
+    if (!room.samokTournament) {
+      setupSamokTournament(cleanPin, room);
+      return;
+    }
+    const t = room.samokTournament;
+    const p = room.participants?.find(part => part.id === socket.id || part.nickname === nickname);
+    if (!p) return;
+
+    if (t.isAIOnly) {
+      const matchId = `m_ai_${p.id || p.nickname}`;
+      socket.emit('samok:match_start', {
+        matchId,
+        opponent: '컴퓨터 (AI)',
+        opponentId: 'ai',
+        myColor: 'black',
+        isAI: true,
+        rule: 'ai_single'
+      });
+      return;
+    }
+
+    // 4명 이상 토너먼트: 대기열 확인
+    const waitingOpponent = t.waitingPool.find(item => item.id !== p.id);
+    if (waitingOpponent) {
+      t.waitingPool = t.waitingPool.filter(item => item.id !== waitingOpponent.id);
+      const newMatchId = `m_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      t.activeMatches[newMatchId] = {
+        matchId: newMatchId,
+        p1: { id: p.id, nickname: p.nickname },
+        p2: { id: waitingOpponent.id, nickname: waitingOpponent.nickname },
+        isAI: false
+      };
+      io.to(p.id).emit('samok:match_start', {
+        matchId: newMatchId,
+        opponent: waitingOpponent.nickname,
+        opponentId: waitingOpponent.id,
+        myColor: 'black',
+        isAI: false,
+        rule: 'tournament'
+      });
+      io.to(waitingOpponent.id).emit('samok:match_start', {
+        matchId: newMatchId,
+        opponent: p.nickname,
+        opponentId: p.id,
+        myColor: 'white',
+        isAI: false,
+        rule: 'tournament'
+      });
+    } else {
+      // 상대가 아직 없으면 대기 중 컴퓨터와 대결하도록 안내
+      if (!t.waitingPool.some(item => item.id === p.id)) {
+        t.waitingPool.push(p);
+      }
+      socket.emit('samok:match_start', {
+        matchId: `m_ai_${p.id || p.nickname}`,
+        opponent: '컴퓨터 (AI)',
+        opponentId: 'ai',
+        myColor: 'black',
+        isAI: true,
+        isStandby: true,
+        rule: 'tournament'
+      });
+    }
+  });
+
+  socket.on('samok:move', ({ pin, matchId, r, c, color, targetSocketId }) => {
+    const cleanPin = String(pin || '').trim();
+    if (targetSocketId && targetSocketId !== 'ai') {
+      io.to(targetSocketId).emit('samok:opponent_move', { matchId, r, c, color });
+    }
+  });
+
+  socket.on('samok:match_finish', ({ pin, matchId, isWin, winnerNickname }) => {
+    const cleanPin = String(pin || '').trim();
+    const room = rooms[cleanPin];
+    if (!room) return;
+    const t = room.samokTournament;
+    const p = room.participants?.find(part => part.id === socket.id || part.nickname === winnerNickname);
+
+    // 승리 시마다 +10점 부여
+    if (isWin && p) {
+      p.score = (p.score || 0) + 10;
+      broadcastParticipants(cleanPin);
+    }
+
+    if (!t) return;
+
+    if (t.isAIOnly) {
+      if (isWin && p) {
+        p.hasFinishedOfficialRound = true;
+      }
+      // 3명 이하일 때 1승 하면 순위 계산 발표
+      const sorted = [...room.participants].sort((a, b) => (b.score || 0) - (a.score || 0));
+      io.to(cleanPin).emit('samok:tournament_complete', {
+        leaderboard: sorted,
+        final3: sorted.slice(0, 3)
+      });
+      return;
+    }
+
+    // 4명 이상 토너먼트:
+    // 먼저 끝난 유저는 바로 컴퓨터(AI)와 연습 게임 가능하게 전달
+    socket.emit('samok:match_start', {
+      matchId: `m_ai_standby_${socket.id}`,
+      opponent: '컴퓨터 (AI)',
+      opponentId: 'ai',
+      myColor: 'black',
+      isAI: true,
+      isStandby: true,
+      rule: 'tournament'
+    });
+
+    if (isWin && p) {
+      // 대기열에 다른 참가자가 있으면 즉시 둘이 맞대결 배정!
+      const waitingOpponent = t.waitingPool.find(item => item.id !== p.id);
+      if (waitingOpponent) {
+        t.waitingPool = t.waitingPool.filter(item => item.id !== waitingOpponent.id);
+        const nextMatchId = `m_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        t.activeMatches[nextMatchId] = {
+          matchId: nextMatchId,
+          p1: { id: p.id, nickname: p.nickname },
+          p2: { id: waitingOpponent.id, nickname: waitingOpponent.nickname },
+          isAI: false
+        };
+        io.to(p.id).emit('samok:match_start', {
+          matchId: nextMatchId,
+          opponent: waitingOpponent.nickname,
+          opponentId: waitingOpponent.id,
+          myColor: 'black',
+          isAI: false,
+          rule: 'tournament'
+        });
+        io.to(waitingOpponent.id).emit('samok:match_start', {
+          matchId: nextMatchId,
+          opponent: p.nickname,
+          opponentId: p.id,
+          myColor: 'white',
+          isAI: false,
+          rule: 'tournament'
+        });
+      } else {
+        if (!t.waitingPool.some(item => item.id === p.id)) {
+          t.waitingPool.push(p);
+        }
+      }
+    }
+
+    // 최종 3인 생존 확인 (남은 생존자가 3인 이하로 좁혀졌을 때)
+    const sorted = [...room.participants].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const activeWinners = sorted.filter(part => (part.score || 0) >= 10);
+    if (activeWinners.length >= 1 && activeWinners.length <= 3 && (room.participants.length - activeWinners.length >= 1)) {
+      io.to(cleanPin).emit('samok:tournament_complete', {
+        leaderboard: sorted,
+        final3: sorted.slice(0, 3)
+      });
+    }
+  });
+
   socket.on('disconnect', (reason) => {
     console.log(`User disconnected: ${socket.id} (Reason: ${reason})`);
 

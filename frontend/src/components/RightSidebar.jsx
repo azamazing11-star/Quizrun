@@ -85,6 +85,30 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     }, []);
 
     useEffect(() => {
+        if (!socket) return;
+        const handleWinnerModalSync = (data) => {
+            if (data?.open) {
+                try { playSound('fanfare'); } catch (e) {}
+                setConfettiActive(true);
+                setShowWinnerModal(true);
+            } else {
+                setShowWinnerModal(false);
+                setConfettiActive(false);
+            }
+        };
+        socket.on('game:winner_modal_sync', handleWinnerModalSync);
+        const onSessionEnd = () => {
+            setShowWinnerModal(false);
+            setConfettiActive(false);
+        };
+        window.addEventListener('quizrun_session_ended', onSessionEnd);
+        return () => {
+            socket.off('game:winner_modal_sync', handleWinnerModalSync);
+            window.removeEventListener('quizrun_session_ended', onSessionEnd);
+        };
+    }, [socket]);
+
+    useEffect(() => {
         let bc;
         try {
             bc = new BroadcastChannel('quizrun_screen_sync');
@@ -101,9 +125,16 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                 } else if (type === 'STOCK_GAME_SCREEN_UPDATE' || (type === 'MODE_CHANGE' && payload?.mode === 'stock_game')) {
                     setIsStockGameSynced(true);
                     try { sessionStorage.setItem('quizrun_active_game_mode', 'stock_game'); } catch (e) {}
-                } else if (type === 'MODE_CHANGE' && payload?.mode && payload.mode !== 'stock_game') {
-                    setIsStockGameSynced(false);
-                    try { sessionStorage.removeItem('quizrun_active_game_mode'); } catch (e) {}
+                } else if (type === 'MODE_CHANGE') {
+                    setShowWinnerModal(false);
+                    setConfettiActive(false);
+                    if (payload?.mode === 'stock_game') {
+                        setIsStockGameSynced(true);
+                        try { sessionStorage.setItem('quizrun_active_game_mode', 'stock_game'); } catch (e) {}
+                    } else {
+                        setIsStockGameSynced(false);
+                        try { sessionStorage.removeItem('quizrun_active_game_mode'); } catch (e) {}
+                    }
                 } else if (type === 'STOCK_GAME_HOST_PORTFOLIO_UPDATE') {
                     if (payload?.totalAsset !== undefined) {
                         setHostStockAsset(Number(payload.totalAsset));
@@ -364,6 +395,27 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
         playSound('fanfare');
         setConfettiActive(true);
         setShowWinnerModal(true);
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: true } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+        if (socket && onlinePin) {
+            socket.emit('game:winner_modal_sync', { pin: onlinePin, open: true });
+        }
+    };
+
+    const handleCloseWinnerModal = () => {
+        setShowWinnerModal(false);
+        setConfettiActive(false);
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: false } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+        if (socket && onlinePin) {
+            socket.emit('game:winner_modal_sync', { pin: onlinePin, open: false });
+        }
     };
 
     const handleResetScoresOnly = () => {
@@ -672,7 +724,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             const isEditing = editingNum === p.num;
                                             const isGold = !isHost && hasAnyScore && realRankIdx === 0 && p.score > 0;
                                             const rankBadge = isHost
-                                                ? 'Host'
+                                                ? '시연'
                                                 : (hasAnyScore 
                                                     ? (realRankIdx === 0 && p.score > 0 ? '👑 1위' : realRankIdx === 1 && p.score > 0 ? '🥈 2위' : realRankIdx === 2 && p.score > 0 ? '🥉 3위' : `#${realRankIdx + 1}`) 
                                                     : `${realRankIdx + 1}`);
@@ -720,18 +772,6 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                             gap: '4px'
                                                         }}>
                                                             {p.num}
-                                                            {isHost && (
-                                                                <span style={{
-                                                                    fontSize: '0.68rem',
-                                                                    background: '#c7d2fe',
-                                                                    color: '#3730a3',
-                                                                    padding: '1px 5px',
-                                                                    borderRadius: '4px',
-                                                                    fontWeight: '900'
-                                                                }}>
-                                                                    진행자 시연
-                                                                </span>
-                                                            )}
                                                         </span>
                                                     </div>
 
@@ -1241,6 +1281,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                 }}>
                     {confettiActive && <Confetti recycle={false} numberOfPieces={550} />}
                     <div style={{
+                        position: 'relative',
                         padding: '2.5rem',
                         maxWidth: '520px',
                         width: '92%',
@@ -1253,6 +1294,32 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                         flexDirection: 'column',
                         overflow: 'hidden'
                     }}>
+                        <button
+                            type="button"
+                            onClick={handleCloseWinnerModal}
+                            style={{
+                                position: 'absolute',
+                                top: '16px',
+                                right: '16px',
+                                background: '#f1f5f9',
+                                border: 'none',
+                                borderRadius: '50%',
+                                width: '36px',
+                                height: '36px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                fontSize: '1.1rem',
+                                fontWeight: 'bold',
+                                color: '#64748b',
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                                zIndex: 10
+                            }}
+                            title="닫기"
+                        >
+                            ✕
+                        </button>
                         <div style={{ fontSize: '3.6rem', lineHeight: '1', marginBottom: '0.5rem' }}>🏆</div>
                         <h2 style={{ fontSize: '2rem', margin: '0 0 0.3rem', color: '#d97706', fontWeight: '900', fontFamily: 'Jua, sans-serif' }}>
                             {isStockGame ? '최종 투자 수익 결과 발표!' : '최종 게임 결과 발표!'}
@@ -1433,19 +1500,29 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                         {/* Action Buttons */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {isSubScreen ? (
-                                <div style={{
-                                    marginTop: '1.2rem',
-                                    padding: '16px',
-                                    background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
-                                    borderRadius: '16px',
-                                    border: '2px solid #10b981',
-                                    color: '#065f46',
-                                    fontWeight: '900',
-                                    fontSize: '1.1rem',
-                                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
-                                    textAlign: 'center'
-                                }}>
-                                    🎉 모든 참가자 여러분 수고하셨습니다! 결과를 축하합니다 🎉
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '1.2rem' }}>
+                                    <button
+                                        type="button"
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            borderRadius: '14px',
+                                            border: 'none',
+                                            background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                                            color: 'white',
+                                            fontWeight: '900',
+                                            fontSize: '0.98rem',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px',
+                                            boxShadow: isStockGame ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 14px rgba(14, 165, 233, 0.35)'
+                                        }}
+                                        onClick={handleCloseWinnerModal}
+                                    >
+                                        <Check size={18} /> 결과창 닫기
+                                    </button>
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '1.2rem' }}>
