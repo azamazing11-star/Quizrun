@@ -49,6 +49,17 @@ const generatePresetResults = (count, mode) => {
 
 export default function Ladder({ socket, isMirrorProp }) {
     const navigate = useNavigate();
+
+    // --- DUAL SCREEN MIRRORING STATES ---
+    const isMirrorView = Boolean(isMirrorProp) || 
+        new URLSearchParams(window.location.search).get('mirror') === 'true' ||
+        new URLSearchParams(window.location.search).get('subscreen') === 'true' ||
+        window.name === 'QuizrunSubScreenWindow' ||
+        window.name === 'QuizrunScreenWindow' ||
+        sessionStorage.getItem('is_subscreen') === 'true';
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isMirrorConnected, setIsMirrorConnected] = useState(false);
+    const ladderChannelRef = useRef(null);
     const { participantCount, setParticipantCount, onlinePin, onlineParticipants, gameMode } = useGlobalSession();
     const [showWinnerModal, setShowWinnerModal] = useState(false);
 
@@ -158,16 +169,7 @@ export default function Ladder({ socket, isMirrorProp }) {
     const [spotlightResult, setSpotlightResult] = useState(null);
     const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
-    // --- DUAL SCREEN MIRRORING STATES ---
-    const isMirrorView = Boolean(isMirrorProp) || 
-        new URLSearchParams(window.location.search).get('mirror') === 'true' ||
-        new URLSearchParams(window.location.search).get('subscreen') === 'true' ||
-        window.name === 'QuizrunSubScreenWindow' ||
-        window.name === 'QuizrunScreenWindow' ||
-        sessionStorage.getItem('is_subscreen') === 'true';
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [isMirrorConnected, setIsMirrorConnected] = useState(false);
-    const ladderChannelRef = useRef(null);
+
 
     // Latest state refs for BroadcastChannel payload snapshot & remote event handlers
     const numPlayersRef = useRef(numPlayers);
