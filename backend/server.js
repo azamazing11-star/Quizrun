@@ -463,6 +463,36 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const FRONTEND_DIR = path.join(ROOT_DIR, 'frontend');
 
 let isGitOperating = false;
+let currentGitOp = null;
+let gitOperationStartTime = 0;
+
+async function acquireGitLock(operationName = 'git-op', maxWaitMs = 15000) {
+  const start = Date.now();
+  while (isGitOperating) {
+    // Stale lock recovery: If previous operation exceeded 45s, force-release
+    if (gitOperationStartTime && (Date.now() - gitOperationStartTime > 45000)) {
+      console.warn(`[Git Mutex] Force-releasing stale git lock (held by ${currentGitOp} for >45s)`);
+      isGitOperating = false;
+      currentGitOp = null;
+      gitOperationStartTime = 0;
+      break;
+    }
+    if (Date.now() - start >= maxWaitMs) {
+      return false;
+    }
+    await new Promise(r => setTimeout(r, 400));
+  }
+  isGitOperating = true;
+  currentGitOp = operationName;
+  gitOperationStartTime = Date.now();
+  return true;
+}
+
+function releaseGitLock() {
+  isGitOperating = false;
+  currentGitOp = null;
+  gitOperationStartTime = 0;
+}
 
 // Direct execution of git.exe without cmd.exe shell wrapper (prevents EPERM and quoting issues)
 function runGit(args, options = {}) {
@@ -523,7 +553,19 @@ function runNpm(args, options = {}) {
 }
 
 // 1. Get Git Status & Current Commit (Compare Local vs GitHub Remote)
+// Emergency reset endpoint for git lock
+app.all(['/api/git/reset-lock', '/api/git-reset-lock'], (req, res) => {
+  console.log(`[Git Lock] Manual lock reset called. Previous state: isBusy=${isGitOperating}, op=${currentGitOp}`);
+  releaseGitLock();
+  res.json({ success: true, message: '동기화 락이 초기화되었습니다. 이제 동기화를 다시 진행하실 수 있습니다.' });
+});
+
 app.get('/api/git/status', async (req, res) => {
+  // Stale lock auto-cleanup on status check
+  if (isGitOperating && gitOperationStartTime && (Date.now() - gitOperationStartTime > 45000)) {
+    console.warn(`[Git Status] Auto-clearing stale git lock (${currentGitOp})`);
+    releaseGitLock();
+  }
   try {
     const logRes = await runGit(['log', '-1', '--format=%h|%s|%an|%ad', '--date=short'], { timeout: 10000 });
     const [hash, message, author, date] = (logRes.stdout || '').trim().split('|');
@@ -600,10 +642,10 @@ app.get('/api/git/status', async (req, res) => {
 
 // 2. Sync / Backup to GitHub (Push with Smart Auto-Merge)
 app.post('/api/git/push', async (req, res) => {
-  if (isGitOperating) {
+  const acquired = await acquireGitLock('push', 15000);
+  if (!acquired) {
     return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
   }
-  isGitOperating = true;
   try {
     const customMessage = req.body?.message || `Auto-backup: Quizrun data & settings (${new Date().toLocaleString('ko-KR')})`;
     console.log('[Git Sync] Staging all files...');
@@ -650,7 +692,6 @@ app.post('/api/git/push', async (req, res) => {
       }
     }
 
-    isGitOperating = false;
     res.json({
       success: true,
       message: didMergeRemote
@@ -662,7 +703,6 @@ app.post('/api/git/push', async (req, res) => {
       didMergeRemote
     });
   } catch (err) {
-    isGitOperating = false;
     console.error('[Git Sync] Push error:', err);
     let errMsg = `깃허브 업로드 중 오류가 발생했습니다: ${err.message || err}`;
     if (err.stderr && (err.stderr.includes('fetch first') || err.stderr.includes('non-fast-forward'))) {
@@ -672,15 +712,17 @@ app.post('/api/git/push', async (req, res) => {
       success: false,
       message: errMsg
     });
+  } finally {
+    releaseGitLock();
   }
 });
 
 // 3. Update from GitHub (Pull & Smart Merge & Rebuild)
 app.post('/api/git/pull', async (req, res) => {
-  if (isGitOperating) {
+  const acquired = await acquireGitLock('pull', 15000);
+  if (!acquired) {
     return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
   }
-  isGitOperating = true;
   try {
     // Auto-save any uncommitted local changes before pulling so local updates are never lost
     const statusRes = await runGit(['status', '--porcelain']);
@@ -709,7 +751,6 @@ app.post('/api/git/pull', async (req, res) => {
 
     const isAlreadyUpToDate = pullRes.stdout && pullRes.stdout.includes('Already up to date');
 
-    isGitOperating = false;
     res.json({
       success: true,
       message: isAlreadyUpToDate
@@ -718,22 +759,23 @@ app.post('/api/git/pull', async (req, res) => {
       output: pullRes.stdout
     });
   } catch (err) {
-    isGitOperating = false;
     console.error('[Git Update] Pull error:', err);
     let errMsg = `깃허브 업데이트 중 오류가 발생했습니다: ${err.message || err}`;
     res.status(500).json({
       success: false,
       message: errMsg
     });
+  } finally {
+    releaseGitLock();
   }
 });
 
 // 4. One-Click All-in-One Git & Render Sync (Smart Compare & Merge Local + GitHub -> Push -> Rebuild)
 app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
-  if (isGitOperating) {
+  const acquired = await acquireGitLock('one-click-sync', 20000);
+  if (!acquired) {
     return res.status(429).json({ success: false, message: '현재 다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' });
   }
-  isGitOperating = true;
   try {
     const customMessage = req.body?.message || `원클릭 동기화: Quizrun (${new Date().toLocaleString('ko-KR')})`;
 
@@ -787,7 +829,6 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
       io.emit('config:updated', APP_CONFIG);
     }
 
-    isGitOperating = false;
     res.json({
       success: true,
       message: '로컬과 GitHub의 코드를 비교·병합하여 최신 버전으로 동기화 및 배포 완료했습니다! (Render는 약 1분 뒤 자동 반영됩니다)',
@@ -796,12 +837,13 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
       push: pushRes.stdout
     });
   } catch (err) {
-    isGitOperating = false;
     console.error('[Git One-Click Sync] Error:', err);
     res.status(500).json({
       success: false,
       message: `동기화 실패: ${err.message || err}`
     });
+  } finally {
+    releaseGitLock();
   }
 });
 
@@ -932,7 +974,8 @@ function scheduleAutoGitBackup() {
   if (autoGitBackupTimer) clearTimeout(autoGitBackupTimer);
   autoGitBackupTimer = setTimeout(async () => {
     if (isGitOperating) return;
-    isGitOperating = true;
+    const acquired = await acquireGitLock('auto-backup', 1000);
+    if (!acquired) return;
     try {
       await runGit(['add', 'backend/data', 'backend/uploads']);
       const statusRes = await runGit(['status', '--porcelain', 'backend/data', 'backend/uploads']);
@@ -954,7 +997,7 @@ function scheduleAutoGitBackup() {
     } catch (err) {
       console.warn('[Auto Git Sync] Background sync warning:', err.message || err);
     } finally {
-      isGitOperating = false;
+      releaseGitLock();
     }
   }, 6000);
 }

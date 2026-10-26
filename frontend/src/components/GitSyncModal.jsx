@@ -93,6 +93,16 @@ export default function GitSyncModal({ isOpen, onClose }) {
         }
     }, [isOpen]);
 
+    // 탭 변경 시 GitHub 상태 새로고침 및 stale 에러 자동 정리
+    useEffect(() => {
+        if (activeTab === 'repo') {
+            setStatusMessage(prev => (prev?.text?.includes('다른 동기화 작업이 진행 중') ? null : prev));
+            if (isLocal) {
+                fetchGitStatus();
+            }
+        }
+    }, [activeTab]);
+
     // 클라우드 상태 새로고침
     const checkStatus = async () => {
         setConnStatus({ loading: true, checked: false, success: false, message: '클라우드 확인 중...' });
@@ -216,6 +226,9 @@ export default function GitSyncModal({ isOpen, onClose }) {
             const data = await res.json();
             if (data.success) {
                 setGitStatus(data);
+                if (!data.isBusy) {
+                    setStatusMessage(prev => (prev?.text?.includes('다른 동기화 작업이 진행 중') ? null : prev));
+                }
             }
         } catch (err) {
             console.error('Failed to fetch Git status:', err);
@@ -743,13 +756,58 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                     fontWeight: '800',
                                     display: 'flex',
                                     alignItems: 'center',
+                                    justifyContent: 'space-between',
                                     gap: '8px',
                                     background: statusMessage.type === 'success' ? '#ecfdf5' : '#fef2f2',
                                     color: statusMessage.type === 'success' ? '#047857' : '#b91c1c',
                                     border: `1px solid ${statusMessage.type === 'success' ? '#a7f3d0' : '#fecaca'}`
                                 }}>
-                                    {statusMessage.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-                                    <span>{statusMessage.text}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                        {statusMessage.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                                        <span>{statusMessage.text}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                        {statusMessage.text?.includes('다른 동기화 작업이 진행 중') && (
+                                            <button
+                                                type="button"
+                                                onClick={async () => {
+                                                    try {
+                                                        await fetch(`${apiBase}/api/git/reset-lock`, { method: 'POST' });
+                                                        setStatusMessage(null);
+                                                        fetchGitStatus();
+                                                    } catch (e) {}
+                                                }}
+                                                style={{
+                                                    padding: '3px 8px',
+                                                    borderRadius: '6px',
+                                                    border: '1px solid #ef4444',
+                                                    background: 'white',
+                                                    color: '#b91c1c',
+                                                    fontSize: '0.72rem',
+                                                    fontWeight: '800',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                동기화 락 초기화
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => setStatusMessage(null)}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                color: statusMessage.type === 'success' ? '#047857' : '#b91c1c',
+                                                fontSize: '1rem',
+                                                fontWeight: 'bold',
+                                                padding: '0 4px'
+                                            }}
+                                            title="닫기"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
@@ -830,8 +888,15 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                                 </button>
                                             </div>
                                             {gitStatus.currentCommit && (
-                                                <div style={{ color: '#475569' }}>
-                                                    <strong>최신 커밋:</strong> {gitStatus.currentCommit.hash} - {gitStatus.currentCommit.subject} ({gitStatus.currentCommit.date})
+                                                <div style={{ color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
+                                                    <div>
+                                                        <strong>최신 커밋:</strong> {gitStatus.currentCommit.hash} - {gitStatus.currentCommit.message || gitStatus.currentCommit.subject || ''} ({gitStatus.currentCommit.date})
+                                                    </div>
+                                                    {gitStatus.comparison === 'UP_TO_DATE' && (
+                                                        <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#059669', background: '#ecfdf5', padding: '2px 8px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                                                            ✓ GitHub와 최신 일치
+                                                        </span>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
