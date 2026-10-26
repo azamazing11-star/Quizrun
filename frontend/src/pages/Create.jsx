@@ -30,6 +30,83 @@ const DEFAULT_TOPICS = [
     { id: 'trivia', title: '상식 퀴즈' },
 ];
 
+
+// Image compression helpers using Canvas to prevent LocalStorage Quota Exceeded error
+const compressImageFile = (file, maxDim = 1000, quality = 0.82) => {
+    return new Promise((resolve) => {
+        if (!file) return resolve(null);
+        if (!file.type || !file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const raw = e.target.result;
+            const img = new Image();
+            img.onload = () => {
+                let w = img.naturalWidth || img.width;
+                let h = img.naturalHeight || img.height;
+                if (w > maxDim || h > maxDim) {
+                    if (w > h) {
+                        h = Math.round((h * maxDim) / w);
+                        w = maxDim;
+                    } else {
+                        w = Math.round((w * maxDim) / h);
+                        h = maxDim;
+                    }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = () => resolve(raw);
+            img.src = raw;
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+    });
+};
+
+const compressDataUrl = (dataUrl, maxDim = 1000, quality = 0.82) => {
+    return new Promise((resolve) => {
+        if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+            return resolve(dataUrl);
+        }
+        // If already small (< 150KB), skip
+        if (dataUrl.length < 150000) {
+            return resolve(dataUrl);
+        }
+        const img = new Image();
+        img.onload = () => {
+            let w = img.naturalWidth || img.width;
+            let h = img.naturalHeight || img.height;
+            if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                    h = Math.round((h * maxDim) / w);
+                    w = maxDim;
+                } else {
+                    w = Math.round((w * maxDim) / h);
+                    h = maxDim;
+                }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+    });
+};
+
 export default function Create({ socket }) {
     const navigate = useNavigate();
     const location = useLocation();
@@ -73,6 +150,7 @@ export default function Create({ socket }) {
     const [topicsList, setTopicsList] = useState(DEFAULT_TOPICS);
     const [isTransferring, setIsTransferring] = useState(false);
     const [targetIndicesForModal, setTargetIndicesForModal] = useState([]);
+    const [isSaving, setIsSaving] = useState(false);
 
     // 문제 유형 변환 helper
     const adaptQuestion = (q, fromMode, toMode) => {
@@ -241,7 +319,7 @@ export default function Create({ socket }) {
 
             targetData[targetQuizMode] = [...targetData[targetQuizMode], ...adapted];
 
-            localStorage.setItem(`quizrun_data_${targetTopicId}_${targetSubId}`, JSON.stringify(targetData));
+            try { localStorage.setItem(`quizrun_data_${targetTopicId}_${targetSubId}`, JSON.stringify(targetData)); } catch(e){}
             socket.emit('quiz:saveQuestions', { topicId: targetTopicId, subId: targetSubId, data: targetData }, (saveRes) => {
                 setIsTransferring(false);
 
@@ -257,7 +335,7 @@ export default function Create({ socket }) {
                         const curExisting = localStorage.getItem(curKey);
                         let curData = curExisting ? JSON.parse(curExisting) : { mcq: [], short: [], ox: [] };
                         curData[mode] = remaining;
-                        localStorage.setItem(curKey, JSON.stringify(curData));
+                        try { localStorage.setItem(curKey, JSON.stringify(curData)); } catch(e){}
                         socket.emit('quiz:saveQuestions', { topicId, subId, data: curData });
                     }
                 } else {
@@ -1196,7 +1274,7 @@ export default function Create({ socket }) {
         alert(`총 ${newQuestions.length}개의 문제에 질문 텍스트가 일괄 적용되었습니다!`);
     };
 
-    const handleCreateRoom = () => {
+    const handleCreateRoom = async () => {
         // 질문 텍스트(text)가 없더라도 이미지/미디어(mediaUrl)나 정답/선택지가 입력되어 있으면 유효 문제로 인지
         const validQuestions = questions.filter(q => {
             const isSpot = Boolean(q.isSpotDiff || isSpotDiffFolder || q.mediaUrl2 || (q.diffSpots && q.diffSpots.length > 0));
@@ -1238,28 +1316,38 @@ export default function Create({ socket }) {
                 if (!confirmed) return;
 
                 const key = `quizrun_data_${topicId}_${subId}`;
-                const existing = localStorage.getItem(key);
-                let data = existing ? JSON.parse(existing) : { mcq: [], short: [], ox: [] };
+                let data = { mcq: [], short: [], ox: [] };
+                try {
+                    const existing = localStorage.getItem(key);
+                    if (existing) data = JSON.parse(existing);
+                } catch(e) {}
                 if (!data.ox) data.ox = [];
                 data[mode] = [];
 
-                localStorage.setItem(key, JSON.stringify(data));
-            try {
-                const cachedCounts = JSON.parse(localStorage.getItem('quizrun_cached_counts') || '{}');
-                const totalQ = (data.mcq || []).length + (data.short || []).length + (data.ox || []).length;
-                cachedCounts[key] = totalQ;
-                localStorage.setItem('quizrun_cached_counts', JSON.stringify(cachedCounts));
-            } catch(e) {}
+                try {
+                    localStorage.setItem(key, JSON.stringify(data));
+                } catch(e) {}
+                try {
+                    const cachedCounts = JSON.parse(localStorage.getItem('quizrun_cached_counts') || '{}');
+                    const totalQ = (data.mcq || []).length + (data.short || []).length + (data.ox || []).length;
+                    cachedCounts[key] = totalQ;
+                    localStorage.setItem('quizrun_cached_counts', JSON.stringify(cachedCounts));
+                } catch(e) {}
 
-            socket.emit('quiz:saveQuestions', { topicId, subId, data }, (res) => {
-                socket.emit('quiz:getAllCounts', (cntRes) => {
-                    if (cntRes && cntRes.success && cntRes.counts) {
-                        try { localStorage.setItem('quizrun_cached_counts', JSON.stringify(cntRes.counts)); } catch(e){}
-                    }
-                });
+                if (socket) {
+                    socket.emit('quiz:saveQuestions', { topicId, subId, data }, (res) => {
+                        socket.emit('quiz:getAllCounts', (cntRes) => {
+                            if (cntRes && cntRes.success && cntRes.counts) {
+                                try { localStorage.setItem('quizrun_cached_counts', JSON.stringify(cntRes.counts)); } catch(e){}
+                            }
+                        });
+                        alert('모든 문제가 삭제되어 빈 폴더로 저장되었습니다.');
+                        navigate(`/quiz/${topicId}/${subId}`);
+                    });
+                } else {
                     alert('모든 문제가 삭제되어 빈 폴더로 저장되었습니다.');
                     navigate(`/quiz/${topicId}/${subId}`);
-                });
+                }
                 return;
             } else {
                 alert('게임을 시작하려면 최소 1개 이상의 문제를 작성해주세요!');
@@ -1298,54 +1386,106 @@ export default function Create({ socket }) {
             }
         }
 
-        if (topicId && subId) {
-            const key = `quizrun_data_${topicId}_${subId}`;
-            const existing = localStorage.getItem(key);
-            let data = existing ? JSON.parse(existing) : { mcq: [], short: [], ox: [] };
+        setIsSaving(true);
+        try {
+            // Automatically optimize any oversized image Data URLs across all questions before saving
+            const optimizedQuestions = await Promise.all(validQuestions.map(async (q) => {
+                let m1 = q.mediaUrl;
+                let m2 = q.mediaUrl2;
+                if (m1 && typeof m1 === 'string' && m1.startsWith('data:image/')) {
+                    m1 = await compressDataUrl(m1, 1000, 0.82);
+                }
+                if (m2 && typeof m2 === 'string' && m2.startsWith('data:image/')) {
+                    m2 = await compressDataUrl(m2, 1000, 0.82);
+                }
+                return { ...q, mediaUrl: m1, mediaUrl2: m2 };
+            }));
 
-            // Ensure ox array exists in data
-            if (!data.ox) data.ox = [];
+            if (topicId && subId) {
+                const key = `quizrun_data_${topicId}_${subId}`;
+                let data = { mcq: [], short: [], ox: [] };
+                try {
+                    const existing = localStorage.getItem(key);
+                    if (existing) data = JSON.parse(existing);
+                } catch(e) {}
+                if (!data.ox) data.ox = [];
 
-            if (mode === 'mcq') {
-                data.mcq = validQuestions.map(q => ({ ...q, type: 'mcq' }));
-            } else if (mode === 'ox') {
-                data.ox = validQuestions.map(q => ({ ...q, type: 'ox' }));
-            } else {
-                data.short = validQuestions.map(q => ({ ...q, type: 'short', options: [] }));
-            }
+                if (mode === 'mcq') {
+                    data.mcq = optimizedQuestions.map(q => ({ ...q, type: 'mcq' }));
+                } else if (mode === 'ox') {
+                    data.ox = optimizedQuestions.map(q => ({ ...q, type: 'ox' }));
+                } else {
+                    data.short = optimizedQuestions.map(q => ({ ...q, type: 'short', options: [] }));
+                }
 
-            // Save locally first for immediate consistency
-            localStorage.setItem(key, JSON.stringify(data));
+                // Safe localStorage write (never crash even if browser storage quota is exceeded)
+                try {
+                    localStorage.setItem(key, JSON.stringify(data));
+                } catch (e) {
+                    console.warn('[LocalStorage] Quota limit exceeded for quiz cache. Saving directly to backend server.', e);
+                }
 
-            // Save to server
-            socket.emit('quiz:saveQuestions', { topicId, subId, data }, (res) => {
-                if (res.success) {
-                    alert('문제가 서버에 안전하게 저장되었습니다!');
+                try {
+                    const cachedCounts = JSON.parse(localStorage.getItem('quizrun_cached_counts') || '{}');
+                    const totalQ = (data.mcq || []).length + (data.short || []).length + (data.ox || []).length;
+                    cachedCounts[key] = totalQ;
+                    localStorage.setItem('quizrun_cached_counts', JSON.stringify(cachedCounts));
+                } catch(e) {}
+
+                // Save to server
+                if (socket) {
+                    socket.emit('quiz:saveQuestions', { topicId, subId, data }, (res) => {
+                        setIsSaving(false);
+                        socket.emit('quiz:getAllCounts', (cntRes) => {
+                            if (cntRes && cntRes.success && cntRes.counts) {
+                                try { localStorage.setItem('quizrun_cached_counts', JSON.stringify(cntRes.counts)); } catch(e){}
+                            }
+                        });
+                        alert('문제가 서버에 안전하게 저장되었습니다!');
+                        navigate(`/quiz/${topicId}/${subId}`);
+                    });
+                } else {
+                    setIsSaving(false);
+                    alert('문제가 저장되었습니다!');
                     navigate(`/quiz/${topicId}/${subId}`);
                 }
-            });
-        } else {
-            // 특정 폴더 지정 없이 직접 만든 경우에도 커스텀 저장소에 안전하게 저장
-            const customKey = 'quizrun_data_custom_quiz';
-            const existing = localStorage.getItem(customKey);
-            let data = existing ? JSON.parse(existing) : { mcq: [], short: [], ox: [] };
-            if (!data.ox) data.ox = [];
-            const processedQuestions = validQuestions.map(q => ({
-                ...q,
-                type: mode,
-                options: mode === 'short' ? [] : q.options
-            }));
-            data[mode] = processedQuestions;
-            localStorage.setItem(customKey, JSON.stringify(data));
+            } else {
+                // 특정 폴더 지정 없이 직접 만든 경우에도 커스텀 저장소에 안전하게 저장
+                const customKey = 'quizrun_data_custom_quiz';
+                let data = { mcq: [], short: [], ox: [] };
+                try {
+                    const existing = localStorage.getItem(customKey);
+                    if (existing) data = JSON.parse(existing);
+                } catch(e) {}
+                if (!data.ox) data.ox = [];
 
-            const customQuiz = {
-                title: mode === 'mcq' ? '객관식 퀴즈' : mode === 'ox' ? 'OX 퀴즈' : '주관식 퀴즈',
-                quizType: mode,
-                questions: processedQuestions
-            };
+                const processedQuestions = optimizedQuestions.map(q => ({
+                    ...q,
+                    type: mode,
+                    options: mode === 'short' ? [] : q.options
+                }));
+                data[mode] = processedQuestions;
 
-            alert('✅ 작성하신 문제가 안전하게 저장되었습니다!\n퀴즈 진행 방식 및 점수 관리 화면으로 이동합니다.');
-            navigate('/host', { state: { customQuiz, pin: onlinePin } });
+                try {
+                    localStorage.setItem(customKey, JSON.stringify(data));
+                } catch (e) {
+                    console.warn('[LocalStorage] Quota limit exceeded for custom quiz:', e);
+                }
+
+                const customQuiz = {
+                    title: mode === 'mcq' ? '객관식 퀴즈' : mode === 'ox' ? 'OX 퀴즈' : '주관식 퀴즈',
+                    quizType: mode,
+                    questions: processedQuestions
+                };
+
+                setIsSaving(false);
+                alert('✅ 작성하신 문제가 안전하게 저장되었습니다!\n퀴즈 진행 방식 및 점수 관리 화면으로 이동합니다.');
+                navigate('/host', { state: { customQuiz, pin: onlinePin } });
+            }
+        } catch (err) {
+            console.error('Error during handleCreateRoom:', err);
+            setIsSaving(false);
+            alert('저장 중 오류가 발생했습니다: ' + (err.message || err));
         }
     };
 
