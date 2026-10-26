@@ -902,16 +902,16 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
 });
 
 const server = http.createServer(app);
-server.keepAliveTimeout = 65000;
-server.headersTimeout = 66000;
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 125000;
 
 const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  pingInterval: 25000,
-  pingTimeout: 60000,
+  pingInterval: 15000,
+  pingTimeout: 45000,
   maxHttpBufferSize: 1e8,
   transports: ['websocket', 'polling']
 });
@@ -1436,6 +1436,7 @@ io.on('connection', (socket) => {
         hostId: socket.id,
         quiz: finalQuiz,
         participants: [],
+        preservedParticipants: {},
         state: initialRoomState,
         isGame: isGameMode,
         gameId: gameId,
@@ -1781,6 +1782,7 @@ io.on('connection', (socket) => {
           hostId: null,
           quiz: MOCK_QUIZZES['general'],
           participants: [],
+          preservedParticipants: {},
           state: 'lobby',
           currentQuestionIndex: 0,
           totalPoints: 100,
@@ -2272,6 +2274,20 @@ io.on('connection', (socket) => {
             p.score += deltaVal;
           }
         }
+        if (!room.preservedParticipants) room.preservedParticipants = {};
+        const pNorm = String(p.nickname || '').trim().toLowerCase();
+        const pSnap = {
+          nickname: p.nickname,
+          clientId: p.clientId,
+          score: p.score || 0,
+          groupId: p.groupId || null,
+          gameBaseScore: p.gameBaseScore || 0,
+          officialRoundScore: p.officialRoundScore || 0,
+          hasFinishedOfficialRound: p.hasFinishedOfficialRound || false,
+          lastActive: Date.now()
+        };
+        if (pNorm) room.preservedParticipants[pNorm] = pSnap;
+        if (p.clientId) room.preservedParticipants[p.clientId] = pSnap;
         io.to(cleanPin).emit('host:participantsUpdated', room.participants);
         const resolvedState = room.isGame ? (room.state || 'game_active') : (room.state === 'lobby' ? 'waiting' : room.state);
         io.to(cleanPin).emit('room:stateUpdate', {

@@ -74,7 +74,22 @@ export default function Participant({ socket }) {
     const [isLoading, setIsLoading] = useState(!socket.connected);
     const [socketConnected, setSocketConnected] = useState(socket.connected);
     const [leaderboard, setLeaderboard] = useState([]);
-    const [myScore, setMyScore] = useState(0);
+    const [myScore, setMyScore] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem('quizrun_score');
+            return saved !== null ? Number(saved) : 0;
+        } catch (e) {
+            return 0;
+        }
+    });
+
+    useEffect(() => {
+        if (typeof myScore === 'number') {
+            try {
+                sessionStorage.setItem('quizrun_score', String(myScore));
+            } catch (e) {}
+        }
+    }, [myScore]);
     const [myStatus, setMyStatus] = useState(null);
     const [isBuzzerMode, setIsBuzzerMode] = useState(false);
     const [quizType, setQuizType] = useState('mcq');

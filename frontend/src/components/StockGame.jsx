@@ -2261,7 +2261,13 @@ export function StockGameScreenView({
     // 서브모니터 화면 로컬 예측 및 힌트 모달 상태
     const [screenVotes, setScreenVotes] = useState({});
     const [rewardModalOpen, setRewardModalOpen] = useState(false);
-    const [chosenHintStock, setChosenHintStock] = useState(null);
+    const [chosenHintStock, setChosenHintStock] = useState(() => {
+        try {
+            return sessionStorage.getItem(`quizrun_stock_vip_${pin || effectivePin}_${gameState.year}`) || null;
+        } catch (e) {
+            return null;
+        }
+    });
     const [showSectorDirectoryModal, setShowSectorDirectoryModal] = useState(false);
     const [isModalDismissed, setIsModalDismissed] = useState(false);
     const [isProgressDismissed, setIsProgressDismissed] = useState(false);
@@ -6598,7 +6604,14 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const [tradeQty, setTradeQty] = useState(0);
 
     // 참여자 예측 투표 및 힌트 보상 모달 상태 (각 유저 로컬 전용)
-    const [localVotes, setLocalVotes] = useState({});
+    const [localVotes, setLocalVotes] = useState(() => {
+        try {
+            const raw = sessionStorage.getItem(`quizrun_stock_votes_${pin || effectivePin}_${gameState.year}`);
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) {
+            return {};
+        }
+    });
     const [localPortfolio, setLocalPortfolio] = useState(null);
     const [rewardModalOpen, setRewardModalOpen] = useState(false);
     const [chosenHintStock, setChosenHintStock] = useState(null);
