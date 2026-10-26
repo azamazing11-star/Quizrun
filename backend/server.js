@@ -35,15 +35,69 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// --- KOREAN PROFANITY & SWEAR FILTER (Clean Bot & Wholesome Purifier) ---
+const PROFANITY_MAP = [
+  { regex: /시[발벌바]|씨[발벌바]|ㅅㅂ|ㅆㅂ|쉬[발바]|sibal|fuck/gi, replace: '사랑해요❤️' },
+  { regex: /존나|졸라|ㅈㄴ|존[많맛멋]/gi, replace: '진짜 대박' },
+  { regex: /개[새색]끼|새[끼키]|개새|개색/gi, replace: '귀염둥이🐶' },
+  { regex: /지[랄럴]|ㅈㄹ|지럴/gi, replace: '요술마법✨' },
+  { regex: /병[신쉰]|ㅂㅅ|븅[신쉰]|등신/gi, replace: '멋쟁이 천재😎' },
+  { regex: /미[친칭][놈년놈들]|미쳤/gi, replace: '열정 넘치는🔥' },
+  { regex: /닥[쳐치]/gi, replace: '조용히 집중🤫' },
+  { regex: /망[했할]/gi, replace: '오히려 좋아🌟' },
+  { regex: /[좆좇졎]|ㅈ같|존같/gi, replace: '최고로 멋진' },
+  { regex: /[씹씝][창창련]/gi, replace: '활짝 핀 꽃밭🌸' },
+  { regex: /걸레|창녀|보지|자지|느금|엠창|니애미|애미|따먹/gi, replace: '[클린봇 정화됨✨]' }
+];
+
+function sanitizeChatMessage(text) {
+  if (!text || typeof text !== 'string') return { cleanText: '', wasFiltered: false };
+  let cleanText = text;
+  let wasFiltered = false;
+
+  for (const item of PROFANITY_MAP) {
+    if (item.regex.test(cleanText)) {
+      wasFiltered = true;
+      cleanText = cleanText.replace(item.regex, item.replace);
+    }
+  }
+
+  return { cleanText, wasFiltered };
+}
+
+function cleanupChatFiles(pin) {
+  try {
+    const cleanPin = String(pin || '').trim();
+    if (!cleanPin) return;
+    const files = fs.readdirSync(UPLOADS_DIR);
+    let removedCount = 0;
+    files.forEach(f => {
+      if (f.startsWith('chat_' + cleanPin + '_')) {
+        try {
+          fs.unlinkSync(path.join(UPLOADS_DIR, f));
+          removedCount++;
+        } catch (e) {}
+      }
+    });
+    if (removedCount > 0) {
+      console.log('[Chat Cleanup] Removed ' + removedCount + ' temporary files for room ' + cleanPin);
+    }
+  } catch (err) {
+    console.error('[Chat Cleanup Error]', err);
+  }
+}
+
 // Endpoint for uploading local media (music, video, image) from client
 app.post('/api/upload', (req, res) => {
   try {
-    const { name, data } = req.body;
+    const { name, data, pin, isChat } = req.body;
     if (!data || !name) {
       return res.status(400).json({ success: false, message: 'Invalid file data' });
     }
     const ext = path.extname(name) || '.bin';
-    const safeFilename = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
+    const cleanPin = pin ? String(pin).trim() : '';
+    const prefix = isChat && cleanPin ? ('chat_' + cleanPin + '_') : '';
+    const safeFilename = prefix + Date.now() + '_' + Math.random().toString(36).substring(2, 8) + ext;
     const targetPath = path.join(UPLOADS_DIR, safeFilename);
 
     const base64Data = data.replace(/^data:.*?;base64,/, '');
@@ -1147,6 +1201,96 @@ io.on('connection', (socket) => {
   });
 
   // --- COMMON EVENTS ---
+  
+  // --- REAL-TIME ROOM CHAT & LIVE REACTION EVENTS ---
+  socket.on('chat:send', (data, callback) => {
+    try {
+      const { pin, nickname, text, fileUrl, fileName, fileSize, fileType, isNotice, isHelp } = data || {};
+      const cleanPin = String(pin || '').trim();
+      const room = rooms[cleanPin];
+      if (!room) {
+        if (callback) callback({ success: false, message: '방이 존재하지 않습니다.' });
+        return;
+      }
+
+      if (!room.chatMessages) room.chatMessages = [];
+
+      const { cleanText, wasFiltered } = sanitizeChatMessage(text || '');
+
+      if (!cleanText && !fileUrl) {
+        if (callback) callback({ success: false, message: '메시지 또는 파일을 입력해주세요.' });
+        return;
+      }
+
+      const isHost = Boolean(socket.id === room.hostId || nickname === '진행자' || nickname === '호스트');
+
+      const message = {
+        id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        pin: cleanPin,
+        sender: nickname || (isHost ? '진행자' : '참가자'),
+        isHost,
+        text: cleanText,
+        wasFiltered,
+        fileUrl: fileUrl || null,
+        fileName: fileName || null,
+        fileSize: fileSize || null,
+        fileType: fileType || (fileUrl && fileUrl.match(/\.(png|jpe?g|gif|webp|svg)/i) ? 'image' : 'file'),
+        isNotice: Boolean(isNotice && isHost),
+        isHelp: Boolean(isHelp),
+        createdAt: new Date().toISOString()
+      };
+
+      room.chatMessages.push(message);
+      if (room.chatMessages.length > 300) {
+        room.chatMessages.shift();
+      }
+
+      if (message.isNotice) {
+        room.chatNotice = message;
+        io.to(cleanPin).emit('chat:notice_updated', message);
+      }
+
+      io.to(cleanPin).emit('chat:message', message);
+      if (callback) callback({ success: true, message });
+    } catch (err) {
+      console.error('[Chat Error]', err);
+      if (callback) callback({ success: false, message: err.message });
+    }
+  });
+
+  socket.on('chat:reaction', ({ pin, nickname, emoji }) => {
+    const cleanPin = String(pin || '').trim();
+    if (!cleanPin) return;
+    io.to(cleanPin).emit('chat:live_reaction', {
+      id: 'react_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      nickname: nickname || '참가자',
+      emoji: emoji || '🔥',
+      createdAt: Date.now()
+    });
+  });
+
+  socket.on('chat:get_history', ({ pin }, callback) => {
+    const cleanPin = String(pin || '').trim();
+    const room = rooms[cleanPin];
+    if (callback) {
+      callback({
+        success: true,
+        messages: room?.chatMessages || [],
+        notice: room?.chatNotice || null
+      });
+    }
+  });
+
+  socket.on('chat:clear_notice', ({ pin }, callback) => {
+    const cleanPin = String(pin || '').trim();
+    const room = rooms[cleanPin];
+    if (room) {
+      room.chatNotice = null;
+      io.to(cleanPin).emit('chat:notice_updated', null);
+    }
+    if (callback) callback({ success: true });
+  });
+
   socket.on('room:clientError', ({ pin, error, info }) => {
     console.error(`[CLIENT ERROR] Room: ${pin || 'N/A'}, User: ${socket.id}`);
     console.error(`Error: ${error}`);
@@ -2229,7 +2373,9 @@ io.on('connection', (socket) => {
     }
 
     targetPins.forEach(rPin => {
-      console.log(`[Session End] Host ending session for room ${rPin}. Disconnecting all participants...`);
+      console.log('[Session End] Host ending session for room ' + rPin + '. Cleaning up chat & disconnecting participants...');
+      cleanupChatFiles(rPin);
+      io.to(rPin).emit('chat:cleared');
       io.to(rPin).emit('room:closed');
       io.to(rPin).emit('host:participantsUpdated', []);
       delete rooms[rPin];
@@ -2240,6 +2386,8 @@ io.on('connection', (socket) => {
 
   socket.on('host:closeRoom', ({ pin }, callback) => {
     if (pin && rooms[pin]) {
+      cleanupChatFiles(pin);
+      io.to(pin).emit('chat:cleared');
       io.to(pin).emit('room:closed');
       io.to(pin).emit('host:participantsUpdated', []);
       delete rooms[pin];

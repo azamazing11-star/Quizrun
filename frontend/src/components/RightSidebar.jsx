@@ -3,6 +3,8 @@ import { useGlobalSession } from '../context/GlobalSessionContext';
 import Confetti from 'react-confetti';
 import { playSound } from '../utils/audio';
 import { formatKoreanMoney } from '../utils/format';
+import RoomChat from './RoomChat';
+import FloatingReactions from './FloatingReactions';
 import { 
     Trophy, 
     Settings, 
@@ -15,7 +17,7 @@ import {
     RefreshCw, 
     TrendingUp, 
     ArrowLeft, 
-    RotateCcw, X, XCircle 
+    RotateCcw, X, XCircle, MessageSquare 
 } from 'lucide-react';
 
 export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGameAndExit, onEndGame, onEndCurrentGame, onOpenFinalLeaderboard }) {
@@ -184,6 +186,22 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     const [confettiActive, setConfettiActive] = useState(false);
     const [bulkAmount, setBulkAmount] = useState(1000000);
     const [percentInputs, setPercentInputs] = useState({});
+    const [sidebarTab, setSidebarTab] = useState('scores'); // 'scores' | 'chat'
+    const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+    useEffect(() => {
+        if (!socket) return;
+        const handleChatMessage = () => {
+            if (sidebarTab !== 'chat') {
+                setUnreadChatCount(prev => prev + 1);
+            }
+        };
+        socket.on('chat:message', handleChatMessage);
+        return () => {
+            socket.off('chat:message', handleChatMessage);
+        };
+    }, [socket, sidebarTab]);
+
 
         const handleEndCurrentGameInternal = () => {
         if (!window.confirm("현재 진행 중인 게임만 종료하고 홈 화면으로 이동하시겠습니까?\n모든 참가자는 현재 점수를 그대로 유지한 채 대기 상태가 됩니다.")) {
@@ -641,7 +659,95 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                     )}
                 </div>
 
-                {/* Body Content */}
+                
+                {/* Real-time Tabs: [Scoreboard/Assets] vs [Chat Window] */}
+                <div style={{
+                    display: 'flex',
+                    padding: '6px 12px',
+                    backgroundColor: '#f8fafc',
+                    borderBottom: '1px solid #e2e8f0',
+                    gap: '6px'
+                }}>
+                    <button
+                        type="button"
+                        onClick={() => setSidebarTab('scores')}
+                        style={{
+                            flex: 1,
+                            padding: '6px 10px',
+                            borderRadius: '10px',
+                            fontSize: '0.82rem',
+                            fontWeight: '800',
+                            border: 'none',
+                            cursor: 'pointer',
+                            backgroundColor: sidebarTab === 'scores' ? '#ffffff' : 'transparent',
+                            color: sidebarTab === 'scores' ? 'var(--text)' : '#64748b',
+                            boxShadow: sidebarTab === 'scores' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '5px',
+                            transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <span>{isStockGame ? '📊 누적 자산' : '📊 점수판'}</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSidebarTab('chat');
+                            setUnreadChatCount(0);
+                        }}
+                        style={{
+                            flex: 1,
+                            padding: '6px 10px',
+                            borderRadius: '10px',
+                            fontSize: '0.82rem',
+                            fontWeight: '800',
+                            border: 'none',
+                            cursor: 'pointer',
+                            backgroundColor: sidebarTab === 'chat' ? '#ffffff' : 'transparent',
+                            color: sidebarTab === 'chat' ? '#0284c7' : '#64748b',
+                            boxShadow: sidebarTab === 'chat' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '5px',
+                            position: 'relative',
+                            transition: 'all 0.15s ease'
+                        }}
+                    >
+                        <MessageSquare size={14} />
+                        <span>실시간 대화</span>
+                        {unreadChatCount > 0 && sidebarTab !== 'chat' && (
+                            <span
+                                style={{
+                                    backgroundColor: '#f59e0b',
+                                    color: '#ffffff',
+                                    fontSize: '0.68rem',
+                                    fontWeight: '900',
+                                    padding: '1px 6px',
+                                    borderRadius: '10px',
+                                    marginLeft: '2px',
+                                    animation: 'kakaoPulse 1.2s infinite'
+                                }}
+                            >
+                                {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                            </span>
+                        )}
+                    </button>
+                </div>
+
+                {sidebarTab === 'chat' ? (
+                    <div style={{ flex: 1, minHeight: 0 }}>
+                        <RoomChat
+                            socket={socket}
+                            pin={onlinePin}
+                            currentUser={{ nickname: '진행자', isHost: true }}
+                            isHost={true}
+                        />
+                    </div>
+                ) : (
                 <div style={{ flex: 1, overflowY: 'auto', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', minHeight: 0 }}>
                     {/* Stock Game Bulk Investment Toolbar */}
                     {isStockGame && (
@@ -1217,6 +1323,8 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                             </div>
                     )}
                 </div>
+
+                )}
 
                 {/* Bottom Actions */}
                 <div style={{

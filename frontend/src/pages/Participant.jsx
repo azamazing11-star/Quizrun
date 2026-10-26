@@ -1,7 +1,9 @@
 import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
 import NunchiGame from '../components/NunchiGame';
 import React, { useState, useEffect, useRef } from 'react';
-import { User, KeyRound, AlertCircle, CheckCircle, XCircle, ArrowLeft, Music } from 'lucide-react';
+import { User, KeyRound, AlertCircle, CheckCircle, XCircle, ArrowLeft, Music, MessageSquare, X } from 'lucide-react';
+import RoomChat from '../components/RoomChat';
+import FloatingReactions from '../components/FloatingReactions';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { playSound } from '../utils/audio';
 import { getChosung } from '../utils/chosung';
@@ -47,6 +49,23 @@ export default function Participant({ socket }) {
     const [error, setError] = useState(null);
     const [currentPoints, setCurrentPoints] = useState(10);
     const [autoReconnecting, setAutoReconnecting] = useState(false);
+
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+    useEffect(() => {
+        if (!socket) return;
+        const handleChatMsg = () => {
+            if (!isChatOpen) {
+                setUnreadChatCount(prev => prev + 1);
+            }
+        };
+        socket.on('chat:message', handleChatMsg);
+        return () => {
+            socket.off('chat:message', handleChatMsg);
+        };
+    }, [socket, isChatOpen]);
+
     const hasAttemptedAutoJoin = useRef(false);
     const clientIdRef = useRef(getOrCreateClientId());
 
@@ -987,6 +1006,139 @@ export default function Participant({ socket }) {
     }, [gameState, isGame, gameId, pin, nickname]);
 
     // Floating universal back button for all mobile participants
+    
+    const renderParticipantChat = () => {
+        const cleanPin = pin || pinRef.current || sessionStorage.getItem('quizrun_pin') || localStorage.getItem('quizrun_pin');
+        if (!hasJoined && !cleanPin) return null;
+
+        return (
+            <>
+                <FloatingReactions socket={socket} isMobile={true} />
+
+                {/* Floating Mobile Chat Button */}
+                <button
+                    type="button"
+                    onClick={() => {
+                        setIsChatOpen(prev => !prev);
+                        setUnreadChatCount(0);
+                    }}
+                    style={{
+                        position: 'fixed',
+                        bottom: '22px',
+                        right: '18px',
+                        width: '54px',
+                        height: '54px',
+                        borderRadius: '50%',
+                        backgroundColor: '#0284c7',
+                        color: '#ffffff',
+                        border: 'none',
+                        boxShadow: '0 6px 18px rgba(2, 132, 199, 0.45)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 9999,
+                        transition: 'transform 0.15s ease'
+                    }}
+                    title="실시간 대화방"
+                >
+                    <MessageSquare size={24} />
+                    {unreadChatCount > 0 && !isChatOpen && (
+                        <span style={{
+                            position: 'absolute',
+                            top: '-3px',
+                            right: '-3px',
+                            backgroundColor: '#f59e0b',
+                            color: '#ffffff',
+                            fontSize: '0.72rem',
+                            fontWeight: '900',
+                            padding: '2px 6px',
+                            borderRadius: '12px',
+                            border: '2px solid #ffffff',
+                            animation: 'kakaoPulse 1.2s infinite'
+                        }}>
+                            {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                        </span>
+                    )}
+                </button>
+
+                {/* Mobile Slide-Up Drawer Modal */}
+                {isChatOpen && (
+                    <div
+                        onClick={() => setIsChatOpen(false)}
+                        style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                            backdropFilter: 'blur(3px)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'flex-end'
+                        }}
+                    >
+                        <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                                width: '100%',
+                                height: '78vh',
+                                maxHeight: '680px',
+                                backgroundColor: '#ffffff',
+                                borderTopLeftRadius: '24px',
+                                borderTopRightRadius: '24px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                overflow: 'hidden',
+                                boxShadow: '0 -10px 30px rgba(0,0,0,0.25)',
+                                animation: 'slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                            }}
+                        >
+                            <div style={{
+                                padding: '12px 16px',
+                                backgroundColor: '#f8fafc',
+                                borderBottom: '1px solid #e2e8f0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800', color: '#0f172a' }}>
+                                    <MessageSquare size={18} style={{ color: '#0284c7' }} />
+                                    <span>실시간 대화방 ({nickname || '참가자'})</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsChatOpen(false)}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#64748b',
+                                        cursor: 'pointer',
+                                        padding: '4px',
+                                        display: 'flex'
+                                    }}
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div style={{ flex: 1, minHeight: 0 }}>
+                                <RoomChat
+                                    socket={socket}
+                                    pin={cleanPin}
+                                    currentUser={{ nickname, isHost: false }}
+                                    isHost={false}
+                                    isMobile={true}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </>
+        );
+    };
+
     const renderUniversalBackButton = () => {
         if (gameState === 'join') return null; // 'join' already has its dedicated back button
         if (gameId === 'stock_game' || gameState === 'question' || isSpotDiff) return null; // 퀴즈 및 다른그림찾기 진행 중에는 버튼 숨김
@@ -1537,6 +1689,8 @@ export default function Participant({ socket }) {
                         </div>
                     )}
                     <StockGame socket={socket} pin={pin} isHost={false} groupId={groupId} nickname={nickname} myScore={myScore} />
+                
+                    {renderParticipantChat()}
                 </div>
             );
         }
@@ -1564,6 +1718,7 @@ export default function Participant({ socket }) {
                     </div>
                 )}
                 {renderActiveGame()}
+                {renderParticipantChat()}
             </div>
         );
     }

@@ -14,6 +14,7 @@ import { StockGameScreenView, STOCK_DATA_2026 } from '../components/StockGame';
 import MultiplayerLiveSpectator from '../components/MultiplayerLiveSpectator';
 import WordBombArena from '../components/WordBombArena';
 import FinalLeaderboardModal from '../components/FinalLeaderboardModal';
+import FloatingReactions from '../components/FloatingReactions';
 
 const GROUP_COLORS = [
     '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -1503,7 +1504,7 @@ export default function ScreenView({ socket }) {
                     </div>
                 )}
             </main>
-
+            <FloatingReactions socket={socket} />
             <FinalLeaderboardModal
                 isOpen={Boolean(showWinnerModal || winnerModalSync?.open)}
                 onClose={() => {
