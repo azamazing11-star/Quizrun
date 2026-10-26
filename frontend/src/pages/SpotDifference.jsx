@@ -177,38 +177,39 @@ function CrayonCircleOverlay({ x, y }) {
                 position: 'absolute',
                 left: `${x}%`,
                 top: `${y}%`,
-                width: '95px',
-                height: '95px',
-                transform: 'translate(-50%, -50%) rotate(-6deg)',
+                width: '88px',
+                height: '88px',
+                transform: 'translate(-50%, -50%) rotate(-4deg)',
                 pointerEvents: 'none',
                 zIndex: 35,
                 filter: 'drop-shadow(0px 3px 6px rgba(220, 38, 38, 0.45))'
             }}
         >
             <path
-                d="M 50,10 A 38,36 0 1,1 46,12 A 40,38 0 0,1 54,10"
+                d="M 46,14 C 70,10 90,26 92,52 C 94,76 76,92 50,91 C 24,90 10,72 11,46 C 12,20 34,8 58,11 C 68,13 80,20 86,28"
                 fill="none"
                 stroke="#dc2626"
-                strokeWidth="6.5"
+                strokeWidth="5.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                    strokeDasharray: '340',
+                    strokeDashoffset: '340',
+                    animation: 'drawCrayonCircle 0.48s cubic-bezier(0.2, 0.8, 0.35, 1) forwards'
+                }}
+            />
+            <path
+                d="M 48,16 C 73,13 88,29 90,51 C 92,73 74,89 50,88 C 26,87 13,71 14,47 C 15,23 35,12 56,13 C 66,14 76,21 82,27"
+                fill="none"
+                stroke="#ef4444"
+                strokeWidth="3.2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 style={{
                     strokeDasharray: '320',
                     strokeDashoffset: '320',
-                    animation: 'drawCrayonCircle 0.45s cubic-bezier(0.25, 1, 0.5, 1) forwards'
-                }}
-            />
-            <path
-                d="M 52,14 A 35,33 0 1,1 45,15"
-                fill="none"
-                stroke="#ef4444"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                style={{
-                    strokeDasharray: '280',
-                    strokeDashoffset: '280',
-                    animation: 'drawCrayonCircle 0.4s cubic-bezier(0.25, 1, 0.5, 1) 0.08s forwards',
-                    opacity: 0.85
+                    animation: 'drawCrayonCircle 0.44s cubic-bezier(0.2, 0.8, 0.35, 1) 0.05s forwards',
+                    opacity: 0.92
                 }}
             />
         </svg>

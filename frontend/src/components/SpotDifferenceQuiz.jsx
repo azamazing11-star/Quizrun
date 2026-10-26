@@ -4,7 +4,7 @@ import Confetti from 'react-confetti';
 import { Clock, CheckCircle2, Trophy, Eye, AlertCircle, Sparkles } from 'lucide-react';
 
 // 사람이 채점하듯이 시계 방향으로 슥- 돌리면서 그어지는 자연스러운 빨간색 채점 동그라미
-function HandDrawnGradingCircle({ x, y, size = 120, nickname = null }) {
+function HandDrawnGradingCircle({ x, y, size = 80, nickname = null }) {
     return (
         <div
             style={{
@@ -472,7 +472,7 @@ export default function SpotDifferenceQuiz({
                                         key={idx}
                                         x={s.x}
                                         y={s.y}
-                                        size={132}
+                                        size={88}
                                         nickname={s.nickname}
                                     />
                                 ))}
@@ -702,7 +702,7 @@ export default function SpotDifferenceQuiz({
                                     key={id}
                                     x={spot.x}
                                     y={spot.y}
-                                    size={108}
+                                    size={72}
                                 />
                             );
                         })}
