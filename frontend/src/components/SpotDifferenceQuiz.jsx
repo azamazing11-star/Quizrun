@@ -3,6 +3,88 @@ import { playSound } from '../utils/audio';
 import Confetti from 'react-confetti';
 import { Clock, CheckCircle2, Trophy, Eye, AlertCircle, Sparkles } from 'lucide-react';
 
+// 사람이 채점하듯이 시계 방향으로 슥- 돌리면서 그어지는 자연스러운 빨간색 채점 동그라미
+function HandDrawnGradingCircle({ x, y, size = 120, nickname = null }) {
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                left: `${x}%`,
+                top: `${y}%`,
+                width: `${size}px`,
+                height: `${size}px`,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                zIndex: 30,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+            }}
+        >
+            <svg
+                viewBox="0 0 100 100"
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    overflow: 'visible',
+                    filter: 'drop-shadow(0px 3px 6px rgba(220, 38, 38, 0.45))',
+                    transform: 'rotate(-4deg)'
+                }}
+            >
+                {/* 메인 굵은 빨간펜 채점선: 시계 방향으로 슥- 그어지는 역동적인 곡선 */}
+                <path
+                    d="M 46,14 C 70,10 90,26 92,52 C 94,76 76,92 50,91 C 24,90 10,72 11,46 C 12,20 34,8 58,11 C 68,13 80,20 86,28"
+                    fill="none"
+                    stroke="#dc2626"
+                    strokeWidth="5.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                        strokeDasharray: 340,
+                        strokeDashoffset: 340,
+                        animation: 'drawGradingClockwise 0.48s cubic-bezier(0.2, 0.8, 0.35, 1) forwards'
+                    }}
+                />
+                {/* 자연스러운 색연필/플러스펜 겹침 질감 악센트선 */}
+                <path
+                    d="M 48,16 C 73,13 88,29 90,51 C 92,73 74,89 50,88 C 26,87 13,71 14,47 C 15,23 35,12 56,13 C 66,14 76,21 82,27"
+                    fill="none"
+                    stroke="#ef4444"
+                    strokeWidth="3.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{
+                        strokeDasharray: 320,
+                        strokeDashoffset: 320,
+                        animation: 'drawGradingClockwise 0.44s cubic-bezier(0.2, 0.8, 0.35, 1) 0.05s forwards',
+                        opacity: 0.92
+                    }}
+                />
+            </svg>
+
+            {nickname && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        bottom: '-14px',
+                        background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                        color: 'white',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '0.78rem',
+                        fontWeight: '900',
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                        border: '1.5px solid white'
+                    }}
+                >
+                    {nickname}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function SpotDifferenceQuiz({
     isHost = false,
     isScreenView = false,
@@ -125,14 +207,23 @@ export default function SpotDifferenceQuiz({
 
         // Check if click is close to any spot (generous hit tolerance: 14% of dimension)
         let hitSpot = null;
+        let isAlreadyFound = false;
         for (const spot of effectiveSpots) {
             const dist = Math.hypot(clickX - spot.x, clickY - spot.y);
             const r = Math.max(spot.radius || 10, 14);
-            if (dist <= r && !myFoundSpotIds.has(spot.id)) {
-                hitSpot = spot;
-                break;
+            if (dist <= r) {
+                if (myFoundSpotIds.has(spot.id)) {
+                    isAlreadyFound = true;
+                    break;
+                } else {
+                    hitSpot = spot;
+                    break;
+                }
             }
         }
+
+        // 이미 찾은 위치를 다시 터치한 경우는 감점하지 않고 무시
+        if (isAlreadyFound) return;
 
         const effectiveNickname = nickname || (isHost ? '진행자' : isScreenView ? '서브스크린' : '참가자');
 
@@ -147,7 +238,7 @@ export default function SpotDifferenceQuiz({
             // Award +10 points
             if (onScoreAdjust) onScoreAdjust(10);
             if (socket && pin) {
-                socket.emit('host:adjustScore', { pin, nickname: effectiveNickname, amount: 10 });
+                socket.emit('host:adjustScore', { pin, nickname: effectiveNickname, delta: 10, amount: 10 });
                 socket.emit('room:message', {
                     pin,
                     event: 'quiz:spot_diff_hit',
@@ -172,7 +263,7 @@ export default function SpotDifferenceQuiz({
                 const bonus = baseEarned; // 맞춘 점수의 2배를 더해서 획득
                 if (onScoreAdjust) onScoreAdjust(bonus);
                 if (socket && pin) {
-                    socket.emit('host:adjustScore', { pin, nickname: effectiveNickname, amount: bonus });
+                    socket.emit('host:adjustScore', { pin, nickname: effectiveNickname, delta: bonus, amount: bonus });
                     socket.emit('room:message', {
                         pin,
                         event: 'quiz:spot_diff_first_finish',
@@ -193,10 +284,15 @@ export default function SpotDifferenceQuiz({
                 } catch(e){}
             }
         } else {
-            // MISS
-            setMissRipple({ x: clickX, y: clickY });
+            // MISS: 아무데나 오답을 클릭했을 때 -10점 감점
+            setMissRipple({ x: clickX, y: clickY, id: Date.now() });
             try { playSound('wrong'); } catch(e){}
-            setTimeout(() => setMissRipple(null), 800);
+
+            if (onScoreAdjust) onScoreAdjust(-10);
+            if (socket && pin && !isHost && !isScreenView) {
+                socket.emit('host:adjustScore', { pin, nickname: effectiveNickname, delta: -10, amount: -10 });
+            }
+            setTimeout(() => setMissRipple(null), 950);
         }
     };
 
@@ -211,6 +307,20 @@ export default function SpotDifferenceQuiz({
                 gap: '14px'
             }}>
                 {confettiActive && <Confetti recycle={false} numberOfPieces={500} />}
+            <style>{`
+                @keyframes drawGradingClockwise {
+                    0% { stroke-dashoffset: 340; opacity: 0.2; }
+                    10% { opacity: 1; }
+                    100% { stroke-dashoffset: 0; opacity: 1; }
+                }
+                @keyframes floatUpPenalty {
+                    0% { transform: translateY(0) scale(0.85); opacity: 0; }
+                    20% { transform: translateY(-8px) scale(1.15); opacity: 1; }
+                    75% { transform: translateY(-24px) scale(1.05); opacity: 0.95; }
+                    100% { transform: translateY(-36px) scale(0.9); opacity: 0; }
+                }
+            `}</style>
+
 
                 {/* Top Status Banner: Timer & Spots Counter */}
                 <div style={{
@@ -356,33 +466,15 @@ export default function SpotDifferenceQuiz({
                                     style={{ display: 'block', maxWidth: '100%', maxHeight: '420px', objectFit: 'contain', borderRadius: '16px', userSelect: 'none' }}
                                 />
 
-                                {/* Render Found Spots as Green Glowing Circles */}
+                                {/* Render Found Spots as Hand-Drawn Clockwise Grading Circles (3x Diameter: 132px) */}
                                 {allFoundSpots.map((s, idx) => (
-                                    <div
+                                    <HandDrawnGradingCircle
                                         key={idx}
-                                        style={{
-                                            position: 'absolute',
-                                            left: `${s.x}%`,
-                                            top: `${s.y}%`,
-                                            width: '44px',
-                                            height: '44px',
-                                            transform: 'translate(-50%, -50%)',
-                                            border: '3.5px solid #22c55e',
-                                            borderRadius: '50%',
-                                            background: 'rgba(34, 197, 94, 0.25)',
-                                            boxShadow: '0 0 16px rgba(34, 197, 94, 0.8)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            color: '#15803d',
-                                            fontWeight: '900',
-                                            fontSize: '0.85rem',
-                                            pointerEvents: 'none',
-                                            animation: 'pulse 1s infinite'
-                                        }}
-                                    >
-                                        ✓
-                                    </div>
+                                        x={s.x}
+                                        y={s.y}
+                                        size={132}
+                                        nickname={s.nickname}
+                                    />
                                 ))}
 
                                 {missRipple && (
@@ -391,16 +483,40 @@ export default function SpotDifferenceQuiz({
                                             position: 'absolute',
                                             left: `${missRipple.x}%`,
                                             top: `${missRipple.y}%`,
-                                            width: '36px',
-                                            height: '36px',
                                             transform: 'translate(-50%, -50%)',
-                                            borderRadius: '50%',
-                                            border: '3px solid #ef4444',
-                                            background: 'rgba(239, 68, 68, 0.3)',
                                             pointerEvents: 'none',
-                                            animation: 'ping 0.8s cubic-bezier(0, 0, 0.2, 1) infinite'
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            zIndex: 40
                                         }}
-                                    />
+                                    >
+                                        <div
+                                            style={{
+                                                width: '48px',
+                                                height: '48px',
+                                                borderRadius: '50%',
+                                                border: '3px solid #ef4444',
+                                                background: 'rgba(239, 68, 68, 0.35)',
+                                                animation: 'ping 0.8s cubic-bezier(0, 0, 0.2, 1) infinite'
+                                            }}
+                                        />
+                                        <div
+                                            style={{
+                                                position: 'absolute',
+                                                top: '-24px',
+                                                color: '#ef4444',
+                                                fontSize: '1.2rem',
+                                                fontWeight: '900',
+                                                textShadow: '0 2px 6px rgba(0,0,0,0.5)',
+                                                whiteSpace: 'nowrap',
+                                                animation: 'floatUpPenalty 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+                                            }}
+                                        >
+                                            -10점
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -462,6 +578,20 @@ export default function SpotDifferenceQuiz({
             padding: '4px'
         }}>
             {confettiActive && <Confetti recycle={false} numberOfPieces={400} />}
+            <style>{`
+                @keyframes drawGradingClockwise {
+                    0% { stroke-dashoffset: 340; opacity: 0.2; }
+                    10% { opacity: 1; }
+                    100% { stroke-dashoffset: 0; opacity: 1; }
+                }
+                @keyframes floatUpPenalty {
+                    0% { transform: translateY(0) scale(0.85); opacity: 0; }
+                    20% { transform: translateY(-8px) scale(1.15); opacity: 1; }
+                    75% { transform: translateY(-24px) scale(1.05); opacity: 0.95; }
+                    100% { transform: translateY(-36px) scale(0.9); opacity: 0; }
+                }
+            `}</style>
+
 
             {/* Mobile Header: Timer and Found Count */}
             <div style={{
@@ -563,55 +693,61 @@ export default function SpotDifferenceQuiz({
                             }}
                         />
 
-                        {/* Markers for user found spots */}
+                        {/* Markers for user found spots as Hand-Drawn Clockwise Grading Circles (3x Diameter: 108px) */}
                         {Array.from(myFoundSpotIds).map(id => {
                             const spot = effectiveSpots.find(s => s.id === id);
                             if (!spot) return null;
                             return (
-                                <div
+                                <HandDrawnGradingCircle
                                     key={id}
-                                    style={{
-                                        position: 'absolute',
-                                        left: `${spot.x}%`,
-                                        top: `${spot.y}%`,
-                                        width: '36px',
-                                        height: '36px',
-                                        transform: 'translate(-50%, -50%)',
-                                        border: '3px solid #22c55e',
-                                        borderRadius: '50%',
-                                        background: 'rgba(34, 197, 94, 0.3)',
-                                        boxShadow: '0 0 14px rgba(34, 197, 94, 0.8)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#15803d',
-                                        fontWeight: '900',
-                                        fontSize: '0.85rem',
-                                        pointerEvents: 'none'
-                                    }}
-                                >
-                                    ✓
-                                </div>
+                                    x={spot.x}
+                                    y={spot.y}
+                                    size={108}
+                                />
                             );
                         })}
 
-                        {/* Miss Ripple */}
+                        {/* Miss Ripple with -10 Penalty Feedback */}
                         {missRipple && (
                             <div
                                 style={{
                                     position: 'absolute',
                                     left: `${missRipple.x}%`,
                                     top: `${missRipple.y}%`,
-                                    width: '32px',
-                                    height: '32px',
                                     transform: 'translate(-50%, -50%)',
-                                    borderRadius: '50%',
-                                    border: '3px solid #ef4444',
-                                    background: 'rgba(239, 68, 68, 0.3)',
                                     pointerEvents: 'none',
-                                    animation: 'ping 0.8s cubic-bezier(0, 0, 0.2, 1) infinite'
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    zIndex: 40
                                 }}
-                            />
+                            >
+                                <div
+                                    style={{
+                                        width: '42px',
+                                        height: '42px',
+                                        borderRadius: '50%',
+                                        border: '3px solid #ef4444',
+                                        background: 'rgba(239, 68, 68, 0.35)',
+                                        animation: 'ping 0.8s cubic-bezier(0, 0, 0.2, 1) infinite'
+                                    }}
+                                />
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        top: '-24px',
+                                        color: '#ef4444',
+                                        fontSize: '1.15rem',
+                                        fontWeight: '900',
+                                        textShadow: '0 2px 6px rgba(0,0,0,0.5)',
+                                        whiteSpace: 'nowrap',
+                                        animation: 'floatUpPenalty 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+                                    }}
+                                >
+                                    -10점
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>

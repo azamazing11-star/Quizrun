@@ -2112,7 +2112,7 @@ io.on('connection', (socket) => {
   });
 
   // --- HOST DIRECT SCORE ADJUSTMENT ---
-  socket.on('host:adjustScore', ({ pin, nickname, delta, exactScore }) => {
+  socket.on('host:adjustScore', ({ pin, nickname, delta, exactScore, amount }) => {
     const cleanPin = pin ? String(pin).trim() : '';
     const room = cleanPin ? (rooms[cleanPin] || rooms[pin]) : null;
     if (room) {
@@ -2122,8 +2122,11 @@ io.on('connection', (socket) => {
       if (p) {
         if (typeof exactScore === 'number') {
           p.score = exactScore;
-        } else if (typeof delta === 'number') {
-          p.score += delta;
+        } else {
+          const deltaVal = typeof delta === 'number' ? delta : (typeof amount === 'number' ? amount : null);
+          if (deltaVal !== null) {
+            p.score += deltaVal;
+          }
         }
         io.to(cleanPin).emit('host:participantsUpdated', room.participants);
         const resolvedState = room.isGame ? (room.state || 'game_active') : (room.state === 'lobby' ? 'waiting' : room.state);

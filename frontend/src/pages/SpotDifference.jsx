@@ -813,7 +813,7 @@ export default function SpotDifference({ socket }) {
             {showConfetti && <Confetti recycle={false} numberOfPieces={500} />}
             <style>{`
                 @keyframes drawCrayonCircle {
-                    from { stroke-dashoffset: 320; }
+                    from { stroke-dashoffset: 340; opacity: 0.2; } to { stroke-dashoffset: 0; opacity: 1; }
                     to { stroke-dashoffset: 0; }
                 }
             `}</style>
