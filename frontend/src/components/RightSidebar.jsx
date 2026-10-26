@@ -15,7 +15,7 @@ import {
     RefreshCw, 
     TrendingUp, 
     ArrowLeft, 
-    RotateCcw, X 
+    RotateCcw, X, XCircle 
 } from 'lucide-react';
 
 export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGameAndExit, onEndGame, onEndCurrentGame, onOpenFinalLeaderboard }) {
