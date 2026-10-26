@@ -427,8 +427,31 @@ export default function Participant({ socket }) {
             playSound('wrong');
         });
 
+        const handleDirectStockSync = () => {
+            setIsGame(true);
+            setGameId('stock_game');
+            try {
+                sessionStorage.setItem('quizrun_game_id', 'stock_game');
+                localStorage.setItem('quizrun_game_id', 'stock_game');
+            } catch (e) {}
+            setGameState('game_active');
+        };
+        socket.on('stock_game:state_sync', handleDirectStockSync);
+
         socket.on('room:message', (data) => {
             if (data && data.event) {
+                if (data.event === 'game:start' || data.event === 'stock_game:state_sync' || (typeof data.event === 'string' && data.event.startsWith('stock_game:'))) {
+                    const targetGid = data.payload?.gameId || (String(data.event).startsWith('stock_game') ? 'stock_game' : null);
+                    if (targetGid) {
+                        setIsGame(true);
+                        setGameId(targetGid);
+                        try {
+                            sessionStorage.setItem('quizrun_game_id', targetGid);
+                            localStorage.setItem('quizrun_game_id', targetGid);
+                        } catch (e) {}
+                        setGameState('game_active');
+                    }
+                }
                 if (data.event === 'game:start') {
                     setIsGame(true);
                     setGameId(data.payload.gameId);
@@ -577,6 +600,7 @@ export default function Participant({ socket }) {
         socket.on('host:participantsUpdated', onParticipantsUpdated);
 
         return () => {
+            socket.off('stock_game:state_sync', handleDirectStockSync);
             socket.off('room:message');
             socket.off('host:participantsUpdated', onParticipantsUpdated);
             clearTimeout(timeout);
@@ -1804,9 +1828,10 @@ export default function Participant({ socket }) {
                                                     setGameState('game_active');
                                                 } else if (res.roomState && res.roomState !== 'lobby' && res.roomState !== 'waiting') {
                                                     setGameState(res.roomState);
-                                                } else {
-                                                    alert('현재 방장 화면에서 진행 중인 게임이 없거나 아직 대기실 상태입니다.');
                                                 }
+                                                // Always query host for stock game sync immediately
+                                                socket.emit('stock_game:request_sync', { pin: cleanPin });
+                                                socket.emit('room:message', { pin: cleanPin, event: 'stock_game:request_sync', payload: {} });
 
                                                 if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
                                                 if (res.options) setCurrentOptions(res.options);

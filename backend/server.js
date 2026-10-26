@@ -1687,14 +1687,16 @@ io.on('connection', (socket) => {
       broadcastParticipants(cleanPin);
       if (room.hostId) io.to(room.hostId).emit('stock_game:participant_joined', { participants: room.participants, participant: existingP });
       const currentQ = room.quiz?.questions?.[room.currentQuestionIndex];
+      const isGameActive = Boolean(room.isGame || room.gameId === 'stock_game' || room.stockGameData || room.state === 'game_active');
+      const resolvedGameId = room.gameId || (isGameActive ? 'stock_game' : null);
       if (callback) callback({ 
         success: true, 
         nickname: existingP.nickname,
-        roomState: room.state === 'lobby' ? 'waiting' : room.state, 
+        roomState: isGameActive ? 'game_active' : (room.state === 'lobby' ? 'waiting' : room.state), 
         isBuzzerMode: room.isBuzzerMode,
         quizType: room.quiz?.quizType || 'mcq',
-        isGame: room.isGame || false,
-        gameId: room.gameId || null,
+        isGame: isGameActive,
+        gameId: resolvedGameId,
         groupId: existingP.groupId || null,
         myScore: existingP.score || 0,
         question: currentQ ? currentQ.text : '',
@@ -1713,11 +1715,14 @@ io.on('connection', (socket) => {
         autoplay: currentQ?.autoplay ?? true,
         showChosung: Boolean(currentQ?.isSpotDiff || currentQ?.mediaUrl2) ? false : (currentQ?.showChosung ?? true)
       });
-      if (room.isGame && room.state === 'game_active') {
+      if (isGameActive) {
         socket.emit('room:message', {
           event: 'game:start',
-          payload: { gameId: room.gameId }
+          payload: { gameId: resolvedGameId }
         });
+        if (resolvedGameId === 'stock_game' && room.stockGameData) {
+          socket.emit('stock_game:state_sync', room.stockGameData);
+        }
       }
       return;
     }
@@ -1749,14 +1754,16 @@ io.on('connection', (socket) => {
 
     broadcastParticipants(cleanPin);
     if (room.hostId) io.to(room.hostId).emit('stock_game:participant_joined', { participants: room.participants, participant: newParticipant });
+    const isGameActiveNew = Boolean(room.isGame || room.gameId === 'stock_game' || room.stockGameData || room.state === 'game_active');
+    const resolvedGameIdNew = room.gameId || (isGameActiveNew ? 'stock_game' : null);
     if (callback) callback({ 
       success: true, 
       nickname: uniqueNickname,
-      roomState: room.state === 'lobby' ? 'waiting' : room.state, 
+      roomState: isGameActiveNew ? 'game_active' : (room.state === 'lobby' ? 'waiting' : room.state), 
       isBuzzerMode: room.isBuzzerMode,
       quizType: room.quiz?.quizType || 'mcq',
-      isGame: room.isGame || false,
-      gameId: room.gameId || null,
+      isGame: isGameActiveNew,
+      gameId: resolvedGameIdNew,
       groupId: null,
       myScore: 0,
       question: currentQ ? currentQ.text : '',
@@ -1775,11 +1782,14 @@ io.on('connection', (socket) => {
       autoplay: currentQ?.autoplay ?? true,
       showChosung: Boolean(currentQ?.isSpotDiff || currentQ?.mediaUrl2) ? false : (currentQ?.showChosung ?? true)
     });
-    if (room.isGame && room.state === 'game_active') {
+    if (isGameActiveNew) {
       socket.emit('room:message', {
         event: 'game:start',
-        payload: { gameId: room.gameId }
+        payload: { gameId: resolvedGameIdNew }
       });
+      if (resolvedGameIdNew === 'stock_game' && room.stockGameData) {
+        socket.emit('stock_game:state_sync', room.stockGameData);
+      }
     }
   });
 
@@ -2079,8 +2089,25 @@ io.on('connection', (socket) => {
       const room = rooms[cleanPin] || rooms[data.pin];
       if (room) {
         room.hostId = socket.id;
+        room.isGame = true;
+        room.gameId = 'stock_game';
+        room.state = 'game_active';
+        room.stockGameData = data;
       }
       io.to(cleanPin).emit('stock_game:state_sync', data);
+    }
+  });
+
+  socket.on('room:stateUpdate', (data) => {
+    if (data && data.pin) {
+      const cleanPin = String(data.pin).trim();
+      const room = rooms[cleanPin] || rooms[data.pin];
+      if (room) {
+        if (data.state) room.state = data.state;
+        if (data.isGame !== undefined) room.isGame = data.isGame;
+        if (data.gameId !== undefined) room.gameId = data.gameId;
+      }
+      io.to(cleanPin).emit('room:stateUpdate', data);
     }
   });
 

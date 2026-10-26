@@ -5,7 +5,7 @@ import {
     RefreshCw, ChevronRight, Users, ShieldAlert, BarChart3, Newspaper, Check,
     Maximize, Minimize, ExternalLink, ArrowRight, Trophy, Edit3, Volume2, Tv, Monitor,
     Building2, Briefcase, Info, ArrowLeft, ArrowUpRight, ArrowDownRight, Layers,
-    Clock, Globe, Zap, Search, BookOpen, Star, Flame, Radio, X, Coins
+    Clock, Globe, Zap, Search, BookOpen, Star, Flame, Radio, X, Coins, XCircle
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import Confetti from 'react-confetti';
