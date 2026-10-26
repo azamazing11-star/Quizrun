@@ -2128,6 +2128,64 @@ io.on('connection', (socket) => {
     }
   });
 
+    // --- END CURRENT GAME ONLY (Preserves participants and their cumulative scores in waiting lobby) ---
+  socket.on('host:endCurrentGame', ({ pin }, callback) => {
+    const cleanPin = String(pin || '').trim();
+    const room = rooms[cleanPin] || (pin ? rooms[pin] : null);
+    if (room) {
+      room.isGame = false;
+      room.gameId = null;
+      room.state = 'lobby';
+      // Reset temporary in-game round flags, but PRESERVE participants and their scores!
+      if (room.participants) {
+        room.participants.forEach(p => {
+          p.hasAnswered = false;
+          p.currentAnswer = null;
+          p.isCorrect = false;
+          p.hasFinishedOfficialRound = false;
+          p.officialRoundScore = 0;
+          // p.score is strictly preserved!
+        });
+      }
+      delete room.samokTournament;
+      io.to(cleanPin).emit('room:stateUpdate', {
+        state: 'lobby',
+        isGame: false,
+        gameId: null,
+        participants: room.participants,
+        leaderboard: [...room.participants].sort((a, b) => (b.score || 0) - (a.score || 0))
+      });
+      io.to(cleanPin).emit('room:message', {
+        event: 'game:terminate',
+        payload: { participants: room.participants }
+      });
+      console.log(`[Game End] Host ended current game in room ${cleanPin}. Participants and scores preserved in lobby.`);
+    }
+    if (callback) callback({ success: true });
+  });
+
+  // --- SHOW FINAL LEADERBOARD (Broadcasts final winner podium to all participants) ---
+  socket.on('host:showFinalLeaderboard', ({ pin }, callback) => {
+    const cleanPin = String(pin || '').trim();
+    const room = rooms[cleanPin] || (pin ? rooms[pin] : null);
+    if (room) {
+      room.state = 'final_leaderboard';
+      const sorted = [...(room.participants || [])].sort((a, b) => (b.score || 0) - (a.score || 0));
+      io.to(cleanPin).emit('room:stateUpdate', {
+        state: 'final_leaderboard',
+        isGame: false,
+        leaderboard: sorted,
+        participants: room.participants
+      });
+      io.to(cleanPin).emit('room:message', {
+        event: 'session:final_results',
+        payload: { leaderboard: sorted }
+      });
+      console.log(`[Final Leaderboard] Host showing final results in room ${cleanPin}`);
+    }
+    if (callback) callback({ success: true });
+  });
+
   socket.on('host:endSession', ({ pin }, callback) => {
     let targetPins = [];
     if (pin && rooms[String(pin).trim()]) {

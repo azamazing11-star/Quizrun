@@ -1766,6 +1766,67 @@ export default function Host({ socket }) {
         }
     }, [canvasLines, gameId, gameState]);
 
+        // --- TWO CORE LIFECYCLE HANDLERS ---
+    // 1. '게임 종료' : 현재 진행 중인 게임/퀴즈만 종료 (참여자 점수 유지, 대기실 대기, 호스트 홈 복귀)
+    const handleEndCurrentGame = () => {
+        if (!window.confirm("현재 진행 중인 게임(퀴즈)만 종료하고 홈 화면으로 이동하시겠습니까?\n모든 참가자는 현재 점수를 그대로 유지한 채 대기 상태가 됩니다.")) {
+            return;
+        }
+        try {
+            localStorage.removeItem('quizrun_active_game_session');
+            sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new Event('quizrun_session_ended'));
+
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+
+        const targetPin = location.state?.pin || pin;
+        if (socket && targetPin) {
+            socket.emit('host:endCurrentGame', { pin: String(targetPin).trim() });
+        }
+        navigate('/', { state: { pin: targetPin, participants } });
+    };
+
+    // 2. '최종 게임 종료' : 최종 순위 및 결과 발표 화면 오픈
+    const handleOpenFinalLeaderboard = () => {
+        const targetPin = location.state?.pin || pin;
+        if (socket && targetPin) {
+            socket.emit('host:showFinalLeaderboard', { pin: String(targetPin).trim() });
+        }
+        setShowWinnerModal(true);
+    };
+
+    // 3. '최종 결과창 닫기' : 결과창을 닫으면 전체 세션 완전 종료 및 참가자 전체 퇴장
+    const handleCloseFinalLeaderboardAndTerminate = () => {
+        if (!window.confirm("최종 결과창을 닫고 전체 세션을 완전히 종료하시겠습니까?\n모든 참가자의 접속이 해제되며 사이트가 처음 상태로 돌아갑니다.")) {
+            return;
+        }
+        const targetPin = location.state?.pin || pin;
+        if (socket && targetPin) {
+            socket.emit('host:endSession', { pin: String(targetPin).trim() });
+        }
+        try {
+            localStorage.removeItem('quizrun_active_game_session');
+            sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+            localStorage.removeItem('quizrun_pin');
+            sessionStorage.removeItem('quizrun_pin');
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new Event('quizrun_session_ended'));
+
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+
+        setShowWinnerModal(false);
+        navigate('/');
+    };
+
     const handleExitToLobby = () => {
         try {
             const isOngoing = (gameState !== 'leaderboard' && gameState !== 'final_leaderboard' && !['fortune', 'ladder'].includes(gameId));
@@ -1840,19 +1901,19 @@ export default function Host({ socket }) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button 
                                     className="glass-button" 
-                                    onClick={handleExitToLobby} 
-                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}
-                                    title="참여자 QR코드를 보여주기 위해 홈 로비로 잠시 나갑니다 (언제든 계속하기 가능)"
+                                    onClick={handleEndCurrentGame} 
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', background: '#f8fafc', color: '#475569', border: '1.5px solid #cbd5e1' }}
+                                    title="현재 게임만 종료하고 홈으로 이동합니다 (참여자 접속 및 점수 유지)"
                                 >
-                                    <ArrowLeft size={18} /> 로비로 잠시 나가기
+                                    🛑 게임 종료
                                 </button>
                                 <button 
                                     className="glass-button" 
-                                    onClick={handleEndGameAndExit} 
-                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', background: '#fee2e2', color: '#dc2626', border: '1.5px solid #fca5a5' }}
-                                    title="현재 게임을 완전히 종료하고 홈으로 돌아갑니다 (진행 중 안내창 삭제)"
+                                    onClick={handleOpenFinalLeaderboard} 
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none' }}
+                                    title="최종 결과를 발표하고, 닫으면 전체 세션을 종료합니다"
                                 >
-                                    <X size={18} /> 게임 완전 종료
+                                    🏆 최종 게임 종료
                                 </button>
                             </div>
                             <h2 
@@ -2091,6 +2152,8 @@ export default function Host({ socket }) {
                                 isStockGame={true} 
                                 onExitToLobby={handleExitToLobby}
                                 onEndGameAndExit={handleEndGameAndExit}
+                                onEndCurrentGame={handleEndCurrentGame}
+                                onOpenFinalLeaderboard={handleOpenFinalLeaderboard}
                                 onEndGame={endGeneralMultiplayerGame} 
                             />
                         ) : (
@@ -2166,16 +2229,21 @@ export default function Host({ socket }) {
                                     gap: '12px', 
                                     boxShadow: '0 4px 15px rgba(0,0,0,0.03)'
                                 }}>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button className="glass-button" onClick={handleExitToLobby} style={{ flex: 1, background: '#64748b', color: 'white', border: 'none', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '0.92rem', cursor: 'pointer' }} title="참여자 QR코드를 보여주기 위해 홈 로비로 잠시 나갑니다">
-                                            로비로 나가기
-                                        </button>
-                                        <button className="glass-button" onClick={handleEndGameAndExit} style={{ flex: 1, background: '#fee2e2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '0.92rem', cursor: 'pointer' }} title="현재 게임을 완전히 종료하고 홈으로 돌아갑니다">
-                                            게임 완전 종료
-                                        </button>
-                                    </div>
-                                    <button className="glass-button" onClick={endGeneralMultiplayerGame} style={{ width: '100%', background: '#ef4444', color: 'white', border: 'none', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '1.05rem', cursor: 'pointer' }}>
-                                        게임 종료 및 결과 발표
+                                    <button 
+                                        className="glass-button" 
+                                        onClick={handleEndCurrentGame} 
+                                        style={{ width: '100%', background: '#f8fafc', color: '#475569', border: '1.5px solid #cbd5e1', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '0.92rem', cursor: 'pointer' }}
+                                        title="현재 게임만 종료하고 홈으로 이동 (참여자 점수 유지)"
+                                    >
+                                        🛑 게임 종료
+                                    </button>
+                                    <button 
+                                        className="glass-button" 
+                                        onClick={handleOpenFinalLeaderboard} 
+                                        style={{ width: '100%', background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none', padding: '12px', borderRadius: '14px', fontWeight: 'bold', fontSize: '1.05rem', cursor: 'pointer' }}
+                                        title="최종 순위 발표 후 닫으면 전체 세션 완전 종료"
+                                    >
+                                        🏆 최종 게임 종료 (결과 발표)
                                     </button>
                                 </div>
                             </div>
@@ -3673,13 +3741,9 @@ export default function Host({ socket }) {
 
                         <div style={{ textAlign: 'center' }}>
                             {gameState === 'final_leaderboard' ? (
-                                <button className="glass-button" onClick={() => {
-                                    try {
-                                        localStorage.removeItem('quizrun_active_game_session');
-                                        sessionStorage.removeItem('quizrun_last_host_state');
-                                    } catch (e) {}
-                                    navigate('/');
-                                }}><Home /> 게임 종료 및 홈으로</button>
+                                <button className="glass-button" style={{ background: '#ef4444', color: 'white', border: 'none', padding: '12px 28px', fontSize: '1.1rem', fontWeight: 'bold', borderRadius: '14px' }} onClick={handleCloseFinalLeaderboardAndTerminate}>
+                                    <X size={18} /> 최종 결과창 닫기 (전체 세션 종료)
+                                </button>
                             ) : (
                                 <button className="glass-button" onClick={nextQuestion}>다음 문제 <ChevronRight /></button>
                             )}

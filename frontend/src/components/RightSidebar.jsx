@@ -18,7 +18,7 @@ import {
     RotateCcw, X 
 } from 'lucide-react';
 
-export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGameAndExit, onEndGame }) {
+export default function RightSidebar({ socket, isStockGame: propIsStockGame = false, onExitToLobby, onEndGameAndExit, onEndGame, onEndCurrentGame, onOpenFinalLeaderboard }) {
     useEffect(() => {
         if (!socket) return;
         const handleWinnerSync = (data) => {
@@ -184,6 +184,55 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
     const [confettiActive, setConfettiActive] = useState(false);
     const [bulkAmount, setBulkAmount] = useState(1000000);
     const [percentInputs, setPercentInputs] = useState({});
+
+        const handleEndCurrentGameInternal = () => {
+        if (!window.confirm("현재 진행 중인 게임만 종료하고 홈 화면으로 이동하시겠습니까?\n모든 참가자는 현재 점수를 그대로 유지한 채 대기 상태가 됩니다.")) {
+            return;
+        }
+        try {
+            localStorage.removeItem('quizrun_active_game_session');
+            sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new Event('quizrun_session_ended'));
+
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+
+        if (socket && onlinePin) {
+            socket.emit('host:endCurrentGame', { pin: String(onlinePin).trim() });
+        }
+        if (onEndCurrentGame) {
+            onEndCurrentGame();
+        } else {
+            navigate('/', { state: { pin: onlinePin } });
+        }
+    };
+
+    const handleOpenFinalResultsInternal = () => {
+        if (socket && onlinePin) {
+            socket.emit('host:showFinalLeaderboard', { pin: String(onlinePin).trim() });
+        }
+        if (onOpenFinalLeaderboard) {
+            onOpenFinalLeaderboard();
+        } else {
+            handleOpenWinnerModal();
+        }
+    };
+
+    const handleCloseAndTerminateSession = () => {
+        if (!window.confirm("최종 결과창을 닫고 전체 세션을 완전히 종료하시겠습니까?\n모든 참가자의 접속이 해제되며 사이트가 처음 상태로 돌아갑니다.")) {
+            return;
+        }
+        if (socket && onlinePin) {
+            socket.emit('host:endSession', { pin: String(onlinePin).trim() });
+        }
+        endSession(socket);
+        handleCloseWinnerModal();
+        navigate('/');
+    };
 
     const handleResetAllScores = () => {
         if (window.confirm("모든 참가자의 점수를 0점으로 초기화하시겠습니까?")) {
@@ -1177,74 +1226,39 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                     flexDirection: 'column',
                     gap: '8px'
                 }}>
-                    {onExitToLobby && (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                            <button
-                                onClick={onExitToLobby}
-                                title="참여자 QR코드를 보여주기 위해 홈 로비로 잠시 나갑니다 (언제든 계속하기 가능)"
-                                style={{
-                                    flex: 1,
-                                    padding: '10px 8px',
-                                    borderRadius: '12px',
-                                    border: '1.5px solid #cbd5e1',
-                                    background: '#f8fafc',
-                                    color: '#475569',
-                                    fontWeight: '800',
-                                    fontSize: '0.85rem',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '4px',
-                                    transition: 'all 0.15s'
-                                }}
-                            >
-                                <ArrowLeft size={15} /> 로비로 나가기
-                            </button>
-                            {onEndGameAndExit && (
-                                <button
-                                    onClick={onEndGameAndExit}
-                                    title="현재 게임을 완전히 종료하고 홈으로 돌아갑니다 (진행 중 안내창 삭제)"
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px 8px',
-                                        borderRadius: '12px',
-                                        border: '1.5px solid #fca5a5',
-                                        background: '#fee2e2',
-                                        color: '#dc2626',
-                                        fontWeight: '800',
-                                        fontSize: '0.85rem',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '4px',
-                                        transition: 'all 0.15s'
-                                    }}
-                                >
-                                    <X size={15} /> 게임 완전 종료
-                                </button>
-                            )}
-                        </div>
-                    )}
+                    {/* Two Core Lifecycle Buttons: 1. 게임 종료 (현재 게임만 종료, 점수 유지) / 2. 최종 게임 종료 (결과 발표) */}
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <button
+                            onClick={onEndCurrentGame || handleEndCurrentGameInternal}
+                            title="현재 게임만 종료하고 홈으로 돌아갑니다 (참여자 접속 및 점수 유지)"
+                            style={{
+                                flex: 1,
+                                padding: '10px 8px',
+                                borderRadius: '12px',
+                                border: '1.5px solid #cbd5e1',
+                                background: '#f8fafc',
+                                color: '#475569',
+                                fontWeight: '800',
+                                fontSize: '0.86rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '4px',
+                                transition: 'all 0.15s'
+                            }}
+                        >
+                            <XCircle size={15} color="#ef4444" /> 🛑 게임 종료
+                        </button>
+                    </div>
                     <button
-                        onClick={() => {
-                            try {
-                                localStorage.removeItem('quizrun_active_game_session');
-                                sessionStorage.removeItem('quizrun_last_host_state');
-                                localStorage.removeItem('quizrun_active_game_id');
-                                window.dispatchEvent(new Event('storage'));
-                                window.dispatchEvent(new Event('quizrun_session_ended'));
-                            } catch (e) {}
-                            if (onEndGame) onEndGame();
-                            handleOpenWinnerModal();
-                        }}
+                        onClick={onOpenFinalLeaderboard || handleOpenFinalResultsInternal}
                         style={{
                             width: '100%',
                             padding: '12px 16px',
                             borderRadius: '16px',
                             border: 'none',
-                            background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
                             color: 'white',
                             fontWeight: '900',
                             fontSize: '1.02rem',
@@ -1253,13 +1267,13 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '8px',
-                            boxShadow: isStockGame ? '0 6px 18px rgba(16, 185, 129, 0.35)' : '0 6px 18px rgba(245, 158, 11, 0.4)',
+                            boxShadow: '0 6px 18px rgba(245, 158, 11, 0.4)',
                             transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
                         }}
                         onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                         onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                     >
-                        <Trophy size={19} /> 게임 종료 (결과 발표)
+                        <Trophy size={19} /> 🏆 최종 게임 종료 (결과 발표)
                     </button>
                 </div>
             </aside>
@@ -1508,7 +1522,7 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             padding: '12px',
                                             borderRadius: '14px',
                                             border: 'none',
-                                            background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                                            background: '#64748b',
                                             color: 'white',
                                             fontWeight: '900',
                                             fontSize: '0.98rem',
@@ -1516,12 +1530,11 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            gap: '6px',
-                                            boxShadow: isStockGame ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 14px rgba(14, 165, 233, 0.35)'
+                                            gap: '6px'
                                         }}
                                         onClick={handleCloseWinnerModal}
                                     >
-                                        <Check size={18} /> 결과창 닫기
+                                        <X size={18} /> 결과창 닫기
                                     </button>
                                 </div>
                             ) : (
@@ -1529,23 +1542,24 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                     <button
                                         style={{
                                             width: '100%',
-                                            padding: '12px',
+                                            padding: '13px',
                                             borderRadius: '14px',
                                             border: 'none',
-                                            background: isStockGame ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                                            background: '#ef4444',
                                             color: 'white',
                                             fontWeight: '900',
-                                            fontSize: '0.98rem',
+                                            fontSize: '1.02rem',
                                             cursor: 'pointer',
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             gap: '6px',
-                                            boxShadow: isStockGame ? '0 4px 12px rgba(16, 185, 129, 0.3)' : '0 4px 14px rgba(14, 165, 233, 0.35)'
+                                            boxShadow: '0 4px 14px rgba(239, 68, 68, 0.35)'
                                         }}
-                                        onClick={handleCloseWinnerModal}
+                                        onClick={handleCloseAndTerminateSession}
+                                        title="결과창을 닫고 모든 참가자 퇴장 및 사이트 첫 화면으로 초기화"
                                     >
-                                        <Check size={18} /> 누적 점수 유지하고 계속하기
+                                        <X size={18} /> 최종 결과창 닫기 (전체 세션 종료)
                                     </button>
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                         <button
@@ -1553,9 +1567,9 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                 flex: 1,
                                                 padding: '10px',
                                                 borderRadius: '12px',
-                                                border: '1.5px solid #e2e8f0',
-                                                background: 'white',
-                                                color: '#64748b',
+                                                border: '1.5px solid #cbd5e1',
+                                                background: '#f8fafc',
+                                                color: '#475569',
                                                 fontWeight: '800',
                                                 fontSize: '0.86rem',
                                                 cursor: 'pointer',
@@ -1565,32 +1579,13 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                                                 gap: '4px'
                                             }}
                                             onClick={() => {
-                                                handleResetScoresOnly();
                                                 handleCloseWinnerModal();
+                                                if (onEndCurrentGame) onEndCurrentGame();
+                                                else handleEndCurrentGameInternal();
                                             }}
+                                            title="모든 참여자는 현재 점수를 유지한 채 대기 상태가 됩니다"
                                         >
-                                            <RotateCcw size={14} /> {isStockGame ? '금액 초기화' : '점수 초기화'}
-                                        </button>
-                                        <button
-                                            style={{
-                                                flex: 1,
-                                                padding: '10px',
-                                                borderRadius: '12px',
-                                                border: 'none',
-                                                background: '#fef2f2',
-                                                color: '#ef4444',
-                                                fontWeight: '800',
-                                                fontSize: '0.86rem',
-                                                cursor: 'pointer'
-                                            }}
-                                            onClick={() => {
-                                                if (window.confirm("세션을 완전히 종료하시겠습니까? 모든 참가자의 접속이 해제되고 점수가 초기화됩니다.")) {
-                                                    endSession(socket);
-                                                    handleCloseWinnerModal();
-                                                }
-                                            }}
-                                        >
-                                            세션 완전 종료
+                                            <RotateCcw size={14} /> 현재 게임만 종료하고 홈으로
                                         </button>
                                     </div>
                                 </div>

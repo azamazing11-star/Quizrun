@@ -126,6 +126,10 @@ export default function Participant({ socket }) {
                     if (res.totalQuestions !== undefined) setTotalQuestions(res.totalQuestions);
                     if (res.points !== undefined) setCurrentPoints(res.points);
                     if (res.mediaUrl) setCurrentMediaUrl(res.mediaUrl);
+                    if (res.mediaUrl2) setCurrentMediaUrl2(res.mediaUrl2);
+                    if (res.diffSpots) setCurrentDiffSpots(res.diffSpots);
+                    if (res.timeLimit) setCurrentTimeLimit(res.timeLimit);
+                    if (res.isSpotDiff !== undefined) setIsSpotDiff(res.isSpotDiff);
                     if (res.mediaType) setCurrentMediaType(res.mediaType);
                     if (res.mediaName) setCurrentMediaName(res.mediaName);
                     if (res.mediaDisplayMode) setCurrentMediaDisplayMode(res.mediaDisplayMode);
@@ -404,9 +408,14 @@ export default function Participant({ socket }) {
         socket.on('room:closed', () => {
             setGameState('join');
             setHasJoined(false);
-            sessionStorage.removeItem('quizrun_joined');
-            sessionStorage.removeItem('quizrun_pin');
-            setError('진행자가 세션을 종료하여 접속이 해제되었습니다.');
+            try {
+                localStorage.removeItem('quizrun_joined');
+                localStorage.removeItem('quizrun_pin');
+                localStorage.removeItem('quizrun_game_id');
+                localStorage.removeItem('quizrun_last_active_game');
+                sessionStorage.clear();
+            } catch (e) {}
+            setError('전체 게임이 최종 종료되었습니다. 참여해 주셔서 감사합니다!');
             setPin('');
             setGroupId(null);
             setMyScore(0);
@@ -533,6 +542,20 @@ export default function Participant({ socket }) {
                     if (myNewScore !== undefined) {
                         setMyScore(myNewScore);
                     }
+                } else if (data.event === 'session:final_results') {
+                    setGameState('final_leaderboard');
+                    if (data.payload && data.payload.leaderboard) {
+                        setLeaderboard(data.payload.leaderboard);
+                    }
+                } else if (data.event === 'game:terminate') {
+                    setIsGame(false);
+                    setGameId('');
+                    try {
+                        sessionStorage.removeItem('quizrun_game_id');
+                        localStorage.removeItem('quizrun_game_id');
+                        localStorage.removeItem('quizrun_last_active_game');
+                    } catch (e) {}
+                    setGameState('waiting');
                 } else if (data.event === 'game:paint_stroke_relay') {
                     // Receive drawing lines from painter
                     setCanvasLines(prev => [...prev, data.payload]);
@@ -1755,7 +1778,20 @@ export default function Participant({ socket }) {
                                                 if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
                                                 if (res.options) setCurrentOptions(res.options);
                                                 if (res.currentQuestionIndex !== undefined) setCurrentQuestionIndex(res.currentQuestionIndex);
+                                                if (res.totalQuestions !== undefined) setTotalQuestions(res.totalQuestions);
+                                                if (res.points !== undefined) setCurrentPoints(res.points);
                                                 if (res.myScore !== undefined) setMyScore(res.myScore);
+                                                if (res.mediaUrl !== undefined) setCurrentMediaUrl(res.mediaUrl);
+                                                if (res.mediaUrl2 !== undefined) setCurrentMediaUrl2(res.mediaUrl2);
+                                                if (res.diffSpots !== undefined) setCurrentDiffSpots(res.diffSpots);
+                                                if (res.timeLimit !== undefined) setCurrentTimeLimit(res.timeLimit);
+                                                if (res.isSpotDiff !== undefined) setIsSpotDiff(res.isSpotDiff);
+                                                if (res.quizType !== undefined) setQuizType(res.quizType);
+                                                if (res.mediaType !== undefined) setCurrentMediaType(res.mediaType);
+                                                if (res.mediaName !== undefined) setCurrentMediaName(res.mediaName);
+                                                if (res.mediaDisplayMode !== undefined) setCurrentMediaDisplayMode(res.mediaDisplayMode);
+                                                if (res.autoplay !== undefined) setCurrentAutoplay(res.autoplay);
+                                                if (res.showChosung !== undefined) setShowChosung(res.showChosung);
                                             } else {
                                                 alert(res?.message || '방 정보를 찾을 수 없습니다. PIN 번호를 확인해 주세요.');
                                             }
