@@ -38,6 +38,7 @@ import MultiplayerLiveSpectator from '../components/MultiplayerLiveSpectator';
 import StockGame from '../components/StockGame';
 import RightSidebar from '../components/RightSidebar';
 import WordBombArena from '../components/WordBombArena';
+import FinalLeaderboardModal from '../components/FinalLeaderboardModal';
 
 // Group colors for the racing track
 const GROUP_COLORS = [
@@ -228,6 +229,7 @@ export default function Host({ socket }) {
     const [currentMediaUrl2, setCurrentMediaUrl2] = useState('');
     const [currentDiffSpots, setCurrentDiffSpots] = useState([]);
     const [currentTimeLimit, setCurrentTimeLimit] = useState(60);
+    const [showWinnerModal, setShowWinnerModal] = useState(false);
     const [isSpotDiff, setIsSpotDiff] = useState(false);
     const [currentMediaType, setCurrentMediaType] = useState('');
     const [currentMediaName, setCurrentMediaName] = useState('');
@@ -554,6 +556,19 @@ export default function Host({ socket }) {
                     if (payload && payload.word && handleWordSubmitRef.current) {
                         handleWordSubmitRef.current('screen', payload.word);
                     }
+                } else if (type === 'WINNER_MODAL_SYNC') {
+                    if (payload && payload.open) {
+                        setShowWinnerModal(true);
+                    } else {
+                        setShowWinnerModal(false);
+                    }
+                } else if (type === 'SESSION_TERMINATE') {
+                    setShowWinnerModal(false);
+                    navigate('/');
+                } else if (type === 'END_CURRENT_GAME_REQUEST') {
+                    handleEndCurrentGame();
+                } else if (type === 'OPEN_FINAL_LEADERBOARD_REQUEST') {
+                    handleOpenFinalLeaderboard();
                 }
             };
         } catch (e) {
@@ -1782,21 +1797,31 @@ export default function Host({ socket }) {
             const bc = new BroadcastChannel('quizrun_screen_sync');
             bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
             setTimeout(() => bc.close(), 300);
+
+            const navBc = new BroadcastChannel('quizrun_nav_sync');
+            navBc.postMessage({ type: 'NAV_CHANGE', path: '/' });
+            setTimeout(() => navBc.close(), 300);
         } catch (e) {}
 
-        const targetPin = location.state?.pin || pin;
+        const targetPin = location.state?.pin || pin || onlinePin;
         if (socket && targetPin) {
             socket.emit('host:endCurrentGame', { pin: String(targetPin).trim() });
         }
+        setShowWinnerModal(false);
         navigate('/', { state: { pin: targetPin, participants } });
     };
 
-    // 2. '최종 게임 종료' : 최종 순위 및 결과 발표 화면 오픈
+    // 2. '최종 게임 종료' : 최종 순위 및 결과 발표 화면 오픈 (메인 & 서브 모니터 동기화)
     const handleOpenFinalLeaderboard = () => {
-        const targetPin = location.state?.pin || pin;
+        const targetPin = location.state?.pin || pin || onlinePin;
         if (socket && targetPin) {
             socket.emit('host:showFinalLeaderboard', { pin: String(targetPin).trim() });
         }
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: true } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
         setShowWinnerModal(true);
     };
 
@@ -1805,7 +1830,7 @@ export default function Host({ socket }) {
         if (!window.confirm("최종 결과창을 닫고 전체 세션을 완전히 종료하시겠습니까?\n모든 참가자의 접속이 해제되며 사이트가 처음 상태로 돌아갑니다.")) {
             return;
         }
-        const targetPin = location.state?.pin || pin;
+        const targetPin = location.state?.pin || pin || onlinePin;
         if (socket && targetPin) {
             socket.emit('host:endSession', { pin: String(targetPin).trim() });
         }
@@ -1819,8 +1844,13 @@ export default function Host({ socket }) {
             window.dispatchEvent(new Event('quizrun_session_ended'));
 
             const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'SESSION_TERMINATE' });
             bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
             setTimeout(() => bc.close(), 300);
+
+            const navBc = new BroadcastChannel('quizrun_nav_sync');
+            navBc.postMessage({ type: 'NAV_CHANGE', path: '/' });
+            setTimeout(() => navBc.close(), 300);
         } catch (e) {}
 
         setShowWinnerModal(false);
@@ -3843,6 +3873,26 @@ export default function Host({ socket }) {
                     </div>
                 </div>
             )}
+
+            {/* Unified & Synchronized Winner / Final Leaderboard Modal */}
+            <FinalLeaderboardModal
+                isOpen={showWinnerModal}
+                onClose={() => {
+                    setShowWinnerModal(false);
+                    try {
+                        const bc = new BroadcastChannel('quizrun_screen_sync');
+                        bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: false } });
+                        setTimeout(() => bc.close(), 300);
+                    } catch (e) {}
+                }}
+                onTerminateSession={handleCloseFinalLeaderboardAndTerminate}
+                onEndCurrentGame={handleEndCurrentGame}
+                participants={participants && participants.length > 0 ? participants : (onlineParticipants || [])}
+                isStockGame={gameId === 'stock_game'}
+                isSubScreen={false}
+                gameMode={gameMode}
+                title={location.state?.gameTitle || initialGameTitle || quizTitle || '최종 게임 결과 발표!'}
+            />
         </div>
     );
 }

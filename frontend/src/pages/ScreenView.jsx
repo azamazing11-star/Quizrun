@@ -209,6 +209,7 @@ export default function ScreenView({ socket }) {
 
     const [playerStreams, setPlayerStreams] = useState({});
     const [winnerModalSync, setWinnerModalSync] = useState(null);
+    const [showWinnerModal, setShowWinnerModal] = useState(false);
 
     // Listen to live player stream events directly via socket
     useEffect(() => {
@@ -279,6 +280,76 @@ export default function ScreenView({ socket }) {
     const activeLiveScores = !isOfflineMode
         ? activeParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true }))
         : liveScores.map(s => ({ num: s.num, score: s.score || 0, isOnline: false }));
+
+    // Sub-Screen End Game & Terminate Handlers (Identical to Main Host)
+    const handleEndCurrentGame = () => {
+        if (!window.confirm("현재 진행 중인 게임만 종료하고 홈 대기실로 이동하시겠습니까?\n(참여자들의 점수와 접속 상태는 유지됩니다)")) {
+            return;
+        }
+        const targetPin = activePin;
+        if (socket && targetPin) {
+            socket.emit('host:endCurrentGame', { pin: String(targetPin).trim() });
+        }
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'END_CURRENT_GAME_REQUEST' });
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+
+            const navBc = new BroadcastChannel('quizrun_nav_sync');
+            navBc.postMessage({ type: 'REQUEST_MAIN_NAV', path: '/' });
+            setTimeout(() => navBc.close(), 300);
+        } catch (e) {}
+
+        setShowWinnerModal(false);
+        setViewMode('home');
+        navigate('/?subscreen=true');
+    };
+
+    const handleOpenFinalLeaderboard = () => {
+        const targetPin = activePin;
+        if (socket && targetPin) {
+            socket.emit('host:showFinalLeaderboard', { pin: String(targetPin).trim() });
+        }
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'OPEN_FINAL_LEADERBOARD_REQUEST' });
+            bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: true } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+        setShowWinnerModal(true);
+    };
+
+    const handleCloseFinalLeaderboardAndTerminate = () => {
+        if (!window.confirm("최종 결과창을 닫고 전체 세션을 완전히 종료하시겠습니까?\n모든 참가자의 접속이 해제되며 사이트가 처음 상태로 돌아갑니다.")) {
+            return;
+        }
+        const targetPin = activePin;
+        if (socket && targetPin) {
+            socket.emit('host:endSession', { pin: String(targetPin).trim() });
+        }
+        try {
+            localStorage.removeItem('quizrun_active_game_session');
+            sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+            localStorage.removeItem('quizrun_pin');
+            sessionStorage.removeItem('quizrun_pin');
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new Event('quizrun_session_ended'));
+
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'SESSION_TERMINATE' });
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+
+            const navBc = new BroadcastChannel('quizrun_nav_sync');
+            navBc.postMessage({ type: 'REQUEST_MAIN_NAV', path: '/' });
+            setTimeout(() => navBc.close(), 300);
+        } catch (e) {}
+
+        setShowWinnerModal(false);
+        navigate('/?subscreen=true');
+    };
 
     // Setup Unified BroadcastChannel
     useEffect(() => {
@@ -676,6 +747,50 @@ export default function ScreenView({ socket }) {
                         <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: isConnectedToHost ? '#22c55e' : '#ef4444' }} />
                         {isConnectedToHost ? '🖥️ 진행자 연결됨' : '⏳ 진행자 연결 대기 중'}
                     </span>
+
+                    <button
+                        onClick={handleEndCurrentGame}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: '#f8fafc',
+                            border: '1.5px solid #cbd5e1',
+                            borderRadius: '12px',
+                            padding: '8px 14px',
+                            fontSize: '0.88rem',
+                            fontWeight: '800',
+                            cursor: 'pointer',
+                            color: '#475569',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.05)'
+                        }}
+                        title="현재 게임만 종료하고 홈으로 이동 (참여자 점수 유지)"
+                    >
+                        <XCircle size={15} color="#ef4444" />
+                        <span>🛑 게임 종료</span>
+                    </button>
+
+                    <button
+                        onClick={handleOpenFinalLeaderboard}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                            border: 'none',
+                            borderRadius: '12px',
+                            padding: '8px 16px',
+                            fontSize: '0.88rem',
+                            fontWeight: '900',
+                            cursor: 'pointer',
+                            color: '#ffffff',
+                            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.35)'
+                        }}
+                        title="최종 순위 발표 후 닫으면 전체 세션 완전 종료"
+                    >
+                        <Trophy size={16} />
+                        <span>🏆 최종 게임 종료</span>
+                    </button>
 
                     <button
                         onClick={toggleFullscreen}
@@ -1383,6 +1498,25 @@ export default function ScreenView({ socket }) {
                     </div>
                 )}
             </main>
+
+            <FinalLeaderboardModal
+                isOpen={showWinnerModal}
+                onClose={() => {
+                    setShowWinnerModal(false);
+                    try {
+                        const bc = new BroadcastChannel('quizrun_screen_sync');
+                        bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: false } });
+                        setTimeout(() => bc.close(), 300);
+                    } catch (e) {}
+                }}
+                onTerminateSession={handleCloseFinalLeaderboardAndTerminate}
+                onEndCurrentGame={handleEndCurrentGame}
+                participants={activeParticipants}
+                isStockGame={screenData.gameId === 'stock_game' || viewMode === 'stock_game'}
+                isSubScreen={true}
+                gameMode={isOfflineMode ? 'offline' : 'online'}
+                title="최종 게임 결과 발표!"
+            />
         </div>
     );
 }

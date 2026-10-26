@@ -1423,7 +1423,40 @@ export default function Participant({ socket }) {
                         {gameId === 'spot_difference' && <SpotDifferenceMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {(gameId === 'nunchi_game' || gameId === 'spot_difference') && <NunchiGame socket={socket} pin={pin} nickname={nickname} myScore={myScore} isHost={false} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'fortune' && <FortuneMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
-                        {gameId === 'ladder' && <LadderMiniGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {gameId === 'ladder' && (
+                            <div className="glass-panel" style={{
+                                padding: '2.5rem 1.5rem',
+                                textAlign: 'center',
+                                borderRadius: '24px',
+                                background: 'white',
+                                boxShadow: '0 10px 30px rgba(0,0,0,0.06)',
+                                border: '2px solid #e2e8f0',
+                                animation: 'fadeIn 0.3s ease'
+                            }}>
+                                <div style={{ fontSize: '3.8rem', lineHeight: '1', marginBottom: '1rem' }}>🪜</div>
+                                <h2 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#1e293b', marginBottom: '0.6rem', fontFamily: 'Jua, sans-serif' }}>
+                                    사다리 타기 진행 중
+                                </h2>
+                                <p style={{ fontSize: '1.05rem', color: '#475569', fontWeight: '700', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+                                    방장(진행자) 화면에서 사다리 타기가 진행 중입니다.<br />
+                                    전면 메인 화면 / 스크린을 주목해 주세요! 🎯
+                                </p>
+                                <div style={{
+                                    background: '#f8fafc',
+                                    border: '1.5px dashed #cbd5e1',
+                                    borderRadius: '16px',
+                                    padding: '14px 18px',
+                                    color: '#64748b',
+                                    fontSize: '0.88rem',
+                                    fontWeight: '800',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                }}>
+                                    <span>💡 사다리 타기는 관람 전용 게임이며, 점수에 영향을 주지 않습니다.</span>
+                                </div>
+                            </div>
+                        )}
                         {gameId === 'tetris' && <TetrisGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
                         {gameId === 'brick_breaker' && <BrickBreakerGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}
                         {(gameId === 'timeattack' || gameId === 'airplane_game') && <AirplaneGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} isHost={false} baseScore={myScore} />}

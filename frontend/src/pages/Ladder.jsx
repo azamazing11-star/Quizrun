@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, RotateCcw, Shuffle, Users, CheckCircle, Volume2, VolumeX, Play, Pause, Music, Bell, Tv, Maximize, Minimize } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Shuffle, Users, CheckCircle, Volume2, VolumeX, Play, Pause, Music, Bell, Tv, Maximize, Minimize, XCircle, Trophy } from 'lucide-react';
+import FinalLeaderboardModal from '../components/FinalLeaderboardModal';
 import Confetti from 'react-confetti';
 import { playSound } from '../utils/audio';
 import { startChiptune, stopChiptune, isChiptuneActive } from '../utils/chiptune';
@@ -48,7 +49,8 @@ const generatePresetResults = (count, mode) => {
 
 export default function Ladder({ socket, isMirrorProp }) {
     const navigate = useNavigate();
-    const { participantCount, setParticipantCount } = useGlobalSession();
+    const { participantCount, setParticipantCount, onlinePin, onlineParticipants, gameMode } = useGlobalSession();
+    const [showWinnerModal, setShowWinnerModal] = useState(false);
 
     // Game Config State
     const [numPlayers, setNumPlayers] = useState(() => (participantCount >= 2 && participantCount <= 10) ? participantCount : 4);
@@ -56,6 +58,90 @@ export default function Ladder({ socket, isMirrorProp }) {
     const [presetMode, setPresetMode] = useState('money'); // 'money' | 'score' | 'custom'
     const [results, setResults] = useState(() => generatePresetResults((participantCount >= 2 && participantCount <= 10) ? participantCount : 4, 'money'));
     
+    // Notify participants in online mode
+    useEffect(() => {
+        if (socket && onlinePin && !isMirrorView) {
+            socket.emit('host:gameState', {
+                pin: String(onlinePin).trim(),
+                gameState: 'game_active',
+                gameId: 'ladder',
+                gameTitle: '사다리 타기'
+            });
+        }
+    }, [socket, onlinePin, isMirrorView]);
+
+    // End Game and Session Handlers
+    const handleEndCurrentGame = () => {
+        if (!window.confirm("현재 진행 중인 사다리 타기 게임만 종료하고 홈 대기실로 이동하시겠습니까?\n(참여자들의 점수와 접속 상태는 유지됩니다)")) {
+            return;
+        }
+        if (socket && onlinePin) {
+            socket.emit('host:endCurrentGame', { pin: String(onlinePin).trim() });
+        }
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+
+            const navBc = new BroadcastChannel('quizrun_nav_sync');
+            navBc.postMessage({ type: 'NAV_CHANGE', path: '/' });
+            if (isMirrorView) {
+                navBc.postMessage({ type: 'REQUEST_MAIN_NAV', path: '/' });
+            }
+            setTimeout(() => navBc.close(), 300);
+        } catch (e) {}
+
+        setShowWinnerModal(false);
+        if (isMirrorView) navigate('/?subscreen=true');
+        else navigate('/');
+    };
+
+    const handleOpenFinalLeaderboard = () => {
+        if (socket && onlinePin) {
+            socket.emit('host:showFinalLeaderboard', { pin: String(onlinePin).trim() });
+        }
+        try {
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: true } });
+            setTimeout(() => bc.close(), 300);
+        } catch (e) {}
+        setShowWinnerModal(true);
+    };
+
+    const handleCloseFinalLeaderboardAndTerminate = () => {
+        if (!window.confirm("최종 결과창을 닫고 전체 세션을 완전히 종료하시겠습니까?\n모든 참가자의 접속이 해제되며 사이트가 처음 상태로 돌아갑니다.")) {
+            return;
+        }
+        if (socket && onlinePin) {
+            socket.emit('host:endSession', { pin: String(onlinePin).trim() });
+        }
+        try {
+            localStorage.removeItem('quizrun_active_game_session');
+            sessionStorage.removeItem('quizrun_last_host_state');
+            localStorage.removeItem('quizrun_active_game_id');
+            localStorage.removeItem('quizrun_pin');
+            sessionStorage.removeItem('quizrun_pin');
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new Event('quizrun_session_ended'));
+
+            const bc = new BroadcastChannel('quizrun_screen_sync');
+            bc.postMessage({ type: 'SESSION_TERMINATE' });
+            bc.postMessage({ type: 'MODE_CHANGE', payload: { mode: 'home' } });
+            setTimeout(() => bc.close(), 300);
+
+            const navBc = new BroadcastChannel('quizrun_nav_sync');
+            navBc.postMessage({ type: 'NAV_CHANGE', path: '/' });
+            if (isMirrorView) {
+                navBc.postMessage({ type: 'REQUEST_MAIN_NAV', path: '/' });
+            }
+            setTimeout(() => navBc.close(), 300);
+        } catch (e) {}
+
+        setShowWinnerModal(false);
+        if (isMirrorView) navigate('/?subscreen=true');
+        else navigate('/');
+    };
+
     // Ladder structure
     const [bridges, setBridges] = useState([]);
     
@@ -1833,6 +1919,25 @@ export default function Ladder({ socket, isMirrorProp }) {
                     100% { transform: scale(1) translateY(0); opacity: 1; }
                 }
             `}</style>
+            {/* Synchronized Final Leaderboard Modal */}
+            <FinalLeaderboardModal
+                isOpen={showWinnerModal}
+                onClose={() => {
+                    setShowWinnerModal(false);
+                    try {
+                        const bc = new BroadcastChannel('quizrun_screen_sync');
+                        bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: false } });
+                        setTimeout(() => bc.close(), 300);
+                    } catch (e) {}
+                }}
+                onTerminateSession={handleCloseFinalLeaderboardAndTerminate}
+                onEndCurrentGame={handleEndCurrentGame}
+                participants={onlineParticipants || []}
+                isStockGame={false}
+                isSubScreen={isMirrorView}
+                gameMode={gameMode}
+                title="사다리 타기 & 최종 결과 발표!"
+            />
         </div>
     );
 }

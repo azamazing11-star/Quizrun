@@ -2177,7 +2177,9 @@ export function StockGameScreenView({
     pin = null,
     serverIp = '',
     publicUrl = '',
-    socket = null
+    socket = null,
+    onEndCurrentGame = null,
+    onOpenFinalLeaderboard = null
 }) {
     const stockList = useMemo(() => Object.values(stocks), [stocks]);
     const sortedStocks = useMemo(() => [...stockList].sort((a, b) => a.key.localeCompare(b.key)), [stockList]);
@@ -2674,6 +2676,55 @@ export function StockGameScreenView({
                         <Building2 size={14} />
                         <span>시장 섹터 도감</span>
                     </button>
+
+                    {onEndCurrentGame && (
+                        <button
+                            onClick={onEndCurrentGame}
+                            style={{
+                                background: '#f8fafc',
+                                border: '1.5px solid #cbd5e1',
+                                borderRadius: '10px',
+                                padding: '6px 12px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontSize: '0.82rem',
+                                fontWeight: '800',
+                                color: '#475569',
+                                transition: 'all 0.15s ease'
+                            }}
+                            title="현재 게임만 종료하고 홈으로 이동 (참여자 점수 유지)"
+                        >
+                            <XCircle size={14} color="#ef4444" />
+                            <span>🛑 게임 종료</span>
+                        </button>
+                    )}
+
+                    {onOpenFinalLeaderboard && (
+                        <button
+                            onClick={onOpenFinalLeaderboard}
+                            style={{
+                                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                border: 'none',
+                                borderRadius: '10px',
+                                padding: '6px 14px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontSize: '0.82rem',
+                                fontWeight: '900',
+                                color: '#ffffff',
+                                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.35)',
+                                transition: 'all 0.15s ease'
+                            }}
+                            title="최종 순위 발표 후 닫으면 전체 세션 완전 종료"
+                        >
+                            <Trophy size={14} />
+                            <span>🏆 최종 게임 종료</span>
+                        </button>
+                    )}
 
                     {toggleFullscreen && (
                         <button

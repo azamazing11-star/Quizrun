@@ -1239,8 +1239,10 @@ export default function Home({ socket }) {
                                 : ((quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택') ? 'timeattack' : quiz.id);
 
                             if (isGameLobby) {
-                                // Online mode: ALL GameRun games launch via /host (like Mini Tetris) so online participants play and Top 1-2-3 show on Main & Sub monitors
-                                if (!isOffline) {
+                                // Ladder Game is unified to offline interactive logic across both online & offline modes
+                                if (quiz.id === 'ladder' || quiz.title === '사다리' || quiz.title === '사다리 타기') {
+                                    handleNavWithSync('/ladder');
+                                } else if (!isOffline) {
                                     handleNavWithSync('/host', { isGame: true, gameId: normalizedGameId, gameTitle: quiz.title, pin: onlinePin });
                                 } else if (quiz.id === 'fortune') {
                                     handleNavWithSync('/fortune');
@@ -1260,22 +1262,19 @@ export default function Home({ socket }) {
                                     sessionStorage.removeItem('quizrun_last_host_state');
                                 } catch (e) {}
                                 if (editingId !== quiz.id) {
-                                    const isSpecialGameFolder = (
-                                        quiz.id === 'ladder' || quiz.title === '사다리' ||
-                                        quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택'
-                                    );
-                                    if (isSpecialGameFolder && !isOffline) {
-                                        const specialGameId = (quiz.id === 'ladder' || quiz.title === '사다리')
-                                            ? 'ladder'
-                                            : 'timeattack';
-                                        handleNavWithSync('/host', { isGame: true, gameId: specialGameId, gameTitle: quiz.title, pin: onlinePin });
-                                    } else if (quiz.id === 'ladder' || quiz.title === '사다리') {
+                                    if (quiz.id === 'ladder' || quiz.title === '사다리' || quiz.title === '사다리 타기') {
                                         handleNavWithSync('/ladder');
-                                    
-                                    } else if (quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택') {
-                                        handleNavWithSync('/timeattack');
                                     } else {
-                                        handleNavWithSync(`/topic/${quiz.id}`);
+                                        const isSpecialGameFolder = (
+                                            quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택'
+                                        );
+                                        if (isSpecialGameFolder && !isOffline) {
+                                            handleNavWithSync('/host', { isGame: true, gameId: 'timeattack', gameTitle: quiz.title, pin: onlinePin });
+                                        } else if (quiz.id === 'timeattack' || quiz.title === '비행기게임' || quiz.title === '타임어택') {
+                                            handleNavWithSync('/timeattack');
+                                        } else {
+                                            handleNavWithSync(`/topic/${quiz.id}`);
+                                        }
                                     }
                                 }
                             }
