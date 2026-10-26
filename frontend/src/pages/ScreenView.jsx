@@ -13,6 +13,7 @@ import Ladder from './Ladder';
 import { StockGameScreenView, STOCK_DATA_2026 } from '../components/StockGame';
 import MultiplayerLiveSpectator from '../components/MultiplayerLiveSpectator';
 import WordBombArena from '../components/WordBombArena';
+import FinalLeaderboardModal from '../components/FinalLeaderboardModal';
 
 const GROUP_COLORS = [
     '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -366,8 +367,10 @@ export default function ScreenView({ socket }) {
                     if (payload && payload.open) {
                         try { playSound('fanfare'); } catch(e){}
                         setWinnerModalSync(payload);
+                        setShowWinnerModal(true);
                     } else {
                         setWinnerModalSync(null);
+                        setShowWinnerModal(false);
                     }
                 } else if (type === 'MODE_CHANGE') {
                     if (payload && payload.mode === 'fortune' && isOfflineMode) {
@@ -1500,9 +1503,10 @@ export default function ScreenView({ socket }) {
             </main>
 
             <FinalLeaderboardModal
-                isOpen={showWinnerModal}
+                isOpen={Boolean(showWinnerModal || winnerModalSync?.open)}
                 onClose={() => {
                     setShowWinnerModal(false);
+                    setWinnerModalSync(null);
                     try {
                         const bc = new BroadcastChannel('quizrun_screen_sync');
                         bc.postMessage({ type: 'WINNER_MODAL_SYNC', payload: { open: false } });
