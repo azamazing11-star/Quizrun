@@ -34,7 +34,15 @@ function getOrCreateClientId() {
 export default function Participant({ socket }) {
     const location = useLocation();
     const navigate = useNavigate();
-    const [pin, setPin] = useState('');
+    const [pin, setPin] = useState(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('pin') || localStorage.getItem('quizrun_pin') || sessionStorage.getItem('quizrun_pin') || '';
+        } catch (e) {
+            return '';
+        }
+    });
+    const [isRejoining, setIsRejoining] = useState(false);
     const [nickname, setNickname] = useState(localStorage.getItem('quizrun_nickname') || '');
     const [error, setError] = useState(null);
     const [currentPoints, setCurrentPoints] = useState(10);
@@ -80,8 +88,14 @@ export default function Participant({ socket }) {
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
-        const p = params.get('pin');
-        if (p) setPin(p);
+        const p = params.get('pin') || localStorage.getItem('quizrun_pin') || sessionStorage.getItem('quizrun_pin');
+        if (p) {
+            setPin(p);
+            try {
+                localStorage.setItem('quizrun_pin', p);
+                sessionStorage.setItem('quizrun_pin', p);
+            } catch (e) {}
+        }
 
         // Pre-fill nickname from localStorage if present
         const savedNickname = localStorage.getItem('quizrun_nickname');
@@ -90,7 +104,7 @@ export default function Participant({ socket }) {
         }
 
         // Auto-reconnect when scanning QR code ONLY if this session had ALREADY joined this room
-        const hasJoinedSession = sessionStorage.getItem('quizrun_joined') === 'true' && sessionStorage.getItem('quizrun_pin') === String(p).trim();
+        const hasJoinedSession = (sessionStorage.getItem('quizrun_joined') === 'true' || localStorage.getItem('quizrun_joined') === 'true');
         if (p && savedNickname && socketConnected && hasJoinedSession && !hasJoined && !hasAttemptedAutoJoin.current) {
             hasAttemptedAutoJoin.current = true;
             setAutoReconnecting(true);
@@ -126,7 +140,12 @@ export default function Participant({ socket }) {
                     }
                     if (res.isGame || res.gameId) {
                         setIsGame(true);
-                        if (res.gameId) setGameId(res.gameId);
+                        const gid = res.gameId || 'stock_game';
+                        setGameId(gid);
+                        try {
+                            localStorage.setItem('quizrun_game_id', gid);
+                            sessionStorage.setItem('quizrun_game_id', gid);
+                        } catch (e) {}
                         setGameState('game_active');
                     } else if (res.isBuzzerMode) {
                         setGameState(res.groupId ? 'waiting' : 'select_join_type');
@@ -597,6 +616,8 @@ export default function Participant({ socket }) {
                     setNickname(finalNick);
                     localStorage.setItem('quizrun_nickname', finalNick);
                     try {
+                        localStorage.setItem('quizrun_joined', 'true');
+                        localStorage.setItem('quizrun_pin', cleanPin);
                         sessionStorage.setItem('quizrun_joined', 'true');
                         sessionStorage.setItem('quizrun_pin', cleanPin);
                     } catch (e) {}
@@ -823,6 +844,11 @@ export default function Participant({ socket }) {
         if (gameState === 'game_active' || gameState === 'playing' || isGame || gameId) {
             const leaveGame = window.confirm('게임을 나가고 대기실(이전 단계)로 돌아가시겠습니까?');
             if (leaveGame) {
+                if (gameId) {
+                    try {
+                        localStorage.setItem('quizrun_last_active_game', gameId);
+                    } catch (e) {}
+                }
                 setIsGame(false);
                 setGameId('');
                 try {
@@ -1676,40 +1702,96 @@ export default function Participant({ socket }) {
                         <div style={{ marginTop: '2rem' }}>
                             <button
                                 type="button"
+                                disabled={isRejoining}
                                 onClick={() => {
-                                    const myClientId = clientIdRef.current || getOrCreateClientId();
-                                    const currentPin = pinRef.current || new URLSearchParams(window.location.search).get('pin') || sessionStorage.getItem('quizrun_pin') || pin;
-                                    socket.emit('participant:joinRoom', { pin: String(currentPin).trim(), nickname, clientId: myClientId }, (res) => {
-                                        if (res && res.success) {
-                                            if (res.isGame || res.gameId) {
-                                                setIsGame(true);
-                                                if (res.gameId) setGameId(res.gameId);
-                                                setGameState('game_active');
-                                            } else if (res.roomState && res.roomState !== 'lobby' && res.roomState !== 'waiting') {
-                                                setGameState(res.roomState);
-                                            }
-                                            if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
-                                            if (res.options) setCurrentOptions(res.options);
-                                            if (res.currentQuestionIndex !== undefined) setCurrentQuestionIndex(res.currentQuestionIndex);
+                                    if (isRejoining) return;
+                                    let targetPin = pin || pinRef.current || localStorage.getItem('quizrun_pin') || sessionStorage.getItem('quizrun_pin') || new URLSearchParams(window.location.search).get('pin');
+                                    if (!targetPin || !String(targetPin).trim()) {
+                                        const typed = window.prompt('입장할 방의 PIN 번호 6자리를 입력해주세요:');
+                                        if (typed && typed.trim()) {
+                                            targetPin = typed.trim();
+                                        } else {
+                                            return;
                                         }
-                                    });
+                                    }
+                                    const cleanPin = String(targetPin).trim();
+                                    const myClientId = clientIdRef.current || getOrCreateClientId();
+                                    const effectiveNickname = nickname || localStorage.getItem('quizrun_nickname') || '참가자';
+
+                                    setIsRejoining(true);
+
+                                    const executeJoin = () => {
+                                        socket.emit('participant:joinRoom', { pin: cleanPin, nickname: effectiveNickname, clientId: myClientId }, (res) => {
+                                            setIsRejoining(false);
+                                            if (res && res.success) {
+                                                setPin(cleanPin);
+                                                try {
+                                                    localStorage.setItem('quizrun_pin', cleanPin);
+                                                    sessionStorage.setItem('quizrun_pin', cleanPin);
+                                                    localStorage.setItem('quizrun_joined', 'true');
+                                                    sessionStorage.setItem('quizrun_joined', 'true');
+                                                } catch (e) {}
+
+                                                if (res.nickname) {
+                                                    setNickname(res.nickname);
+                                                    localStorage.setItem('quizrun_nickname', res.nickname);
+                                                }
+
+                                                const activeGame = res.gameId || (res.isGame ? 'stock_game' : null);
+                                                if (activeGame) {
+                                                    setIsGame(true);
+                                                    setGameId(activeGame);
+                                                    try {
+                                                        localStorage.setItem('quizrun_game_id', activeGame);
+                                                        sessionStorage.setItem('quizrun_game_id', activeGame);
+                                                    } catch (e) {}
+                                                    setGameState('game_active');
+                                                } else if (res.roomState && res.roomState !== 'lobby' && res.roomState !== 'waiting') {
+                                                    setGameState(res.roomState);
+                                                } else {
+                                                    alert('현재 방장 화면에서 진행 중인 게임이 없거나 아직 대기실 상태입니다.');
+                                                }
+
+                                                if (res.question) setCurrentQuestion(typeof res.question === 'object' ? (res.question.text || '') : (res.question || ''));
+                                                if (res.options) setCurrentOptions(res.options);
+                                                if (res.currentQuestionIndex !== undefined) setCurrentQuestionIndex(res.currentQuestionIndex);
+                                                if (res.myScore !== undefined) setMyScore(res.myScore);
+                                            } else {
+                                                alert(res?.message || '방 정보를 찾을 수 없습니다. PIN 번호를 확인해 주세요.');
+                                            }
+                                        });
+                                    };
+
+                                    if (!socket.connected) {
+                                        socket.connect();
+                                        socket.once('connect', executeJoin);
+                                        setTimeout(() => {
+                                            if (!socket.connected) {
+                                                setIsRejoining(false);
+                                                alert('서버와의 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
+                                            }
+                                        }, 5000);
+                                    } else {
+                                        executeJoin();
+                                    }
                                 }}
                                 style={{
                                     padding: '12px 24px',
                                     borderRadius: '14px',
                                     border: 'none',
-                                    background: 'white',
-                                    color: '#4f46e5',
+                                    background: isRejoining ? '#cbd5e1' : 'white',
+                                    color: isRejoining ? '#64748b' : '#4f46e5',
                                     fontWeight: '900',
                                     fontSize: '1rem',
-                                    cursor: 'pointer',
+                                    cursor: isRejoining ? 'not-allowed' : 'pointer',
                                     boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '8px'
+                                    gap: '8px',
+                                    transition: 'all 0.2s ease'
                                 }}
                             >
-                                🔄 진행 중인 게임 / 퀴즈 바로 입장하기
+                                {isRejoining ? '⏳ 진행 중인 게임 확인 중...' : '🔄 진행 중인 게임 / 퀴즈 바로 입장하기'}
                             </button>
                         </div>
                     </div>

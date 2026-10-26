@@ -4264,6 +4264,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             socket.on('stock_game:participant_activity', handleActivityMsg);
             socket.on('stock_game:participant_joined', (data) => {
                 if (data && data.participants) handleParticipantsUpdated(data.participants);
+                broadcastStockState();
             });
             socket.on('host:participantsUpdated', handleParticipantsUpdated);
             socket.on('stock_game:request_sync', handleDirectRequestSync);
@@ -6457,6 +6458,11 @@ export function SeedMoneySettingModal({
 // 5. 참여자 화면 컴포넌트 (StockGameParticipant) - 모바일 / PC 반응형 뷰
 // =============================================================================
 export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }) {
+    const effectivePin = pin || (() => {
+        try {
+            return localStorage.getItem('quizrun_pin') || sessionStorage.getItem('quizrun_pin') || '';
+        } catch (e) { return ''; }
+    })();
     const [gameState, setGameState] = useState({
         year: 2015,
         stocks: STOCK_DATA_2026,
@@ -6576,9 +6582,10 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         socket.on('room:message', handleRoomMsg);
 
         // Request host for latest state upon mount
-        if (socket && pin) {
-            socket.emit('stock_game:request_sync', { pin });
-            socket.emit('room:message', { pin, event: 'stock_game:request_sync', payload: {} });
+        const targetPin = pin || effectivePin;
+        if (socket && targetPin) {
+            socket.emit('stock_game:request_sync', { pin: targetPin });
+            socket.emit('room:message', { pin: targetPin, event: 'stock_game:request_sync', payload: {} });
         }
 
         return () => {
