@@ -1929,8 +1929,8 @@ export function SpecialHintRewardModal({
                             </h3>
                             <div style={{ fontSize: '0.82rem', color: isQualified ? '#fcd34d' : '#94a3b8', fontWeight: '700', marginTop: '2px' }}>
                                 {isQualified
-                                    ? `뉴스 예측 ${hits}개 적중 성공! (5개 이상 기준 달성)`
-                                    : `뉴스 예측 ${hits}개 적중 / 10개 (5개 미달)`}
+                                    ? '🎉 축하합니다! 뉴스 분석 예측 5개 이상 적중 성공!'
+                                    : '아쉬워요! 뉴스 분석 예측 5개 이상 달성 실패 (5개 미달)'}
                             </div>
                         </div>
                     </div>
@@ -4442,7 +4442,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 qualifiedTeamNames.push(`${t.name}(${hits}개 적중)`);
             }
         });
-        setPredictionResults(nextPredResults);
+        setPredictionResults({}); // 새 연도 시작 시 이전 연도의 결과가 다음 연도로 누출되지 않도록 완전 초기화
         setPredictions({});
         setHostVipHints({});
         setParticipantActivities({});
@@ -6705,9 +6705,10 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         return hits;
     }, [yearNewsList, myPredictions]);
 
-    const myResult = gameState.predictionResults?.[myPlayerKey];
+    // 당해 연도 계산된 적중 수가 5개 이상일 때만 특별 힌트 자격 부여 (단, 개수는 화면에 실시간 미노출)
+    const isQualified = calculatedHits >= 5 || gameState.allowAllVipHint;
+    const hasSpecialHint = isQualified || Boolean(chosenHintStock);
     const effectiveHits = calculatedHits;
-    const isQualified = effectiveHits >= 5 || Boolean(myResult?.qualified) || gameState.allowAllVipHint;
 
     // 연도 변경 시 상태 리셋 (전 연도 예측, 선택 힌트, 상세 화면, 매매 입력 등 완전 초기화)
     useEffect(() => {
@@ -6720,6 +6721,17 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
         setShowAnalysis(false);
         setSelectedNews(null);
     }, [gameState.year]);
+
+    // 특별 힌트를 획득했을 때 이미 열려있던 종목이 '예측 완료된 종목(힌트 종목 제외)'이면 즉시 닫기
+    useEffect(() => {
+        if (hasSpecialHint && selectedStockKey) {
+            const hasVoted = Boolean(myPredictions[selectedStockKey]);
+            const isChosenVip = chosenHintStock === selectedStockKey;
+            if (hasVoted && !isChosenVip) {
+                setSelectedStockKey(null);
+            }
+        }
+    }, [hasSpecialHint, selectedStockKey, myPredictions, chosenHintStock]);
 
     // 새 게임(종목 재추출)으로 호스트가 2015년 초기화 시 로컬 포트폴리오도 동기화
     useEffect(() => {
@@ -6779,6 +6791,13 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     const handleSelectVipHint = (stockKey) => {
         if (chosenHintStock) return;
         setChosenHintStock(stockKey);
+        setRewardModalOpen(false);
+        // 특별 힌트 종목으로 즉시 진입하여 100% 확정 정보 확인 및 매매 가능
+        setSelectedStockKey(stockKey);
+        const holdings = myPortfolio.holdings?.[stockKey] || 0;
+        setTradeType(holdings > 0 ? 'SELL' : 'BUY');
+        setTradeQty(0);
+        setShowAnalysis(false);
 
         if (socket && pin) {
             socket.emit('stock_game:vip_hint_selected', {
@@ -6809,6 +6828,14 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
 
     // 종목 상세 화면 열기 (보유 중인 주식이면 기본 '매도' 탭, 미보유 주식이면 기본 '매수' 탭으로 스마트 진입)
     const handleOpenStockDetail = (key, defaultTrade = null) => {
+        // 특별 힌트 획득 후에는 이미 예측한 종목의 재열람 및 매매 차단 (특별 힌트 종목 및 미예측 종목만 허용)
+        const hasVoted = Boolean(myPredictions[key]);
+        const isChosenVip = chosenHintStock === key;
+        if (hasSpecialHint && hasVoted && !isChosenVip) {
+            setTradeSuccessNotice('🔒 100% 특별 힌트 획득 후에는 이미 예측한 종목의 재열람 및 매매가 제한됩니다. (특별 힌트 종목 및 미예측 종목만 매매 가능)');
+            setTimeout(() => setTradeSuccessNotice(null), 3500);
+            return;
+        }
         setSelectedStockKey(key);
         const holdings = myPortfolio.holdings?.[key] || 0;
         setTradeType(defaultTrade || (holdings > 0 ? 'SELL' : 'BUY'));
@@ -6986,8 +7013,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                         {isQualified ? <Trophy size={18} color="#1e293b" /> : <AlertCircle size={18} color="#ffffff" />}
                         <span>
                             {isQualified
-                                ? `👑 100% 특별 힌트 획득! (${effectiveHits}개 적중 달성!) - 클릭하여 힌트 종목 선택`
-                                : `📢 뉴스 분석 예측 결과 (${effectiveHits}/10개 적중) - 클릭하여 결과 확인`}
+                                ? '👑 100% 특별 힌트 획득! (클릭하여 힌트 종목 선택)'
+                                : '📢 10개 종목 예측 완료 (결과 안내)'}
                         </span>
                     </button>
                 </div>
@@ -7042,17 +7069,17 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 gap: '6px'
             }}>
                 <span style={{ color: '#94a3b8', fontWeight: '700' }}>
-                    🎯 예측 현황: <strong style={{ color: isQualified ? '#f59e0b' : (isAllVoted ? '#10b981' : '#38bdf8') }}>
-                        {votedCount}/10개 체크 {isQualified ? `(🎉 ${effectiveHits}개 적중 달성!)` : (isAllVoted ? `(${effectiveHits}개 적중)` : '')}
+                    🎯 등락 예측: <strong style={{ color: isQualified ? '#f59e0b' : (isAllVoted ? '#10b981' : '#38bdf8') }}>
+                        {votedCount}/10개 완료 {isQualified ? '👑 (100% 특별 힌트 획득!)' : (isAllVoted ? ' (예측 완료)' : '')}
                     </strong>
                 </span>
-                {(isQualified || isAllVoted) ? (
+                {isQualified ? (
                     <button
                         onClick={() => setRewardModalOpen(true)}
                         style={{
-                            background: isQualified ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : '#334155',
-                            color: isQualified ? '#1e293b' : '#38bdf8',
-                            border: isQualified ? '1px solid #fbbf24' : '1px solid #475569',
+                            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                            color: '#1e293b',
+                            border: '1px solid #fbbf24',
                             borderRadius: '8px',
                             padding: '4px 10px',
                             fontSize: '0.78rem',
@@ -7063,14 +7090,32 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                             gap: '4px'
                         }}
                     >
-                        {isQualified ? <Trophy size={13} color="#1e293b" /> : <AlertCircle size={13} />}
-                        <span>
-                            {isQualified ? `👑 ${effectiveHits}개 적중 (100% 힌트 보기)` : `📢 ${effectiveHits}개 적중 (결과 안내)`}
-                        </span>
+                        <Trophy size={13} color="#1e293b" />
+                        <span>👑 100% 힌트 보기</span>
+                    </button>
+                ) : isAllVoted ? (
+                    <button
+                        onClick={() => setRewardModalOpen(true)}
+                        style={{
+                            background: '#334155',
+                            color: '#94a3b8',
+                            border: '1px solid #475569',
+                            borderRadius: '8px',
+                            padding: '4px 10px',
+                            fontSize: '0.78rem',
+                            fontWeight: '800',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                        }}
+                    >
+                        <AlertCircle size={13} />
+                        <span>📢 결과 안내</span>
                     </button>
                 ) : (
-                    <span style={{ color: '#cbd5e1' }}>
-                        체크 도중 5개 이상 적중 시 100% 힌트 즉시 지급
+                    <span style={{ color: '#94a3b8' }}>
+                        5개 이상 적중 시 100% 확정 힌트 지급
                     </span>
                 )}
             </div>
@@ -7386,7 +7431,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                 </div>
                                             )}
 
-                                            {/* Prediction Vote Bar (심플한 상승/하락 버튼) */}
+                                            {/* Prediction Vote Bar (특별 힌트 획득 전 1회 선택) */}
+                                            {!hasSpecialHint && (
                                             <div style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
@@ -7439,6 +7485,7 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                     </button>
                                                 </div>
                                             </div>
+                                            )}
 
                                             {/* Collapsible Fundamental & Technical Analysis Toggle Button */}
                                             <button
@@ -7873,6 +7920,9 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                     const myHoldings = myPortfolio.holdings?.[s.key] || 0;
                                     const curVote = myPredictions[s.key];
                                     const isHeld = myHoldings > 0;
+                                    const hasVoted = Boolean(curVote);
+                                    const isChosenVip = chosenHintStock === s.key;
+                                    const isLockedStock = hasSpecialHint && hasVoted && !isChosenVip;
 
                                     return (
                                         <div
@@ -7881,23 +7931,32 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                             style={{
                                                 background: isHeld 
                                                     ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.16) 0%, #0f172a 100%)'
-                                                    : '#0f172a',
+                                                    : (isChosenVip ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, #0f172a 100%)' : '#0f172a'),
                                                 border: isHeld
                                                     ? '2px solid #10b981'
-                                                    : (curVote ? '1.5px solid #38bdf8' : '1px solid #1e293b'),
+                                                    : (isChosenVip ? '2px solid #f59e0b' : (!hasSpecialHint && curVote ? '1.5px solid #38bdf8' : '1px solid #1e293b')),
                                                 borderRadius: '14px',
                                                 padding: '12px 14px',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'space-between',
-                                                cursor: 'pointer',
+                                                cursor: isLockedStock ? 'not-allowed' : 'pointer',
+                                                opacity: isLockedStock ? 0.72 : 1,
                                                 transition: 'all 0.2s ease',
                                                 boxShadow: isHeld 
                                                     ? '0 4px 16px rgba(16, 185, 129, 0.25)'
-                                                    : '0 2px 8px rgba(0,0,0,0.15)'
+                                                    : (isChosenVip ? '0 4px 16px rgba(245, 158, 11, 0.2)' : '0 2px 8px rgba(0,0,0,0.15)')
                                             }}
-                                            onMouseEnter={(e) => e.currentTarget.style.borderColor = isHeld ? '#34d399' : (s.badgeColor || '#38bdf8')}
-                                            onMouseLeave={(e) => e.currentTarget.style.borderColor = isHeld ? '#10b981' : (curVote ? '#38bdf8' : '#1e293b')}
+                                            onMouseEnter={(e) => {
+                                                if (!isLockedStock) {
+                                                    e.currentTarget.style.borderColor = isHeld ? '#34d399' : (isChosenVip ? '#fbbf24' : (s.badgeColor || '#38bdf8'));
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (!isLockedStock) {
+                                                    e.currentTarget.style.borderColor = isHeld ? '#10b981' : (isChosenVip ? '#f59e0b' : (!hasSpecialHint && curVote ? '#38bdf8' : '#1e293b'));
+                                                }
+                                            }}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                 <div style={{
@@ -7934,21 +7993,54 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                                 🔥 {myHoldings}주 보유 중
                                                             </span>
                                                         )}
-                                                        {curVote && (
+                                                        {isLockedStock ? (
                                                             <span style={{
                                                                 fontSize: '0.72rem',
                                                                 padding: '1px 6px',
                                                                 borderRadius: '4px',
-                                                                background: curVote === 'UP' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                                                                color: curVote === 'UP' ? '#f87171' : '#60a5fa',
+                                                                background: 'rgba(100, 116, 139, 0.25)',
+                                                                color: '#94a3b8',
                                                                 fontWeight: '800'
                                                             }}>
-                                                                {curVote === 'UP' ? '▲상승' : '▼하락'}
+                                                                🔒 예측 완료 (재열람 불가)
                                                             </span>
+                                                        ) : isChosenVip ? (
+                                                            <span style={{
+                                                                fontSize: '0.72rem',
+                                                                padding: '1px 6px',
+                                                                borderRadius: '4px',
+                                                                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.3) 0%, rgba(217, 119, 6, 0.2) 100%)',
+                                                                color: '#fbbf24',
+                                                                border: '1px solid #f59e0b',
+                                                                fontWeight: '900'
+                                                            }}>
+                                                                👑 100% 특급 힌트 (매매 가능)
+                                                            </span>
+                                                        ) : (
+                                                            !hasSpecialHint && curVote && (
+                                                                <span style={{
+                                                                    fontSize: '0.72rem',
+                                                                    padding: '1px 6px',
+                                                                    borderRadius: '4px',
+                                                                    background: curVote === 'UP' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                                                    color: curVote === 'UP' ? '#f87171' : '#60a5fa',
+                                                                    fontWeight: '800'
+                                                                }}>
+                                                                    {curVote === 'UP' ? '▲상승' : '▼하락'}
+                                                                </span>
+                                                            )
                                                         )}
                                                     </div>
                                                     <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: '2px' }}>
-                                                        {isHeld ? (
+                                                        {isLockedStock ? (
+                                                            <span style={{ color: '#64748b' }}>
+                                                                🔒 특별 힌트 획득으로 열람 및 매매 잠김
+                                                            </span>
+                                                        ) : isChosenVip ? (
+                                                            <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>
+                                                                👑 100% 특별 힌트 확인 및 매매 가능 →
+                                                            </span>
+                                                        ) : isHeld ? (
                                                             <span>
                                                                 내 보유: <strong style={{ color: '#10b981', fontSize: '0.84rem' }}>{myHoldings}주</strong>
                                                                 <span style={{ color: '#94a3b8' }}> (평가액: {(myHoldings * price).toLocaleString()}원)</span> · 
