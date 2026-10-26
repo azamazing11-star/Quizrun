@@ -1,3 +1,4 @@
+import { getSectorNewsFromMatrix } from './yearlySectorNewsData.js';
 // =============================================================================
 // 대한민국 2016년 이전 상장 시가총액 100대 기업 풀 (2015년 ~ 2025년 주가 데이터)
 // 및 14대 시장 섹터 도감 & 10개년(2016~2025) 100대 경제 뉴스 데이터베이스
@@ -2794,14 +2795,6 @@ export function generateStockNewsForYear(year, activeStocks) {
     const keys = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
     const newsList = [];
 
-    // 현재 보이는 주식 가격(year)에서 다음 연도(year + 1) 주식 매매 결정을 내리므로, 
-    // year년에는 year + 1년(다음 연도)의 실질 주가 반영 뉴스를 제공합니다.
-    const targetDbYear = Math.min(2025, year + 1);
-    const yearlyNewsDb = YEARLY_10_NEWS_DATABASE[targetDbYear] || YEARLY_10_NEWS_DATABASE[2016] || [];
-
-    // 이미 사용된 DB 뉴스 인덱스 추적 (중복 할당 방지)
-    const usedDbIndices = new Set();
-
     keys.forEach((key, index) => {
         const stock = activeStocks[key];
         if (!stock) return;
@@ -2811,104 +2804,27 @@ export function generateStockNewsForYear(year, activeStocks) {
         const nextPrice = stock.prices[nextYear] ?? curPrice;
         const diff = nextPrice - curPrice;
         const isUp = diff >= 0;
-        const isDown = diff < 0;
         const pct = curPrice > 0 ? ((Math.abs(diff) / curPrice) * 100).toFixed(1) : '0.0';
-
-        // 해당 연도 DB 뉴스 중 섹터 일치 항목 우선 찾기
-        let dbNews = null;
-        let matchedIdx = -1;
-
-        const s1 = (stock.sector || '').replace(/\s+/g, '');
-        const matchKeywords = ['반도체', '2차전지', '배터리', '바이오', '제약', '자동차', '모빌리티', '인터넷', '게임', '플랫폼', '엔터', '미디어', '화학', '정유', '에너지', '조선', '방산', '철강', '소재', '금융', '은행', '증권', '소비재', '화장품', '뷰티', '음식료', '식품', '통신', '유틸리티', '건설', '인프라'];
-
-        for (let i = 0; i < yearlyNewsDb.length; i++) {
-            if (usedDbIndices.has(i)) continue;
-            const item = yearlyNewsDb[i];
-            const itemSec = (item.impactSector || item.tag || '').replace(/\s+/g, '');
-            
-            let isSectorMatch = false;
-            if (s1 && itemSec) {
-                if (s1 === itemSec || s1.includes(itemSec) || itemSec.includes(s1)) {
-                    isSectorMatch = true;
-                } else {
-                    for (const kw of matchKeywords) {
-                        if (s1.includes(kw) && itemSec.includes(kw)) {
-                            isSectorMatch = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (isSectorMatch) {
-                dbNews = item;
-                matchedIdx = i;
-                break;
-            }
-        }
-
-        // 주의: DB 뉴스에 일치하는 섹터가 없으면 다른 섹터 뉴스로 대체하지 않고
-        // 100% 해당 섹터 고유 템플릿(SECTOR_NEWS_TEMPLATES)을 사용합니다.
-        if (matchedIdx !== -1) {
-            usedDbIndices.add(matchedIdx);
-        }
-
-        const templateGroup = matchSectorTemplate(stock.sector);
-        const subList = isUp ? templateGroup.up : templateGroup.down;
-        const template = subList[(year + index) % subList.length] || subList[0];
-
-        // DB 뉴스를 사용할 때, DB 뉴스의 호재/악재 성격이 실제 주가 등락(isUp)과 일치하는지 엄격히 검증
-        let isDbNewsDirectionMatch = false;
-        if (dbNews) {
-            const dbText = (dbNews.vipHint || dbNews.headline || dbNews.content || '');
-            const isDbNewsDown = dbText.includes('하락') || dbText.includes('폭락') || dbText.includes('조정') || dbText.includes('악재') || dbText.includes('적자') || dbText.includes('침체') || dbText.includes('위기');
-            const isDbNewsUp = !isDbNewsDown || dbText.includes('상승') || dbText.includes('급등') || dbText.includes('호조') || dbText.includes('호재') || dbText.includes('수혜');
-            isDbNewsDirectionMatch = isUp ? isDbNewsUp : isDbNewsDown;
-        }
-
-        let rawHeadline = '';
-        let contentStr = '';
-        let easyStr = '';
-        let glossaryArr = [];
-        let hintCore = '';
-        let mediaStr = MEDIA_LIST[(index + (year % 7)) % MEDIA_LIST.length];
-        let dateStr = `${year}.${((index + 2) % 11) + 1 < 10 ? '0' : ''}${((index + 2) % 11) + 1}.15`;
-
-        if (dbNews && isDbNewsDirectionMatch) {
-            rawHeadline = dbNews.headline;
-            contentStr = formatDualFactorsContent(dbNews.headline, dbNews.content, isUp, stock.sector);
-            easyStr = formatEasyNewsContent(dbNews.headline, dbNews.easyContent || dbNews.content, year, stock.sector);
-            glossaryArr = (dbNews.glossary && dbNews.glossary.length > 0) ? dbNews.glossary : getArticleSpecificGlossary(dbNews.headline, dbNews.content, stock.sector);
-            mediaStr = dbNews.media || mediaStr;
-            dateStr = dbNews.date || dateStr;
-        } else {
-            rawHeadline = template.headline;
-            contentStr = formatDualFactorsContent(template.headline, template.content, isUp, stock.sector);
-            easyStr = formatEasyNewsContent(template.headline, template.easyContent || template.content, year, stock.sector);
-            glossaryArr = (template.glossary && template.glossary.length > 0) ? template.glossary : getArticleSpecificGlossary(template.headline, template.content, stock.sector);
-        }
-
-        // 핵심 힌트 원인은 반드시 해당 등락(isUp: 상승/하락)에 100% 부합하는 섹터 전용 템플릿 힌트 사용
-        hintCore = template.hint;
-
-        const headlinePrefix = `[${key} ${stock.sector}]`;
-        const cleanHeadline = `${headlinePrefix} ${rawHeadline}`;
 
         const directionStr = isUp ? 'UP' : 'DOWN';
         const directionText = isUp ? '▲ 주가 상승 (호재)' : '▼ 주가 하락 (악재)';
 
-        // 퍼센트 수치 및 불필요한 '확실' 중복 제거 정제
-        const cleanHintCore = (hintCore || '')
-            .replace(/^🎯\s*/g, '')
-            .replace(/\[\s*100%.*?\]\s*/g, '')
-            .replace(/[+-]?\d+(~\d+)?%(\s*이상)?/g, '')
-            .replace(/확실하게\s*/g, '')
-            .replace(/확실한\s*/g, '')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
+        // 14대 섹터 x 11개년(2015~2025) x UP/DOWN 완전 비중복 고유 뉴스 매트릭스에서 조회
+        const matrixNews = getSectorNewsFromMatrix(year, stock.sector, directionStr);
+
+        const rawHeadline = matrixNews.headline;
+        const headlinePrefix = `[${key} ${stock.sector}]`;
+        const cleanHeadline = `${headlinePrefix} ${rawHeadline}`;
+        const contentStr = matrixNews.content;
+        const easyStr = matrixNews.easyContent;
+        const hintCore = matrixNews.hint;
+
+        const mediaStr = MEDIA_LIST[(index + (year % 7)) % MEDIA_LIST.length];
+        const dateStr = `${year}.${((index + 2) % 11) + 1 < 10 ? '0' : ''}${((index + 2) % 11) + 1}.15`;
+        const glossaryArr = getArticleSpecificGlossary(rawHeadline, contentStr, stock.sector);
 
         const vipHint = `[${key} ${stock.sector}] 종목은 [${directionText}]이 전망됩니다.
-핵심 요인: ${cleanHintCore}`;
+핵심 요인: ${hintCore}`;
 
         newsList.push({
             id: `news_${key}_${year}`,

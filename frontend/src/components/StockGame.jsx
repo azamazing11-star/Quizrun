@@ -397,10 +397,11 @@ export function ParticipantStockDetailModal({
     };
 
     const handleVoteClick = (dir) => {
+        if (effectiveVote) return; // 이미 선택한 경우 재변경 불가 (100% 힌트 악용 방지)
         if (onToggleVote) {
             onToggleVote(stockItem.key, dir);
         } else {
-            setDemoVote(prev => prev === dir ? null : dir);
+            setDemoVote(dir);
         }
     };
 
@@ -752,10 +753,11 @@ export function ParticipantStockDetailModal({
                                 marginTop: '2px'
                             }}>
                                 <span style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: '800' }}>
-                                    당해 연도 등락 예측:
+                                    당해 연도 등락 예측: {effectiveVote && <span style={{ fontSize: '0.74rem', color: '#38bdf8', marginLeft: '4px' }}>🔒 (선택 완료)</span>}
                                 </span>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <button
+                                        disabled={Boolean(effectiveVote)}
                                         onClick={() => handleVoteClick('UP')}
                                         style={{
                                             background: effectiveVote === 'UP' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(239, 68, 68, 0.12)',
@@ -765,13 +767,15 @@ export function ParticipantStockDetailModal({
                                             padding: '6px 14px',
                                             fontSize: '0.84rem',
                                             fontWeight: '900',
-                                            cursor: 'pointer',
+                                            cursor: effectiveVote ? 'not-allowed' : 'pointer',
+                                            opacity: effectiveVote && effectiveVote !== 'UP' ? 0.35 : 1,
                                             boxShadow: effectiveVote === 'UP' ? '0 2px 10px rgba(239, 68, 68, 0.4)' : 'none'
                                         }}
                                     >
                                         ▲ 상승 {effectiveVote === 'UP' && '✓'}
                                     </button>
                                     <button
+                                        disabled={Boolean(effectiveVote)}
                                         onClick={() => handleVoteClick('DOWN')}
                                         style={{
                                             background: effectiveVote === 'DOWN' ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'rgba(59, 130, 246, 0.12)',
@@ -781,7 +785,8 @@ export function ParticipantStockDetailModal({
                                             padding: '6px 14px',
                                             fontSize: '0.84rem',
                                             fontWeight: '900',
-                                            cursor: 'pointer',
+                                            cursor: effectiveVote ? 'not-allowed' : 'pointer',
+                                            opacity: effectiveVote && effectiveVote !== 'DOWN' ? 0.35 : 1,
                                             boxShadow: effectiveVote === 'DOWN' ? '0 2px 10px rgba(59, 130, 246, 0.4)' : 'none'
                                         }}
                                     >
@@ -2285,11 +2290,12 @@ export function StockGameScreenView({
         return { ...screenVotes };
     }, [screenVotes]);
 
-    // 등락 예측 버튼 클릭 핸들러
+    // 등락 예측 버튼 클릭 핸들러 (한 번 선택하면 수정 불가)
     const handleTogglePrediction = (stockKey, direction) => {
+        if (screenVotes[stockKey]) return; // 이미 선택한 경우 재변경 불가
         const nextVotes = {
             ...screenVotes,
-            [stockKey]: screenVotes[stockKey] === direction ? null : direction
+            [stockKey]: direction
         };
         setScreenVotes(nextVotes);
     };
@@ -4145,13 +4151,17 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 const data = msg.payload || msg;
                 if (data && data.stockKey) {
                     const playerKey = String(data.nickname || data.teamId || '1').trim();
-                    setPredictions(prev => ({
-                        ...prev,
-                        [playerKey]: {
-                            ...(prev[playerKey] || {}),
-                            [data.stockKey]: data.direction
-                        }
-                    }));
+                    setPredictions(prev => {
+                        const existing = prev[playerKey]?.[data.stockKey];
+                        if (existing) return prev; // 이미 예측한 경우 변경 불가
+                        return {
+                            ...prev,
+                            [playerKey]: {
+                                ...(prev[playerKey] || {}),
+                                [data.stockKey]: data.direction
+                            }
+                        };
+                    });
                 }
             };
             const handleExecuteOrderMsg = (data) => {
@@ -6735,7 +6745,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
     }, [isAllVoted, evaluatedYear, gameState.year, calculatedHits]);
 
     const handleToggleVote = (stockKey, direction) => {
-        const nextVal = myPredictions[stockKey] === direction ? null : direction;
+        if (myPredictions[stockKey]) return; // 이미 선택한 경우 재변경 불가 (100% 힌트 악용 방지)
+        const nextVal = direction;
         setLocalVotes(prev => ({
             ...prev,
             [stockKey]: nextVal
@@ -7387,10 +7398,11 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                 marginTop: '2px'
                                             }}>
                                                 <span style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: '800' }}>
-                                                    당해 연도 등락 예측:
+                                                    당해 연도 등락 예측: {myVote && <span style={{ fontSize: '0.74rem', color: '#38bdf8', marginLeft: '4px' }}>🔒 (선택 완료)</span>}
                                                 </span>
                                                 <div style={{ display: 'flex', gap: '8px' }}>
                                                     <button
+                                                        disabled={Boolean(myVote)}
                                                         onClick={() => handleToggleVote(s.key, 'UP')}
                                                         style={{
                                                             background: myVote === 'UP' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'rgba(239, 68, 68, 0.12)',
@@ -7400,13 +7412,15 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                             padding: '6px 14px',
                                                             fontSize: '0.84rem',
                                                             fontWeight: '900',
-                                                            cursor: 'pointer',
+                                                            cursor: myVote ? 'not-allowed' : 'pointer',
+                                                            opacity: myVote && myVote !== 'UP' ? 0.35 : 1,
                                                             boxShadow: myVote === 'UP' ? '0 2px 10px rgba(239, 68, 68, 0.4)' : 'none'
                                                         }}
                                                     >
                                                         ▲ 상승 {myVote === 'UP' && '✓'}
                                                     </button>
                                                     <button
+                                                        disabled={Boolean(myVote)}
                                                         onClick={() => handleToggleVote(s.key, 'DOWN')}
                                                         style={{
                                                             background: myVote === 'DOWN' ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'rgba(59, 130, 246, 0.12)',
@@ -7416,7 +7430,8 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                                                             padding: '6px 14px',
                                                             fontSize: '0.84rem',
                                                             fontWeight: '900',
-                                                            cursor: 'pointer',
+                                                            cursor: myVote ? 'not-allowed' : 'pointer',
+                                                            opacity: myVote && myVote !== 'DOWN' ? 0.35 : 1,
                                                             boxShadow: myVote === 'DOWN' ? '0 2px 10px rgba(59, 130, 246, 0.4)' : 'none'
                                                         }}
                                                     >
