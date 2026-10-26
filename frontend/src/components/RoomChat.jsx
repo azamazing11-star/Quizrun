@@ -33,6 +33,31 @@ function renderMessageText(text) {
     });
 }
 
+
+const USER_BUBBLE_PALETTE = [
+    { bg: '#eff6ff', border: '#bfdbfe', text: '#1e3a8a', tagBg: '#dbeafe', tagText: '#1e40af' }, // Blue
+    { bg: '#f0fdf4', border: '#bbf7d0', text: '#14532d', tagBg: '#dcfce7', tagText: '#166534' }, // Green
+    { bg: '#faf5ff', border: '#e9d5ff', text: '#581c87', tagBg: '#f3e8ff', tagText: '#6b21a8' }, // Purple
+    { bg: '#fff7ed', border: '#fed7aa', text: '#7c2d12', tagBg: '#ffedd5', tagText: '#9a3412' }, // Orange/Peach
+    { bg: '#fdf2f8', border: '#fbcfe8', text: '#831843', tagBg: '#fce7f3', tagText: '#9d174d' }, // Pink
+    { bg: '#f0fdfa', border: '#99f6e4', text: '#134e4a', tagBg: '#ccfbf1', tagText: '#115e59' }, // Teal
+    { bg: '#fefce8', border: '#fef08a', text: '#713f12', tagBg: '#fef9c3', tagText: '#854d0e' }, // Yellow/Gold
+    { bg: '#f5f3ff', border: '#ddd6fe', text: '#3b0764', tagBg: '#ede9fe', tagText: '#5b21b6' }, // Indigo
+    { bg: '#ecfeff', border: '#a5f3fc', text: '#164e63', tagBg: '#cffafe', tagText: '#155e75' }, // Cyan
+    { bg: '#fff1f2', border: '#fecdd3', text: '#881337', tagBg: '#ffe4e6', tagText: '#9f1239' }, // Rose
+];
+
+function getBubbleTheme(sender) {
+    if (!sender) return USER_BUBBLE_PALETTE[0];
+    let hash = 0;
+    for (let i = 0; i < sender.length; i++) {
+        hash = (hash << 5) - hash + sender.charCodeAt(i);
+        hash |= 0;
+    }
+    const idx = Math.abs(hash) % USER_BUBBLE_PALETTE.length;
+    return USER_BUBBLE_PALETTE[idx];
+}
+
 const QUICK_STICKERS = [
     { label: '🔥 떡상', emoji: '🔥' },
     { label: '😭 떡락', emoji: '😭' },
@@ -358,6 +383,7 @@ export default function RoomChat({
                         const isMe = msg.sender === myNickname;
                         const isMsgHost = Boolean(msg.isHost);
                         const isHelp = Boolean(msg.isHelp);
+                        const userTheme = getBubbleTheme(msg.sender);
 
                         return (
                             <div
@@ -406,7 +432,13 @@ export default function RoomChat({
                                             <AlertCircle size={10} /> 진행자 문의
                                         </span>
                                     )}
-                                    <span style={{ fontWeight: '700', color: isMe ? '#0284c7' : '#334155' }}>
+                                    <span style={{
+                                        fontWeight: '800',
+                                        color: isMe ? '#0284c7' : userTheme.tagText,
+                                        background: isMe ? 'transparent' : userTheme.tagBg,
+                                        padding: isMe ? '0' : '1px 6px',
+                                        borderRadius: '6px'
+                                    }}>
                                         {msg.sender}
                                     </span>
                                     <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
@@ -419,19 +451,19 @@ export default function RoomChat({
                                     maxWidth: '85%',
                                     backgroundColor: isMe
                                         ? (isHelp ? '#ffedd5' : '#0284c7')
-                                        : (isMsgHost ? '#fef3c7' : '#ffffff'),
+                                        : (isMsgHost ? '#fef3c7' : (isHelp ? '#ffedd5' : userTheme.bg)),
                                     color: isMe
                                         ? (isHelp ? '#9a3412' : '#ffffff')
-                                        : (isMsgHost ? '#78350f' : '#1e293b'),
+                                        : (isMsgHost ? '#78350f' : (isHelp ? '#9a3412' : userTheme.text)),
                                     borderRadius: isMe ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
                                     padding: '8px 12px',
                                     boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
                                     fontSize: '0.86rem',
                                     lineHeight: 1.45,
                                     wordBreak: 'break-word',
-                                    border: isMsgHost
-                                        ? '1.5px solid #fbbf24'
-                                        : (isHelp ? '1.5px solid #fdba74' : 'none')
+                                    border: isMe
+                                        ? (isHelp ? '1.5px solid #fdba74' : 'none')
+                                        : (isMsgHost ? '1.5px solid #fbbf24' : (isHelp ? '1.5px solid #fdba74' : ('1.5px solid ' + userTheme.border)))
                                 }}>
                                     {/* Text content */}
                                     {msg.text && (

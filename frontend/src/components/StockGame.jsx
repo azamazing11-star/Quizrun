@@ -2313,6 +2313,31 @@ export function StockGameScreenView({
 
     const isQualifiedForHint = screenHitsCount >= 5;
     const totalVotedCount = Object.values(activePredictions).filter(Boolean).length;
+    const isAllVoted = totalVotedCount >= 10;
+    const [evaluatedYear, setEvaluatedYear] = useState(null);
+
+    // 연도 변경 시 평가 상태 및 선택된 힌트 초기화
+    useEffect(() => {
+        setEvaluatedYear(null);
+        setChosenHintStock(null);
+    }, [year]);
+
+    // 체크 도중이라도 5개 이상 맞추면 즉시 특급 힌트 혜택 모달 팝업 & 효과음!
+    // 10개를 전부 다 예측했는데 5개 미만인 경우 결과 안내 모달 팝업 & 효과음!
+    useEffect(() => {
+        if (evaluatedYear === year) return;
+
+        if (screenHitsCount >= 5) {
+            setEvaluatedYear(year);
+            setRewardModalOpen(true);
+            try { playSound('correct'); } catch (e) {}
+        } else if (isAllVoted) {
+            setEvaluatedYear(year);
+            setRewardModalOpen(true);
+            try { playSound('wrong'); } catch (e) {}
+        }
+    }, [isAllVoted, evaluatedYear, year, screenHitsCount]);
+
 
     // 진행자(Host) 시연용 포트폴리오 상태 (서브모니터에서 직접 참여)
     const [hostPortfolio, setHostPortfolio] = useState(() => {
@@ -2379,11 +2404,11 @@ export function StockGameScreenView({
         try {
             sessionStorage.setItem('quizrun_stock_host_asset', String(hostTotalAsset));
             const bc = new BroadcastChannel('quizrun_screen_sync');
-            bc.postMessage({ type: 'STOCK_GAME_HOST_PORTFOLIO_UPDATE', asset: hostTotalAsset });
+            bc.postMessage({ type: 'STOCK_GAME_HOST_PORTFOLIO_UPDATE', asset: hostTotalAsset, totalAsset: hostTotalAsset });
             bc.close();
         } catch (e) {}
         try {
-            window.dispatchEvent(new CustomEvent('quizrun:host_portfolio_update', { detail: { asset: hostTotalAsset } }));
+            window.dispatchEvent(new CustomEvent('quizrun:host_portfolio_update', { detail: { asset: hostTotalAsset, totalAsset: hostTotalAsset } }));
         } catch (e) {}
     }, [hostTotalAsset]);
 
@@ -3117,7 +3142,14 @@ export function StockGameScreenView({
                 stocks={stocks}
                 selectedStockKey={chosenHintStock}
                 onSelectStock={(key) => {
-                    if (!chosenHintStock) setChosenHintStock(key);
+                    if (!chosenHintStock) {
+                        setChosenHintStock(key);
+                        setRewardModalOpen(false);
+                        const sItem = stockList.find(s => s.key === key);
+                        const sNews = yearNewsList.find(n => n.stockKey === key);
+                        if (sItem) setSelectedStockForDetail(sItem);
+                        if (sNews) setSelectedNews(sNews);
+                    }
                 }}
             />
 
@@ -4212,6 +4244,24 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                         stateRef.current.portfolios = nextP;
                         // 실시간으로 서브 모니터 및 참가자들에게 최신 잔여 현금/포트폴리오 즉시 전파
                         broadcastStockState({ portfolios: nextP });
+                        // 참가자 실시간 총 평가 자산 계산 후 점수 동기화
+                        const pCash = updated.cash !== undefined ? updated.cash : (updated.seedMoney || 1000000);
+                        let pStockVal = 0;
+                        if (updated.holdings && activeStocks) {
+                            Object.entries(updated.holdings).forEach(([k, q]) => {
+                                const pr = activeStocks[k]?.prices?.[currentYear] ?? activeStocks[k]?.prices?.[2015] ?? 0;
+                                pStockVal += (q || 0) * pr;
+                            });
+                        }
+                        const pTotalAsset = Math.round(pCash + pStockVal);
+                        if (socket && pin) {
+                            socket.emit('host:adjustScore', {
+                                pin,
+                                nickname: strNick || playerKey,
+                                exactScore: pTotalAsset
+                            });
+                        }
+
                         return nextP;
                     });
                     setCompletedTrades(prev => ({

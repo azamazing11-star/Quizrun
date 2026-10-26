@@ -279,6 +279,51 @@ export default function ScreenView({ socket }) {
         ...(screenData.playerStreams || {}),
         ...playerStreams
     };
+    
+    const finalLeaderboardParticipants = useMemo(() => {
+        const isStock = screenData.gameId === 'stock_game' || viewMode === 'stock_game';
+        if (!isStock) {
+            return activeParticipants;
+        }
+
+        const list = activeParticipants.map(p => {
+            const nick = p.nickname || p.num || '';
+            const port = stockGameData?.portfolios?.[nick] || stockGameData?.portfolios?.[p.id];
+            let score = Number(p.score) || 0;
+            if (port) {
+                const cash = port.cash !== undefined ? port.cash : (port.seedMoney || 1000000);
+                let stockVal = 0;
+                if (port.holdings && stockGameData?.stocks) {
+                    Object.entries(port.holdings).forEach(([k, qty]) => {
+                        const price = stockGameData.stocks[k]?.prices?.[stockGameData.year] ?? stockGameData.stocks[k]?.prices?.[2015] ?? 0;
+                        stockVal += (Number(qty) || 0) * price;
+                    });
+                }
+                score = Math.round(cash + stockVal);
+            } else if (score === 0) {
+                score = 1000000;
+            }
+            return {
+                ...p,
+                nickname: nick,
+                score
+            };
+        });
+
+        // Add Host entry if not present
+        if (!list.some(p => p.isHost || String(p.nickname || p.num).toLowerCase() === 'host')) {
+            const hostAsset = Number(sessionStorage.getItem('quizrun_stock_host_asset')) || 1000000;
+            list.unshift({
+                nickname: 'Host',
+                num: 'Host',
+                score: hostAsset,
+                isHost: true
+            });
+        }
+
+        return list;
+    }, [activeParticipants, screenData.gameId, viewMode, stockGameData]);
+
     const activeLiveScores = !isOfflineMode
         ? activeParticipants.map(p => ({ num: p.nickname, score: p.score || 0, isOnline: true }))
         : liveScores.map(s => ({ num: s.num, score: s.score || 0, isOnline: false }));
@@ -1518,11 +1563,11 @@ export default function ScreenView({ socket }) {
                 }}
                 onTerminateSession={handleCloseFinalLeaderboardAndTerminate}
                 onEndCurrentGame={handleEndCurrentGame}
-                participants={activeParticipants}
+                participants={finalLeaderboardParticipants}
                 isStockGame={screenData.gameId === 'stock_game' || viewMode === 'stock_game'}
                 isSubScreen={true}
                 gameMode={isOfflineMode ? 'offline' : 'online'}
-                title="최종 게임 결과 발표!"
+                title={screenData.gameId === 'stock_game' || viewMode === 'stock_game' ? '최종 주식 투자 수익률 결과 발표!' : '최종 게임 결과 발표!'}
             />
         </div>
     );

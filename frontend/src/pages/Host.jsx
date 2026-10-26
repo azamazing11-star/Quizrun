@@ -1,6 +1,6 @@
 import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
 import NunchiGame from '../components/NunchiGame';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Users, Play, ChevronRight, Trophy, Home, ArrowLeft, Zap, ClipboardCheck, Type, Edit3, Tv, Eye, X, Music, Volume2, VolumeX } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useGlobalSession } from '../context/GlobalSessionContext';
@@ -3887,7 +3887,21 @@ export default function Host({ socket }) {
                 }}
                 onTerminateSession={handleCloseFinalLeaderboardAndTerminate}
                 onEndCurrentGame={handleEndCurrentGame}
-                participants={participants && participants.length > 0 ? participants : (onlineParticipants || [])}
+                participants={(() => {
+                    const baseList = participants && participants.length > 0 ? participants : (onlineParticipants || []);
+                    if (gameId !== 'stock_game') return baseList;
+                    const list = [...baseList];
+                    if (!list.some(p => p.isHost || String(p.nickname || p.num).toLowerCase() === 'host')) {
+                        const hostAsset = Number(sessionStorage.getItem('quizrun_stock_host_asset')) || 1000000;
+                        list.unshift({
+                            nickname: 'Host',
+                            num: 'Host',
+                            score: hostAsset,
+                            isHost: true
+                        });
+                    }
+                    return list;
+                })()}
                 isStockGame={gameId === 'stock_game'}
                 isSubScreen={false}
                 gameMode={gameMode}

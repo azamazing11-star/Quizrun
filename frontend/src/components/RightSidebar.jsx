@@ -74,8 +74,9 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
         } catch (e) {}
 
         const handleHostEvt = (e) => {
-            if (e.detail?.totalAsset !== undefined) {
-                setHostStockAsset(Number(e.detail.totalAsset));
+            const asset = e.detail?.totalAsset !== undefined ? e.detail.totalAsset : e.detail?.asset;
+            if (asset !== undefined) {
+                setHostStockAsset(Number(asset));
             }
         };
         window.addEventListener('quizrun:host_portfolio_update', handleHostEvt);
@@ -138,8 +139,9 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
                         try { sessionStorage.removeItem('quizrun_active_game_mode'); } catch (e) {}
                     }
                 } else if (type === 'STOCK_GAME_HOST_PORTFOLIO_UPDATE') {
-                    if (payload?.totalAsset !== undefined) {
-                        setHostStockAsset(Number(payload.totalAsset));
+                    const asset = payload?.totalAsset !== undefined ? payload.totalAsset : (payload?.asset !== undefined ? payload.asset : (event.data?.totalAsset !== undefined ? event.data.totalAsset : event.data?.asset));
+                    if (asset !== undefined) {
+                        setHostStockAsset(Number(asset));
                     }
                 } else if (type === 'STATE_UPDATE' || type === 'HOST_PONG') {
                     if (payload?.mode === 'stock_game') {
@@ -156,6 +158,23 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
             if (bc) try { bc.close(); } catch (e) {}
         };
     }, []);
+
+    
+    const [stockSyncData, setStockSyncData] = useState(null);
+    useEffect(() => {
+        if (!socket) return;
+        const handleStockSync = (data) => {
+            const payload = data?.payload || data;
+            if (payload) {
+                setStockSyncData(payload);
+                setIsStockGameSynced(true);
+            }
+        };
+        socket.on('stock_game:state_sync', handleStockSync);
+        return () => {
+            socket.off('stock_game:state_sync', handleStockSync);
+        };
+    }, [socket]);
 
     const isStockGame = Boolean(propIsStockGame || isStockGameSynced);
 
@@ -522,18 +541,37 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
         setShowWinnerModal(false);
     };
 
-    const activeScores = gameMode === 'online' 
-        ? onlineParticipants.map(p => ({ 
-            num: p.nickname, 
-            score: (isStockGame && (!p.score || p.score === 0)) ? 1000000 : (p.score || 0), 
-            isOnline: true 
-          })) 
+        const activeScores = gameMode === 'online' 
+        ? onlineParticipants.map(p => {
+            let finalScore = Number(p.score) || 0;
+            if (isStockGame) {
+                const port = stockSyncData?.portfolios?.[p.nickname] || stockSyncData?.portfolios?.[p.id];
+                if (port) {
+                    const cash = port.cash !== undefined ? port.cash : (port.seedMoney || 1000000);
+                    let stockVal = 0;
+                    if (port.holdings && stockSyncData?.stocks) {
+                        Object.entries(port.holdings).forEach(([k, q]) => {
+                            const price = stockSyncData.stocks[k]?.prices?.[stockSyncData.year] ?? stockSyncData.stocks[k]?.prices?.[2015] ?? 0;
+                            stockVal += (q || 0) * price;
+                        });
+                    }
+                    finalScore = Math.round(cash + stockVal);
+                } else if (finalScore === 0) {
+                    finalScore = 1000000;
+                }
+            }
+            return {
+                num: p.nickname,
+                score: finalScore,
+                isOnline: true
+            };
+        })
         : scores.map(s => ({ 
             num: `${s.num}번`, 
             rawNum: s.num,
             score: (isStockGame && (!s.score || s.score === 0)) ? 1000000 : (s.score || 0), 
             isOnline: false 
-          }));
+        }));
 
     // 순위 산정 시 Host는 제외하여 참가자 순위(1위, 2위, 3위...)를 순수하게 보장
     const realParticipants = isStockGame

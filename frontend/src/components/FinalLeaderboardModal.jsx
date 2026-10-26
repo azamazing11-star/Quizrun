@@ -39,16 +39,36 @@ export default function FinalLeaderboardModal({
 
     if (!isOpen) return null;
 
-    // Filter host out of rankings for demonstration
+        // Filter host out of rankings for demonstration
     const hostEntry = participants.find(p => p.isHost || String(p.nickname || p.num).toLowerCase() === 'host');
     const realParticipants = participants.filter(p => !p.isHost && String(p.nickname || p.num).toLowerCase() !== 'host');
 
+    // Ensure participants in stock games default to initial seed (1,000,000) if score is 0
+    const normalizedParticipants = realParticipants.map(p => {
+        let score = Number(p.score) || 0;
+        if (isStockGame && score === 0) {
+            score = 1000000;
+        }
+        return {
+            ...p,
+            nickname: p.nickname || p.num || '참가자',
+            score
+        };
+    });
+
     // Sort real participants by score descending
-    const sortedParticipants = [...realParticipants].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const sortedParticipants = [...normalizedParticipants].sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    const normalizedHost = hostEntry ? {
+        ...hostEntry,
+        nickname: hostEntry.nickname || hostEntry.num || 'Host',
+        score: isStockGame && (!hostEntry.score || hostEntry.score === 0) ? 1000000 : (Number(hostEntry.score) || 0),
+        isHost: true
+    } : null;
 
     // Combined list: Host first (marked as excluded from rankings), then sorted participants
     const allDisplayList = [
-        ...(hostEntry ? [{ ...hostEntry, isHost: true }] : []),
+        ...(normalizedHost ? [normalizedHost] : []),
         ...sortedParticipants
     ];
 
