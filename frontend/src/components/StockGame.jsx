@@ -4288,6 +4288,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             };
             const handleParticipantsUpdated = (list) => {
                 if (list && Array.isArray(list)) {
+                    if (list.length === 0 && liveParticipants.length > 0) return;
                     setLiveParticipants(list);
                     setPortfolios(prev => {
                         const next = { ...prev };

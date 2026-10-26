@@ -205,7 +205,10 @@ export function GlobalSessionProvider({ children, socket }) {
         broadcastSession({ cfUrl: val });
     };
 
-    const setOnlineParticipants = (participants) => {
+    const setOnlineParticipants = (participants, force = false) => {
+        if (!force && Array.isArray(participants) && participants.length === 0 && sessionRef.current.onlineParticipants.length > 0) {
+            return;
+        }
         const val = Array.isArray(participants) ? participants : [];
         setOnlineParticipantsState(val);
         try {
@@ -277,6 +280,7 @@ export function GlobalSessionProvider({ children, socket }) {
 
         const handleParticipantsUpdated = (list) => {
             if (Array.isArray(list)) {
+                if (list.length === 0 && sessionRef.current.onlineParticipants.length > 0) return;
                 setOnlineParticipants(list);
             }
         };
@@ -284,6 +288,7 @@ export function GlobalSessionProvider({ children, socket }) {
 
         const handleStateUpdate = (data) => {
             if (data && Array.isArray(data.participants)) {
+                if (data.participants.length === 0 && sessionRef.current.onlineParticipants.length > 0) return;
                 setOnlineParticipants(data.participants);
             }
         };
@@ -395,8 +400,12 @@ export function GlobalSessionProvider({ children, socket }) {
                         sessionRef.current.publicUrl = payload.publicUrl;
                     }
                     if (payload.onlineParticipants !== undefined) {
-                        setOnlineParticipantsState(payload.onlineParticipants);
-                        sessionRef.current.onlineParticipants = payload.onlineParticipants;
+                        if (Array.isArray(payload.onlineParticipants) && payload.onlineParticipants.length === 0 && sessionRef.current.onlineParticipants.length > 0) {
+                            // Protect existing active roster
+                        } else {
+                            setOnlineParticipantsState(payload.onlineParticipants);
+                            sessionRef.current.onlineParticipants = payload.onlineParticipants;
+                        }
                     }
                     if (payload.gameMode !== undefined && payload.gameMode !== sessionRef.current.gameMode) {
                         setGameModeState(payload.gameMode);
@@ -529,7 +538,7 @@ export function GlobalSessionProvider({ children, socket }) {
             targetSocket.emit('host:endSession', { pin: currentPin });
         }
 
-        setOnlineParticipants([]);
+        setOnlineParticipants([], true);
         setScores(prev => prev.map(item => ({ ...item, score: 0 })));
         localStorage.removeItem('quizrun_global_session');
         localStorage.removeItem('quizrun_online_participants');

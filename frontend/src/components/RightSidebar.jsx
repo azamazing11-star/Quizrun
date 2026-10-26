@@ -258,12 +258,14 @@ export default function RightSidebar({ socket, isStockGame: propIsStockGame = fa
 
         const handleParticipantsUpdate = (participants) => {
             if (Array.isArray(participants)) {
+                if (participants.length === 0 && onlineParticipants.length > 0) return;
                 setOnlineParticipants(participants);
             }
         };
 
         const handleStateUpdate = (data) => {
             if (data && data.participants && Array.isArray(data.participants)) {
+                if (data.participants.length === 0 && onlineParticipants.length > 0) return;
                 setOnlineParticipants(data.participants);
             }
         };

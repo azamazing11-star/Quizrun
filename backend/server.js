@@ -856,8 +856,8 @@ const io = new Server(server, {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  pingInterval: 10000,
-  pingTimeout: 20000,
+  pingInterval: 25000,
+  pingTimeout: 60000,
   maxHttpBufferSize: 1e8,
   transports: ['websocket', 'polling']
 });
@@ -2521,7 +2521,7 @@ io.on('connection', (socket) => {
               delete rooms[pin];
               console.log(`Room ${pin} destroyed after host grace period`);
             }
-          }, 60000),
+          }, 300000),
           writable: true,
           configurable: true,
           enumerable: false

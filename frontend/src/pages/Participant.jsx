@@ -220,7 +220,15 @@ export default function Participant({ socket }) {
     useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
     useEffect(() => { 
         hasJoinedRef.current = hasJoined;
-        if (hasJoined) sessionStorage.setItem('quizrun_joined', 'true');
+        if (hasJoined) {
+            sessionStorage.setItem('quizrun_joined', 'true');
+            localStorage.setItem('quizrun_joined', 'true');
+            const p = pinRef.current || pin;
+            if (p) {
+                sessionStorage.setItem('quizrun_pin', String(p).trim());
+                localStorage.setItem('quizrun_pin', String(p).trim());
+            }
+        }
     }, [hasJoined]);
 
     useEffect(() => {
@@ -234,9 +242,10 @@ export default function Participant({ socket }) {
             setError(prev => (prev && (prev.includes('서버와 연결되지 않았습니다') || prev.includes('연결 중')) ? null : prev));
 
             // AUTO-REJOIN: If connection dropped and restored, re-register this new socket.id with existing participant session
-            const currentPin = pinRef.current || new URLSearchParams(window.location.search).get('pin') || sessionStorage.getItem('quizrun_pin');
-            const currentNick = nicknameRef.current || localStorage.getItem('quizrun_nickname');
-            if (currentPin && currentNick && (hasJoinedRef.current || sessionStorage.getItem('quizrun_joined') === 'true')) {
+            const currentPin = pinRef.current || pin || new URLSearchParams(window.location.search).get('pin') || sessionStorage.getItem('quizrun_pin') || localStorage.getItem('quizrun_pin');
+            const currentNick = nicknameRef.current || nickname || localStorage.getItem('quizrun_nickname') || sessionStorage.getItem('quizrun_nickname');
+            const hasJoinedFlag = (hasJoinedRef.current || sessionStorage.getItem('quizrun_joined') === 'true' || localStorage.getItem('quizrun_joined') === 'true');
+            if (currentPin && currentNick && hasJoinedFlag) {
                 console.log('[Auto-Rejoin] Socket reconnected, re-joining room:', currentPin, currentNick);
                 const myClientId = clientIdRef.current || getOrCreateClientId();
                 socket.emit('participant:joinRoom', { pin: String(currentPin).trim(), nickname: currentNick, clientId: myClientId }, (res) => {

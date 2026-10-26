@@ -114,7 +114,7 @@ export const MARKET_SECTORS_DIRECTORY = [
         icon: '🍜',
         color: '#eab308',
         description: '라면, 스낵, 음료, 담배, 주류 등 경기 방어적이면서 글로벌 K-푸드 수출 급증 섹터',
-        macroCharacteristics: '인플레이션 고물가 시기 가격 인상 방어력, 불닭볶음면/초코파이 등 해외 점유율 확대',
+        macroCharacteristics: '인플레이션 고물가 시기 가격 인상 방어력, 글로벌 매운 라면/대표 파이 과자 등 해외 점유율 확대',
         keySensitivity: '해외 수출 폭증(▲수혜), 곡물가 안정(▲수혜), 원자재 폭등(▼단기 마진 축소)'
     },
     {
@@ -1050,7 +1050,7 @@ export const YEARLY_10_NEWS_DATABASE = {
         {
             id: '2016_8',
             tag: '소비/트렌드',
-            headline: '동남아·중국發 \'불닭볶음면\' 먹방 챌린지 유튜브 강타... 수출 신기록',
+            headline: '동남아·중국發 글로벌 매운 라면 먹방 챌린지 유튜브 강타... 수출 신기록',
             date: '2016.08.19',
             media: '헤럴드경제',
             content: '유튜브 크리에이터들의 매운 라면 챌린지가 글로벌 신드롬을 낳으며 K-라면의 해외 수출 물량이 공장 풀가동 수준을 넘어섰습니다. 만성 저평가받던 음식료 업종에 재평가가 시작됩니다.',
@@ -1133,7 +1133,7 @@ export const YEARLY_10_NEWS_DATABASE = {
         {
             id: '2017_6',
             tag: '특징주',
-            headline: '방탄소년단(BTS) 미국 빌보드 뮤직 어워즈 수상... K-POP 새 역사',
+            headline: '글로벌 대표 보이그룹 미국 빌보드 뮤직 어워즈 수상... K-POP 새 역사',
             date: '2017.05.22',
             media: '중앙일보',
             content: '중국의 사드 보복 속에서도 K-POP이 북미와 남미 시장에서 팬덤을 폭발시키며 글로벌 주류 음악 시장의 주역으로 우뚝 섰습니다. 엔터사들의 실적 다변화가 본격화됩니다.',
@@ -1216,7 +1216,7 @@ export const YEARLY_10_NEWS_DATABASE = {
         {
             id: '2018_4',
             tag: '특징주',
-            headline: 'K-POP 3대 기획사 영업이익 사상 최대치... BTS·트와이스 세계관 열풍',
+            headline: 'K-POP 3대 기획사 영업이익 사상 최대치... 글로벌 정상급 아이돌 세계관 열풍',
             date: '2018.11.08',
             media: '한국경제',
             content: '음원 스트리밍과 유튜브 조회수가 기하급수적으로 늘며 엔터테인먼트 기업들이 사드 악재를 완전히 털어냈습니다. 실적 기반의 기관 매수세가 거세게 몰아칩니다.',
@@ -1425,7 +1425,7 @@ export const YEARLY_10_NEWS_DATABASE = {
             headline: '비대면 언택트 전성시대! NAVER·카카오 시가총액 TOP 5 진입',
             date: '2020.07.09',
             media: '매일경제',
-            content: '재택근무, 원격수업, 카카오톡 선물하기, 네이버 라이브쇼핑 등 비대면 일상화로 인터넷 플랫폼 기업들의 매출과 영업이익이 매분기 신기록을 경신하고 있습니다.',
+            content: '재택근무, 원격수업, 국민 메신저 선물하기, 대형 포털 라이브쇼핑 등 비대면 일상화로 인터넷 플랫폼 기업들의 매출과 영업이익이 매분기 신기록을 경신하고 있습니다.',
             impactSector: '인터넷/게임',
             vipHint: '🎯 [100% 확정 정보] 언택트 시대 최대 수혜주인 [플랫폼/인터넷/게임] 섹터는 +100~250% 역대급 대폭등을 달성합니다.'
         },
@@ -1475,7 +1475,7 @@ export const YEARLY_10_NEWS_DATABASE = {
             headline: '빅히트(하이브) 상장 대박 및 영화 \'기생충\' 아카데미 4관왕 석권',
             date: '2020.02.10',
             media: '동아일보',
-            content: '봉준호 감독의 기생충이 오스카 작품상을 수상하고 BTS의 다이너마이트(Dynamite)가 빌보드 핫100 1위에 오르며 K-콘텐츠의 글로벌 위상이 정점에 도달했습니다.',
+            content: '봉준호 감독의 기생충이 오스카 작품상을 수상하고 대표 K-POP 그룹의 글로벌 히트곡이 빌보드 핫100 1위에 오르며 K-콘텐츠의 글로벌 위상이 정점에 도달했습니다.',
             impactSector: '엔터/미디어',
             vipHint: '🎯 [100% 확정 정보] 오프라인 공연 취소 악재를 온라인 콘서트와 글로벌 음원 돌풍으로 극복하며 [엔터/미디어] 섹터는 +40~70% 반등합니다.'
         },
@@ -1681,7 +1681,7 @@ export const YEARLY_10_NEWS_DATABASE = {
             headline: '카카오 판교 데이터센터 화재... 전 국민 메신저 마비 사태 초유의 재난',
             date: '2022.10.15',
             media: 'SBS/JTBC',
-            content: 'SK C&C 판교 데이터센터 화재로 카카오톡, 카카오페이, 뱅크 등 주요 서비스가 주말 내내 불통되며 창사 이래 최악의 운영 리스크가 터졌습니다.',
+            content: '판교 데이터센터 화재로 국민 모바일 메신저, 간편결제, 금융 등 주요 서비스가 주말 내내 불통되며 창사 이래 최악의 운영 리스크가 터졌습니다.',
             impactSector: '인터넷/게임',
             vipHint: '🎯 [100% 확정 정보] 국민 메신저 독점 비판과 피해보상 부담으로 카카오 그룹주들은 연일 신저가를 찍으며 -20% 추가 폭락합니다.'
         },
@@ -1824,12 +1824,12 @@ export const YEARLY_10_NEWS_DATABASE = {
         {
             id: '2024_3',
             tag: '특징주',
-            headline: '삼양식품 주가 60만 원 돌파! 불닭볶음면 글로벌 수출 폭발로 농심 시총 추월',
+            headline: 'K-라면 선도사 주가 급등! 글로벌 매운 라면 수출 폭발로 시총 지각변동',
             date: '2024.05.10',
             media: '매일경제',
-            content: '까르보불닭이 미국 10대들의 필수 기호품으로 자리 잡으며 분기 영업이익이 1000억 원을 돌파했습니다. 삼양식품이 전통의 라면 강자 농심의 시가총액을 30년 만에 추월했습니다.',
+            content: '글로벌 특화 매운 라면이 해외 10대들의 필수 기호품으로 자리 잡으며 분기 영업이익이 1000억 원을 돌파했습니다. 선도 수출 기업이 전통의 라면 강자 시가총액을 30년 만에 추월했습니다.',
             impactSector: '음식료',
-            vipHint: '🎯 [100% 확정 정보] 전 세계적인 불닭 품귀 현상에 힘입어 삼양식품 등 [음식료] 대장주는 연간 +160% 넘게 폭등하는 기염을 토합니다.'
+            vipHint: '🎯 [100% 확정 정보] 전 세계적인 K-매운 라면 품귀 현상에 힘입어 해당 [음식료] 대장주는 연간 +160% 넘게 폭등하는 기염을 토합니다.'
         },
         {
             id: '2024_4',
@@ -1987,12 +1987,12 @@ export const YEARLY_10_NEWS_DATABASE = {
         {
             id: '2025_9',
             tag: '엔터/글로벌',
-            headline: 'BTS 완전체 군 전역 후 월드투어 컴백! 역대 최대 300만 관객 동원 전망',
+            headline: '글로벌 메가 보이그룹 완전체 전역 후 월드투어 컴백! 역대 최대 300만 관객 동원 전망',
             date: '2025.10.05',
             media: '스포츠조선',
             content: '멤버 전원의 군 복무를 마친 방탄소년단이 3년 만에 완전체 스타디움 월드투어를 공식 발표했습니다. 전 세계 예매 사이트가 마비되며 K-POP 엔터 업계가 화려한 르네상스를 맞았습니다.',
             impactSector: '엔터/미디어',
-            vipHint: '🎯 [100% 확정 정보] BTS 컴백과 글로벌 투어 재개로 [엔터/미디어] 섹터는 +30~55% 화려한 축포를 쏘아 올립니다.'
+            vipHint: '🎯 [100% 확정 정보] 대표 보이그룹 컴백과 글로벌 투어 재개로 [엔터/미디어] 섹터는 +30~55% 화려한 축포를 쏘아 올립니다.'
         },
         {
             id: '2025_10',
@@ -2655,79 +2655,131 @@ function matchSectorTemplate(sectorName) {
 
 
 // -----------------------------------------------------------------------------
-// 기사별 맞춤 용어 해설 및 긍정/부정 3배 분석 생성 헬퍼
+// 기사별 맞춤 용어 해설 생성 헬퍼 (기사 본문 및 헤드라인에 실제로 등장하는 난해 용어만 정밀 해설)
 // -----------------------------------------------------------------------------
 function getArticleSpecificGlossary(headline, content, sector) {
-    const text = ((headline || '') + ' ' + (content || '') + ' ' + (sector || '')).toLowerCase();
+    const text = ((headline || '') + ' ' + (content || '')).toLowerCase();
     const list = [];
+    const addedTerms = new Set();
 
-    if (text.includes('금리') || text.includes('연준') || text.includes('긴축')) {
-        list.push({ term: '기준금리 (Interest Rate)', def: '중앙은행이 결정하는 정책 금리로, 시중 이자율과 기업 대출 원가에 직접 영향을 줍니다.' });
-        list.push({ term: '순이자마진 (NIM)', def: '은행이 예금금리와 대출금리의 차이로 거두는 핵심 수익률 지표입니다.' });
+    const addTerm = (term, def) => {
+        if (!addedTerms.has(term)) {
+            addedTerms.add(term);
+            list.push({ term, def });
+        }
+    };
+
+    // 1. 통상·규제·지정학 관련 고난도 용어
+    if (text.includes('232조') || text.includes('무역확장법')) {
+        addTerm('무역확장법 232조', '미국 대통령이 국가안보 위협을 이유로 특정 수입품에 고율 관세를 부과할 수 있도록 규정한 미국 무역법 조항입니다.');
     }
-    if (text.includes('유가') || text.includes('원유') || text.includes('정유') || text.includes('정제마진')) {
-        list.push({ term: 'WTI (서부텍사스산 원유)', def: '국제 원유 거래의 기준이 되는 대표적인 원유 가격 지표입니다.' });
-        list.push({ term: '정제마진 (Refining Margin)', def: '원유를 가져와 휘발유나 경유로 만들어 팔 때 남는 순수익 마진입니다.' });
+    if (text.includes('ampc') || text.includes('생산 세액공제')) {
+        addTerm('AMPC (첨단제조생산세액공제)', '미국 내에서 배터리 셀이나 모듈을 생산·판매할 때 미국 정부가 현금성으로 환급해 주는 세액공제 보조금입니다.');
     }
-    if (text.includes('브렉시트') || text.includes('영국') || text.includes('eu')) {
-        list.push({ term: '브렉시트 (Brexit)', def: '영국의 유럽연합(EU) 탈퇴로 세계 증시와 환율에 영향을 준 사건입니다.' });
-        list.push({ term: '안전자산', def: '위기 시 가치가 유지되거나 올라가는 자산(달러, 금, 국채 등)입니다.' });
+    if (text.includes('ira') || text.includes('인플레이션 감축법')) {
+        addTerm('IRA (인플레이션 감축법)', '미국 내 친환경 에너지, 전기차, 배터리 생산을 장려하기 위해 막대한 보조금과 세제 혜택을 주는 미국 법안입니다.');
     }
-    if (text.includes('알파고') || text.includes('ai') || text.includes('인공지능') || text.includes('데이터센터')) {
-        list.push({ term: '알파고 (AlphaGo)', def: '구글 딥마인드가 개발한 세계 최초의 인간 챔피언 이긴 바둑 AI입니다.' });
-        list.push({ term: '클라우드 데이터센터', def: '수많은 서버를 모아두고 인공지능과 대용량 데이터를 처리하는 전용 건물입니다.' });
+    if (text.includes('한한령') || text.includes('사드') || text.includes('thaad')) {
+        addTerm('한한령 (限韓令)', '외교 갈등으로 인해 중국 정부가 한국 문화 콘텐츠 수입, 관광, 공연 활동을 비공식적으로 규제했던 조치입니다.');
     }
-    if (text.includes('사드') || text.includes('중국') || text.includes('한한령') || text.includes('보복')) {
-        list.push({ term: '한한령 (限韓令)', def: '중국 정부가 한국 문화 수입, 관광, 연예인 활동을 공식·비공식 제한한 조치입니다.' });
-        list.push({ term: '사드 (THAAD)', def: '적의 미사일을 높은 공중에서 맞춰 떨어뜨리는 방어용 미사일 체계입니다.' });
+    if (text.includes('브렉시트') || text.includes('brexit')) {
+        addTerm('브렉시트 (Brexit)', '영국의 유럽연합(EU) 탈퇴 사건으로 글로벌 금융시장에 외환 변동성과 교역 관세 충격을 유발했습니다.');
     }
-    if (text.includes('테슬라') || text.includes('모델 3') || text.includes('2차전지') || text.includes('배터리')) {
-        list.push({ term: '2차전지 밸류체인', def: '양극재, 음극재 등 배터리 핵심 소재부터 셀 제작까지 연결된 산업 생태계입니다.' });
-        list.push({ term: '양극재 (Cathode)', def: '배터리의 용량과 전압을 결정하는 가장 핵심적이고 비싼 소재입니다.' });
+    if (text.includes('단통법')) {
+        addTerm('단통법 (이동통신단말장치 유통법)', '스마트폰 단말기 보조금 출혈 경쟁을 제한해 통신사들의 마케팅 비용을 절감시켰던 유통 규제 법률입니다.');
     }
-    if (text.includes('바이오') || text.includes('임상') || text.includes('기술수출') || text.includes('신약')) {
-        list.push({ term: '라이선스 아웃 (L/O)', def: '개발 중인 신약 기술 및 판매 권리를 글로벌 제약사에 주고 대가를 받는 기술 수출입니다.' });
-        list.push({ term: '임상 3상', def: '수많은 환자를 대상으로 신약의 효능과 안전성을 최종 입증하는 약물 시험 단계입니다.' });
-    }
-    if (text.includes('불닭') || text.includes('라면') || text.includes('음식료') || text.includes('곡물')) {
-        list.push({ term: '롤마진 (Roll Margin)', def: '식품 최종 판매 가격과 수입 원재료(밀가루, 기름) 가격 차이로 발생하는 이익입니다.' });
-        list.push({ term: 'K-푸드', def: '전 세계적으로 인기를 끌고 있는 한국 라면, 과자, 만두 등 가공식품 수출 브랜드입니다.' });
-    }
-    if (text.includes('조선') || text.includes('수주') || text.includes('후판') || text.includes('lng')) {
-        list.push({ term: '신조선가 지수', def: '새로 건조하는 배의 가격 수준을 수치화한 지수로 높을수록 조선사 이익이 커집니다.' });
-        list.push({ term: '후판 (Heavy Plate)', def: '선박을 만들 때 사용하는 두께 6mm 이상의 두꺼운 철강 자재입니다.' });
-    }
-    if (text.includes('자동차') || text.includes('개소세') || text.includes('신흥국') || text.includes('하이브리드')) {
-        list.push({ term: '하이브리드 (HEV)', def: '엔진과 전기 모터를 함께 써서 연비를 대폭 높인 친환경 자동차입니다.' });
-        list.push({ term: '개별소비세', def: '자동차나 사치품 구매 시 부과되는 국세로 인하 시 자동차 판매량이 늘어납니다.' });
-    }
-    if (text.includes('팬데믹') || text.includes('코로나') || text.includes('서킷브레이커')) {
-        list.push({ term: '팬데믹 (Pandemic)', def: '전 세계적으로 전염병이 대유행하는 상황으로 증시 변동성과 언택트 수요를 일으킵니다.' });
-        list.push({ term: '서킷브레이커', def: '주가가 급등락할 때 주식 거래를 일시 정지시켜 패닉을 가라앉히는 제도입니다.' });
-    }
-    if (text.includes('동학개미') || text.includes('거래대금') || text.includes('증권')) {
-        list.push({ term: '동학개미운동', def: '개인 투자자들이 주식 시장에 대거 참여하여 외국인 매도세에 맞선 대중 투자 열풍입니다.' });
-        list.push({ term: '거래대금', def: '하루 동안 거래된 총 주식 금액으로 증권사의 수수료 수입 지표입니다.' });
-    }
-    if (text.includes('밸류업') || text.includes('pbr') || text.includes('자사주')) {
-        list.push({ term: '기업 밸류업 프로그램', def: '주가가 저평가된 기업의 자사주 소각과 배당 확대를 유도하는 정부 정책입니다.' });
-        list.push({ term: 'PBR (주가순자산비율)', def: '기업이 가진 순자산 대비 주가가 얼마나 평가받고 있는지 나타내는 지표입니다.' });
-    }
-    if (text.includes('hbm') || text.includes('양산') || text.includes('메모리')) {
-        list.push({ term: 'HBM (고대역폭 메모리)', def: 'D램을 여러 층 쌓아 올려 데이터 처리 속도를 획기적으로 올린 AI 전용 반도체입니다.' });
-        list.push({ term: '수율 (Yield)', def: '생산된 전체 반도체 중 결함이 없는 합격품 비율로 기술력을 나타냅니다.' });
-    }
-    if (text.includes('철강') || text.includes('전력') || text.includes('변압기') || text.includes('비철')) {
-        list.push({ term: '전기강판', def: '변압기나 모터의 에너지 손실을 줄여주는 고급 특수 철강재입니다.' });
-        list.push({ term: '수소환원제철', def: '석탄 대신 수소를 사용해 이산화탄소 배출을 줄이는 친환경 제철 기술입니다.' });
+    if (text.includes('asf') || text.includes('아프리카돼지열병')) {
+        addTerm('ASF (아프리카돼지열병)', '치사율이 높은 돼지 전염병으로 발생 시 가축 살처분과 돈육 공급 부족으로 육류 도매가를 급등시킵니다.');
     }
 
+    // 2. 기업 재무·회계·가치평가 고난도 용어
+    if (text.includes('충당금') || text.includes('품질비용')) {
+        addTerm('품질비용 충당금', '엔진 결함이나 대규모 리콜 등 향후 발생할 수 있는 보증수리 비용을 미리 예상하여 장부상 손실로 떼어놓는 회계 비용입니다.');
+    }
+    if (text.includes('믹스') || text.includes('mix')) {
+        addTerm('믹스(Mix) 개선', '수익성이 높은 고가 차종이나 프리미엄 제품의 판매 비중이 늘어나 전체 평균 판매단가와 영업이익률이 높아지는 현상입니다.');
+    }
+    if (text.includes('nim') || text.includes('순이자마진')) {
+        addTerm('순이자마진 (NIM)', '은행이 대출 등으로 번 이자에서 예금 등에 지급한 이자를 뺀 순이자이익을 운용자산으로 나눈 핵심 수익성 지표입니다.');
+    }
+    if (text.includes('pbr') || text.includes('밸류업') || text.includes('저pbr')) {
+        addTerm('PBR (주가순자산비율)', '기업의 시가총액을 순자산(장부가치)으로 나눈 지표로, 1배 미만이면 회사를 지금 당장 청산한 가치보다도 주가가 저평가되어 있음을 뜻합니다.');
+    }
+    if (text.includes('롤마진') || text.includes('roll margin')) {
+        addTerm('롤마진 (Roll Margin)', '최종 가공 제품(라면·스프·철강)의 판매 가격과 수입 원재료(곡물·슬래브) 가격 차이에서 발생하는 제조 마진입니다.');
+    }
+    if (text.includes('정제마진')) {
+        addTerm('정제마진 (Refining Margin)', '원유를 정제하여 휘발유·경유 등 석유제품으로 판매할 때 얻는 마진으로 정유사의 실적을 결정합니다.');
+    }
+    if (text.includes('수주잔고') || text.includes('일감')) {
+        addTerm('수주잔고 (Order Backlog)', '기업이 이미 계약을 따냈으나 아직 납품이나 시공이 완료되지 않고 향후 매출로 잡힐 일감의 총액입니다.');
+    }
+    if (text.includes('capex') || text.includes('설비투자')) {
+        addTerm('Capex (자본적 지출)', '공장 증설, 첨단 장비 도입 등 미래 성장과 이윤 창출을 위해 대규모로 투입하는 설비 투자 비용입니다.');
+    }
+
+    // 3. 첨단 기술 및 산업 전문 용어
+    if (text.includes('hbm') || text.includes('고대역폭')) {
+        addTerm('HBM (고대역폭 메모리)', 'D램 여러 개를 수직으로 쌓아 올려 데이터 전송 속도를 획기적으로 극대화한 초고속 AI 반도체입니다.');
+    }
+    if (text.includes('euv') || text.includes('극자외선')) {
+        addTerm('EUV (극자외선 노광)', '빛의 파장이 극도로 짧은 광원을 사용하여 반도체 웨이퍼에 초미세 회로를 정밀하게 새기는 첨단 장비 기술입니다.');
+    }
+    if (text.includes('수율') || text.includes('yield')) {
+        addTerm('수율 (Yield)', '생산된 전체 반도체나 디스플레이 중 결함 없이 정상 작동하는 합격품의 비율입니다.');
+    }
+    if (text.includes('바이오시밀러') || text.includes('시밀러')) {
+        addTerm('바이오시밀러 (Biosimilar)', '특허가 끝난 오리지널 바이오의약품을 복제한 의약품으로 효능과 안전성은 동등하면서 약가는 훨씬 저렴합니다.');
+    }
+    if (text.includes('라이선스 아웃') || text.includes('l/o') || text.includes('기술수출')) {
+        addTerm('라이선스 아웃 (L/O)', '자체 개발 중인 신약 후보물질의 특허나 글로벌 판매 권리를 대형 제약사에 넘기고 대규모 마일스톤 기술료를 받는 계약입니다.');
+    }
+    if (text.includes('임상 3상') || text.includes('임상3상')) {
+        addTerm('임상 3상', '수백~수천 명의 환자를 대상으로 신약의 최종 효능과 안전성을 대규모로 입증하는 신약 허가 직전의 마지막 시험 단계입니다.');
+    }
+    if (text.includes('양극재') || text.includes('음극재')) {
+        addTerm('양극재 (Cathode)', '배터리의 용량과 출력을 좌우하며 2차전지 배터리 원가의 약 40%를 차지하는 가장 핵심적인 소재입니다.');
+    }
+    if (text.includes('신조선가') || text.includes('조선가 지수')) {
+        addTerm('신조선가 지수', '새로 건조하는 배의 평균 가격 수준을 수치화한 지수로, 지수가 상승할수록 조선사의 건조 마진이 대폭 개선됩니다.');
+    }
+    if (text.includes('후판')) {
+        addTerm('후판 (Heavy Plate)', '두께 6mm 이상의 두꺼운 철판으로, 선박 건조 원가의 약 20%를 차지하는 조선업의 핵심 자재입니다.');
+    }
+    if (text.includes('개소세') || text.includes('개별소비세')) {
+        addTerm('개별소비세', '자동차 등 특정 내구소비재 구매 시 부과되는 국세로, 정부의 개소세 인하 정책은 신차 구매 수요를 촉진합니다.');
+    }
+    if (text.includes('하이브리드') || text.includes('hev')) {
+        addTerm('하이브리드 (HEV)', '내연기관 엔진과 전기 모터를 함께 결합하여 연비를 대폭 높이고 배기가스를 줄인 친환경 자동차입니다.');
+    }
+
+    // 4. 거시경제 및 시장 제도 용어
+    if (text.includes('기준금리') || text.includes('금리') || text.includes('연준') || text.includes('긴축')) {
+        addTerm('기준금리 (Interest Rate)', '중앙은행이 결정하는 정책 금리로, 시중 은행의 대출·예금 금리와 기업의 자금조달 원가에 직접적인 영향을 줍니다.');
+    }
+    if (text.includes('서킷브레이커')) {
+        addTerm('서킷브레이커 (Circuit Breakers)', '증시가 급격하게 폭락할 때 투자자들의 공포 패닉을 진정시키기 위해 시장의 모든 주식 거래를 일시 전면 중단시키는 제도입니다.');
+    }
+    if (text.includes('공매도')) {
+        addTerm('공매도 (Short Selling)', '주가 하락이 예상될 때 주식을 빌려서 매도한 뒤, 주가가 떨어지면 시장에서 싸게 되사서 갚음으로써 시세차익을 얻는 투자 기법입니다.');
+    }
+    if (text.includes('동학개미')) {
+        addTerm('동학개미운동', '폭락장에서 개인 투자자들이 대규모 유동성을 바탕으로 적극 매수에 나서 증시 반등을 주도했던 역사적 투자 열풍입니다.');
+    }
+    if (text.includes('wti') || text.includes('유가') || text.includes('원유')) {
+        addTerm('WTI (서부텍사스산 원유)', '국제 원유 거래의 기준 가격이 되는 대표적인 원유 지표로, 유가 변동은 석유화학·정유사의 원가에 직결됩니다.');
+    }
+
+    // 본문에서 특별히 어려운 전문 용어가 매칭되지 않았을 때만 깔끔한 기본 해설 1개 제공
     if (list.length === 0) {
-        list.push({ term: '거시경제 (Macro economy)', def: '국가 전체의 환율, 금리, 물가, 무역 수지 등 종합적인 경제 환경입니다.' });
-        list.push({ term: '어닝 서프라이즈 (Earning Surprise)', def: '기업의 영업이익이 증권가 예측치보다 훨씬 높게 잘 나온 상태입니다.' });
+        if (text.includes('실적') || text.includes('어닝') || text.includes('매출')) {
+            addTerm('어닝 서프라이즈 (Earning Surprise)', '기업이 발표한 실제 실적이 시장 증권가의 사전 예상치(컨센서스)를 크게 초과 달성하여 주가 상승을 견인하는 현상입니다.');
+        } else {
+            addTerm('거시경제 (Macro economy)', '국가 전체의 환율, 금리, 물가, 무역수지 등 기업 활동 전반에 광범위한 영향을 미치는 종합적인 경제 환경입니다.');
+        }
     }
 
-    return list.slice(0, 3);
+    return list.slice(0, 2);
 }
 
 function formatDualFactorsContent(headline, origContent, isUp, sector = '') {

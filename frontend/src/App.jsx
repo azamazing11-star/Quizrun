@@ -19,12 +19,12 @@ import ScrollToTop from './utils/ScrollToTop';
 import { preloadGameAssets } from './utils/assetPreloader';
 
 const socket = io({
-  transports: ['polling', 'websocket'],
+  transports: ['websocket', 'polling'],
   reconnection: true,
   reconnectionAttempts: Infinity,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-  timeout: 30000
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 3000,
+  timeout: 45000
 });
 
 socket.on('connect', () => {

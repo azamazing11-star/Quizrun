@@ -511,12 +511,14 @@ export default function ScreenView({ socket }) {
 
         const handleParticipantsUpdated = (list) => {
             if (list && Array.isArray(list)) {
+                if (list.length === 0 && screenData.participants?.length > 0) return;
                 setScreenData(prev => ({ ...prev, participants: list }));
             }
         };
 
         const handleParticipantJoined = (data) => {
             if (data?.participants && Array.isArray(data.participants)) {
+                if (data.participants.length === 0 && screenData.participants?.length > 0) return;
                 setScreenData(prev => ({ ...prev, participants: data.participants }));
             }
         };
