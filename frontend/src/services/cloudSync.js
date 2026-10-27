@@ -166,26 +166,34 @@ export async function restoreAllQuizrunData(backup) {
  */
 export async function syncLocalWithBackend() {
   try {
-    const res = await fetch('/api/quizzes', { signal: AbortSignal.timeout(3000) })
-    if (!res.ok) return false
-    const serverData = await res.json()
+    const isLocal = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1' || 
+      window.location.protocol === 'file:'
+    );
 
-    const localTime = getLocalUpdatedAt() ? new Date(getLocalUpdatedAt()).getTime() : 0
-    const serverTime = serverData?.appConfig?.updatedAt ? new Date(serverData.appConfig.updatedAt).getTime() : 0
-    const isServerNewer = serverTime > 0 && serverTime > localTime + 2000
+    const res = await fetch('/api/quizzes', { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return false;
+    const serverData = await res.json();
 
-    // 1. 서버의 clientStorage 및 quizzes 중 브라우저에 없거나 서버가 더 최신인 항목 자동 복원
-    const serverClientStorage = serverData?.appConfig?.clientStorage || {}
-    let restoredAny = false
-    isInternalSyncOp = true
+    const localTime = getLocalUpdatedAt() ? new Date(getLocalUpdatedAt()).getTime() : 0;
+    const serverTime = serverData?.appConfig?.updatedAt ? new Date(serverData.appConfig.updatedAt).getTime() : 0;
+    
+    // On production (e.g. Onrender), the deployed server is ALWAYS the authoritative master source!
+    const isServerNewer = !isLocal || (serverTime > 0 && serverTime > localTime + 2000);
+
+    // 1. 서버의 clientStorage 및 quizzes 중 브라우저에 없거나 서버가 최신인 항목 자동 복원
+    const serverClientStorage = serverData?.appConfig?.clientStorage || {};
+    let restoredAny = false;
+    isInternalSyncOp = true;
     try {
       for (const [key, val] of Object.entries(serverClientStorage)) {
-        if (!key) continue
-        const strVal = typeof val === 'string' ? val : JSON.stringify(val)
-        if (!localStorage.getItem(key) || (isServerNewer && localStorage.getItem(key) !== strVal)) {
+        if (!key) continue;
+        const strVal = typeof val === 'string' ? val : JSON.stringify(val);
+        if (!localStorage.getItem(key) || (!isLocal || (isServerNewer && localStorage.getItem(key) !== strVal))) {
           try {
-            localStorage.setItem(key, strVal)
-            restoredAny = true
+            localStorage.setItem(key, strVal);
+            restoredAny = true;
           } catch {}
         }
       }
@@ -193,49 +201,53 @@ export async function syncLocalWithBackend() {
       if (serverData?.quizzes && typeof serverData.quizzes === 'object') {
         for (const [key, val] of Object.entries(serverData.quizzes)) {
           if (key && key.startsWith('quizrun_data_')) {
-            const strVal = JSON.stringify(val)
-            if (!localStorage.getItem(key) || (isServerNewer && localStorage.getItem(key) !== strVal)) {
+            const strVal = JSON.stringify(val);
+            if (!localStorage.getItem(key) || (!isLocal || (isServerNewer && localStorage.getItem(key) !== strVal))) {
               try {
-                localStorage.setItem(key, strVal)
+                localStorage.setItem(key, strVal);
+                restoredAny = true;
               } catch {}
             }
           }
         }
       }
     } finally {
-      isInternalSyncOp = false
+      isInternalSyncOp = false;
     }
 
-    if (isServerNewer && serverData?.appConfig?.updatedAt) {
-      setLocalUpdatedAt(serverData.appConfig.updatedAt)
+    if (serverData?.appConfig?.updatedAt) {
+      setLocalUpdatedAt(serverData.appConfig.updatedAt);
     }
 
-    // 2. 현재 브라우저에 서버보다 새로 추가/변경된 데이터가 있을 때만 서버 하드디스크(backend/data/)에 백업
-    const currentLocal = {}
-    let hasLocalDiff = false
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key && !key.startsWith('quizrun_supabase') && key !== LOCAL_UPDATED_KEY) {
-        const val = localStorage.getItem(key)
-        currentLocal[key] = val
-        if (serverClientStorage[key] !== val) {
-          hasLocalDiff = true
+    // 2. 오직 Localhost 환경에서만: 브라우저에 서버보다 새로 추가/변경된 데이터가 있을 때 로컬 서버 하드디스크(backend/data/)에 백업
+    // (Render 등 프로덕션 웹사이트에서는 방문자 브라우저의 오래된 캐시가 서버를 덮어쓰지 않도록 절대 차단)
+    if (isLocal) {
+      const currentLocal = {};
+      let hasLocalDiff = false;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && !key.startsWith('quizrun_supabase') && key !== LOCAL_UPDATED_KEY) {
+          const val = localStorage.getItem(key);
+          currentLocal[key] = val;
+          if (serverClientStorage[key] !== val) {
+            hasLocalDiff = true;
+          }
         }
+      }
+
+      if (hasLocalDiff && Object.keys(currentLocal).length > 0) {
+        await fetch('/api/quizzes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ localStorage: currentLocal }),
+          signal: AbortSignal.timeout(4000)
+        });
       }
     }
 
-    if (hasLocalDiff && Object.keys(currentLocal).length > 0) {
-      await fetch('/api/quizzes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ localStorage: currentLocal }),
-        signal: AbortSignal.timeout(3000)
-      })
-    }
-
-    return restoredAny
+    return restoredAny;
   } catch {
-    return false
+    return false;
   }
 }
 

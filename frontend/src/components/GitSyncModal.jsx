@@ -44,7 +44,7 @@ import {
 } from '../services/cloudSync';
 
 export default function GitSyncModal({ isOpen, onClose }) {
-    const [activeTab, setActiveTab] = useState('cloud'); // 'cloud' | 'repo' | 'json'
+    const [activeTab, setActiveTab] = useState('repo'); // 'repo' | 'cloud' | 'json'
 
     // Supabase 클라우드 설정 상태
     const [config, setConfig] = useState({ url: '', anonKey: '' });
@@ -552,6 +552,10 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                     <span>{syncMessage.text}</span>
                                 </div>
                             )}
+
+                            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '10px 14px', fontSize: '0.75rem', color: '#92400e', lineHeight: '1.4' }}>
+                                💡 <strong>안내</strong>: 이 탭은 Onrender 웹사이트 배포가 아닌 <strong>외부 Supabase DB 백업용</strong>입니다. Onrender 라이브 사이트(quizrun24.onrender.com)를 최신화하시려면 첫 번째 <strong>[GitHub & Onrender 최신화]</strong> 탭의 최신화 버튼을 이용해 주세요.
+                            </div>
 
                             {/* 메인 스마트 액션 카드 */}
                             <div style={{

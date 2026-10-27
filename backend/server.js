@@ -1083,6 +1083,11 @@ app.get('/api/quizzes', (req, res) => {
 
 app.post('/api/quizzes', (req, res) => {
   try {
+    // Protect production database from being overwritten by stale visitor browser caches
+    const isProduction = Boolean(process.env.RENDER || process.env.NODE_ENV === 'production');
+    if (isProduction) {
+      return res.json({ success: true, message: 'Production master database protected against browser override.' });
+    }
     const body = req.body;
     if (body && typeof body === 'object') {
       let quizzesChanged = false;
