@@ -4056,6 +4056,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
     // 서브 모니터 및 브로드캐스트 채널
     const channelRef = useRef(null);
     const processedOrdersRef = useRef(new Set());
+    const broadcastThrottleTimerRef = useRef(null);
+    const lastSoundTimeRef = useRef(0);
 
     // 실시간 상태 ref (이벤트 리스너 및 브로드캐스트 내 클로저 최신성 100% 보장)
     const stateRef = useRef({
@@ -4092,23 +4094,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         pin
     };
 
-    const broadcastStockState = (overrides = {}) => {
+    const doActualBroadcast = () => {
         const cur = stateRef.current;
-        if (overrides.year !== undefined) cur.currentYear = overrides.year;
-        if (overrides.stocks !== undefined) cur.activeStocks = overrides.stocks;
-        if (overrides.isPubliclyRevealed !== undefined) cur.isPubliclyRevealed = overrides.isPubliclyRevealed;
-        if (overrides.portfolios !== undefined) cur.portfolios = overrides.portfolios;
-        if (overrides.permissions !== undefined) cur.permissions = overrides.permissions;
-        if (overrides.allowAllNews !== undefined) cur.allowAllNews = overrides.allowAllNews;
-        if (overrides.allowAllVipHint !== undefined) cur.allowAllVipHint = overrides.allowAllVipHint;
-        if (overrides.predictions !== undefined) cur.predictions = overrides.predictions;
-        if (overrides.predictionResults !== undefined) cur.predictionResults = overrides.predictionResults;
-        if (overrides.allOrdersModalOpen !== undefined) cur.allOrdersModalOpen = overrides.allOrdersModalOpen;
-        if (overrides.tradingProgressModalOpen !== undefined) cur.tradingProgressModalOpen = overrides.tradingProgressModalOpen;
-        if (overrides.completedTrades !== undefined) cur.completedTrades = overrides.completedTrades;
-        if (overrides.teamList !== undefined) cur.teamList = overrides.teamList;
-
-        // 서브 모니터용 페이로드: 매매 중 실시간 진행 상황(tradingProgressModalOpen, predictions)은 숨기고, 매매 후 결과(allOrdersModalOpen)만 전달
         const screenPayload = {
             pin: cur.pin || pin,
             year: cur.currentYear,
@@ -4126,7 +4113,6 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             teamList: cur.teamList || teamList
         };
 
-        // 참여자용 페이로드: 타인의 예측(predictions)을 공유하지 않고 각자 고유 키 포트폴리오만 참조하도록 전달
         const participantPayload = {
             pin: cur.pin || pin,
             year: cur.currentYear,
@@ -4161,11 +4147,6 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         }
 
         if (socket && pin) {
-            socket.emit('room:message', {
-                pin,
-                event: 'stock_game:state_sync',
-                payload: participantPayload
-            });
             socket.emit('stock_game:state_sync', {
                 pin,
                 ...participantPayload
@@ -4173,6 +4154,44 @@ export function StockGameHost({ socket, pin, participants = [] }) {
         }
     };
 
+    const broadcastStockState = (overrides = {}, immediate = false) => {
+        const cur = stateRef.current;
+        if (overrides.year !== undefined) cur.currentYear = overrides.year;
+        if (overrides.stocks !== undefined) cur.activeStocks = overrides.stocks;
+        if (overrides.isPubliclyRevealed !== undefined) cur.isPubliclyRevealed = overrides.isPubliclyRevealed;
+        if (overrides.portfolios !== undefined) cur.portfolios = overrides.portfolios;
+        if (overrides.permissions !== undefined) cur.permissions = overrides.permissions;
+        if (overrides.allowAllNews !== undefined) cur.allowAllNews = overrides.allowAllNews;
+        if (overrides.allowAllVipHint !== undefined) cur.allowAllVipHint = overrides.allowAllVipHint;
+        if (overrides.predictions !== undefined) cur.predictions = overrides.predictions;
+        if (overrides.predictionResults !== undefined) cur.predictionResults = overrides.predictionResults;
+        if (overrides.allOrdersModalOpen !== undefined) cur.allOrdersModalOpen = overrides.allOrdersModalOpen;
+        if (overrides.tradingProgressModalOpen !== undefined) cur.tradingProgressModalOpen = overrides.tradingProgressModalOpen;
+        if (overrides.completedTrades !== undefined) cur.completedTrades = overrides.completedTrades;
+        if (overrides.teamList !== undefined) cur.teamList = overrides.teamList;
+
+        if (immediate) {
+            if (broadcastThrottleTimerRef.current) {
+                clearTimeout(broadcastThrottleTimerRef.current);
+                broadcastThrottleTimerRef.current = null;
+            }
+            doActualBroadcast();
+        } else {
+            if (!broadcastThrottleTimerRef.current) {
+                broadcastThrottleTimerRef.current = setTimeout(() => {
+                    broadcastThrottleTimerRef.current = null;
+                    doActualBroadcast();
+                }, 300);
+            }
+        }
+    };
+
+    // 호스트 주요 설정 변경 시 즉시 동기화 브로드캐스트
+    useEffect(() => {
+        broadcastStockState({}, true);
+    }, [currentYear, isPubliclyRevealed, allowAllNews, allowAllVipHint, activeStocks, predictionResults, allOrdersModalOpen]);
+
+    // 실시간 소켓 리스너 등록 (마운트 시 1회만 등록하여 리렌더링 및 깜빡임 원천 차단)
     useEffect(() => {
         let channel;
         try {
@@ -4180,7 +4199,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             channelRef.current = channel;
             channel.onmessage = (event) => {
                 if (event.data?.type === 'SCREEN_PING') {
-                    broadcastStockState();
+                    broadcastStockState({}, true);
                 }
             };
         } catch (e) {}
@@ -4192,7 +4211,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     const playerKey = String(data.nickname || data.teamId || '1').trim();
                     setPredictions(prev => {
                         const existing = prev[playerKey]?.[data.stockKey];
-                        if (existing) return prev; // 이미 예측한 경우 변경 불가
+                        if (existing) return prev;
                         return {
                             ...prev,
                             [playerKey]: {
@@ -4203,6 +4222,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     });
                 }
             };
+
             const handleExecuteOrderMsg = (data) => {
                 const payload = data.payload || data;
                 if (payload && (payload.nickname || payload.teamId)) {
@@ -4229,6 +4249,8 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                             return updated;
                         });
                     }
+
+                    let calculatedAsset = 0;
                     setPortfolios(prev => {
                         const existing = prev[playerKey] || (strNick && prev[strNick]) || {
                             seedMoney: 1000000,
@@ -4249,45 +4271,49 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                             ...(strNick ? { [strNick]: updated } : {})
                         };
                         stateRef.current.portfolios = nextP;
-                        // 실시간으로 서브 모니터 및 참가자들에게 최신 잔여 현금/포트폴리오 즉시 전파
-                        broadcastStockState({ portfolios: nextP });
-                        // 참가자 실시간 총 평가 자산 계산 후 점수 동기화
+
+                        // 참가자 실시간 총 평가 자산 계산
                         const pCash = updated.cash !== undefined ? updated.cash : (updated.seedMoney || 1000000);
                         let pStockVal = 0;
-                        if (updated.holdings && activeStocks) {
+                        const curStocks = stateRef.current.activeStocks;
+                        const curYear = stateRef.current.currentYear;
+                        if (updated.holdings && curStocks) {
                             Object.entries(updated.holdings).forEach(([k, q]) => {
-                                const pr = activeStocks[k]?.prices?.[currentYear] ?? activeStocks[k]?.prices?.[2015] ?? 0;
+                                const pr = curStocks[k]?.prices?.[curYear] ?? curStocks[k]?.prices?.[2015] ?? 0;
                                 pStockVal += (q || 0) * pr;
                             });
                         }
-                        const pTotalAsset = Math.round(pCash + pStockVal);
-                        if (socket && pin) {
-                            socket.emit('host:adjustScore', {
-                                pin,
-                                nickname: strNick || playerKey,
-                                exactScore: pTotalAsset
-                            });
-                        }
+                        calculatedAsset = Math.round(pCash + pStockVal);
 
                         return nextP;
                     });
+
+                    // 대량 주문 유입 시 소켓 버퍼 폭주를 방지하기 위해 300ms 디바운스 브로드캐스트 적용
+                    broadcastStockState({}, false);
+
+                    if (socket && pin && calculatedAsset > 0) {
+                        socket.emit('host:adjustScore', {
+                            pin,
+                            nickname: strNick || playerKey,
+                            exactScore: calculatedAsset
+                        });
+                    }
+
                     setCompletedTrades(prev => ({
                         ...prev,
                         [playerKey]: true,
                         ...(strNick ? { [strNick]: true } : {})
                     }));
 
-                    // 메인 모니터 호스트 화면에 실시간 거래 체결 토스트 알림 표시
-                    const actionName = payload.tradeType === 'BUY' ? '매수' : (payload.tradeType === 'SELL' ? '매도' : '매매');
-                    const tradeInfo = payload.stockName || payload.stockKey || '';
-                    const qtyInfo = payload.qty ? `${payload.qty}주 ` : '';
-                    setHostTradeToast({
-                        id: Date.now(),
-                        message: `🔔 [${strNick || playerKey}] ${tradeInfo} ${qtyInfo}${actionName} 완료! (잔여 예수금: ${payload.cash !== undefined ? Number(payload.cash).toLocaleString() : '0'}원)`
-                    });
-                    playSound('submit');
+                    // 효과음 과부하 방지 (최소 250ms 간격 제한)
+                    const now = Date.now();
+                    if (now - lastSoundTimeRef.current > 250) {
+                        playSound('submit');
+                        lastSoundTimeRef.current = now;
+                    }
                 }
             };
+
             const handleVipHintMsg = (msg) => {
                 const data = msg.payload || msg;
                 if (data && (data.nickname || data.teamId)) {
@@ -4298,12 +4324,13 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                             teamId: teamKey,
                             nickname: data.nickname || teamKey,
                             stockKey: data.stockKey,
-                            year: data.year || currentYear,
+                            year: data.year || stateRef.current.currentYear,
                             timestamp: new Date().toLocaleTimeString()
                         }
                     }));
                 }
             };
+
             const handleActivityMsg = (msg) => {
                 const data = msg.payload || msg;
                 if (data && (data.nickname || data.teamId)) {
@@ -4343,6 +4370,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                     });
                 }
             };
+
             const handleParticipantsUpdated = (list) => {
                 if (list && Array.isArray(list)) {
                     if (list.length === 0 && liveParticipants.length > 0) return;
@@ -4372,10 +4400,10 @@ export function StockGameHost({ socket, pin, participants = [] }) {
 
             const handleRoomMessage = (msg) => {
                 if (msg && (msg.event === 'stock_game:request_sync' || msg.type === 'stock_game:request_sync')) {
-                    broadcastStockState();
+                    broadcastStockState({}, true);
                 }
             };
-            const handleDirectRequestSync = () => broadcastStockState();
+            const handleDirectRequestSync = () => broadcastStockState({}, true);
 
             socket.on('stock_game:predict', handlePredictMsg);
             socket.on('stock_game:execute_order', handleExecuteOrderMsg);
@@ -4383,17 +4411,21 @@ export function StockGameHost({ socket, pin, participants = [] }) {
             socket.on('stock_game:participant_activity', handleActivityMsg);
             socket.on('stock_game:participant_joined', (data) => {
                 if (data && data.participants) handleParticipantsUpdated(data.participants);
-                broadcastStockState();
+                broadcastStockState({}, false);
             });
             socket.on('host:participantsUpdated', handleParticipantsUpdated);
             socket.on('stock_game:request_sync', handleDirectRequestSync);
             socket.on('room:message', handleRoomMessage);
         }
 
-        broadcastStockState();
+        broadcastStockState({}, true);
         return () => {
             if (channel) {
                 try { channel.close(); } catch (e) {}
+            }
+            if (broadcastThrottleTimerRef.current) {
+                clearTimeout(broadcastThrottleTimerRef.current);
+                broadcastThrottleTimerRef.current = null;
             }
             if (socket) {
                 socket.off('stock_game:predict');
@@ -4406,7 +4438,7 @@ export function StockGameHost({ socket, pin, participants = [] }) {
                 socket.off('room:message');
             }
         };
-    }, [currentYear, isPubliclyRevealed, allowAllNews, allowAllVipHint, activeStocks, portfolios, predictionResults, allOrdersModalOpen]);
+    }, [socket, pin]);
 
     // 🎲 새로운 10개 종목 무작위 추출 (새 게임)
     const handleReRandomizeStocks = () => {
@@ -6638,17 +6670,6 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 stockKey,
                 direction
             });
-            socket.emit('room:message', {
-                pin,
-                event: 'stock_game:participant_activity',
-                payload: {
-                    teamId: myPlayerKey,
-                    nickname: nickname || myPlayerKey,
-                    action,
-                    stockKey,
-                    direction
-                }
-            });
         }
     };
 
@@ -6839,16 +6860,6 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 stockKey,
                 direction: nextVal
             });
-            socket.emit('room:message', {
-                pin,
-                event: 'stock_game:predict',
-                payload: {
-                    teamId: myPlayerKey,
-                    nickname: nickname || myPlayerKey,
-                    stockKey,
-                    direction: nextVal
-                }
-            });
         }
     };
 
@@ -6871,16 +6882,6 @@ export function StockGameParticipant({ socket, pin, groupId, nickname, myScore }
                 nickname: nickname || myPlayerKey,
                 stockKey,
                 year: gameState.year
-            });
-            socket.emit('room:message', {
-                pin,
-                event: 'stock_game:vip_hint_selected',
-                payload: {
-                    teamId: myPlayerKey,
-                    nickname: nickname || myPlayerKey,
-                    stockKey,
-                    year: gameState.year
-                }
             });
         }
     };

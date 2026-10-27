@@ -499,13 +499,15 @@ export default function Participant({ socket }) {
         });
 
         const handleDirectStockSync = () => {
-            setIsGame(true);
-            setGameId('stock_game');
+            setIsGame(prev => (prev ? prev : true));
+            setGameId(prev => (prev === 'stock_game' ? prev : 'stock_game'));
             try {
-                sessionStorage.setItem('quizrun_game_id', 'stock_game');
-                localStorage.setItem('quizrun_game_id', 'stock_game');
+                if (sessionStorage.getItem('quizrun_game_id') !== 'stock_game') {
+                    sessionStorage.setItem('quizrun_game_id', 'stock_game');
+                    localStorage.setItem('quizrun_game_id', 'stock_game');
+                }
             } catch (e) {}
-            setGameState('game_active');
+            setGameState(prev => (prev === 'game_active' ? prev : 'game_active'));
         };
         socket.on('stock_game:state_sync', handleDirectStockSync);
 

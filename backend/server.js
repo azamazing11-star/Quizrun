@@ -2212,39 +2212,59 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- STOCK GAME DIRECT SOCKET RELAYS (Relayed cleanly to room PIN without duplicate payload flooding) ---
+  // --- STOCK GAME DIRECT SOCKET RELAYS (Routed only to host to prevent N^2 mobile socket disconnects & crashes) ---
   socket.on('stock_game:execute_order', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      io.to(cleanPin).emit('stock_game:execute_order', data);
+      const room = rooms[cleanPin] || rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:execute_order', data);
+      }
     }
   });
 
   socket.on('stock_game:predict', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      io.to(cleanPin).emit('stock_game:predict', data);
+      const room = rooms[cleanPin] || rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:predict', data);
+      }
     }
   });
 
   socket.on('stock_game:vip_hint_selected', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      io.to(cleanPin).emit('stock_game:vip_hint_selected', data);
+      const room = rooms[cleanPin] || rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:vip_hint_selected', data);
+      }
     }
   });
 
   socket.on('stock_game:participant_activity', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      io.to(cleanPin).emit('stock_game:participant_activity', data);
+      const room = rooms[cleanPin] || rooms[data.pin];
+      if (room && room.hostId) {
+        io.to(room.hostId).emit('stock_game:participant_activity', data);
+      }
     }
   });
 
   socket.on('stock_game:request_sync', (data) => {
     if (data && data.pin) {
       const cleanPin = String(data.pin).trim();
-      io.to(cleanPin).emit('stock_game:request_sync', data);
+      const room = rooms[cleanPin] || rooms[data.pin];
+      if (room) {
+        if (room.stockGameData) {
+          socket.emit('stock_game:state_sync', room.stockGameData);
+        }
+        if (room.hostId) {
+          io.to(room.hostId).emit('stock_game:request_sync', data);
+        }
+      }
     }
   });
 
