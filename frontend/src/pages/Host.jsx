@@ -1,7 +1,7 @@
 import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
 import NunchiGame from '../components/NunchiGame';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Users, Play, ChevronRight, Trophy, Home, ArrowLeft, Zap, ClipboardCheck, Type, Edit3, Tv, Eye, X, Music, Volume2, VolumeX } from 'lucide-react';
+import { Users, Play, ChevronRight, ChevronLeft, Trophy, Home, ArrowLeft, Zap, ClipboardCheck, Type, Edit3, Tv, Eye, X, Music, Volume2, VolumeX } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useGlobalSession } from '../context/GlobalSessionContext';
 import QRCode from 'react-qr-code';

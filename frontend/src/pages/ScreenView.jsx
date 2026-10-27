@@ -1,7 +1,7 @@
 import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Maximize, Minimize, Tv, Users, Zap, Trophy, CheckCircle, Send, XCircle } from 'lucide-react';
+import { Maximize, Minimize, Tv, Users, Zap, Trophy, CheckCircle, Send, XCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import Confetti from 'react-confetti';
 import MediaViewer from '../components/MediaViewer';
@@ -516,7 +516,7 @@ export default function ScreenView({ socket }) {
                 channel.close();
             }
         };
-    }, [screenData.currentQuestionIndex, isOfflineMode]);
+    }, [isOfflineMode]);
 
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {

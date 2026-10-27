@@ -86,20 +86,25 @@ function AppLayout({ socket, isMobileMode, setIsMobileMode }) {
   const navigate = useNavigate();
 
   // Detect if this window is the Sub-Monitor screen
-  const isSubScreen = Boolean(
+  // A window is ONLY a subscreen if its current URL or window.name explicitly says so.
+  // We do NOT let a stale sessionStorage flag permanently hijack a main window.
+  const isExplicitSubScreen = Boolean(
     window.location.pathname.startsWith('/screen') ||
     window.location.search.includes('subscreen=true') ||
     window.location.search.includes('mirror=true') ||
-    window.name === 'QuizrunSubScreenWindow' ||
-    window.name === 'QuizrunScreenWindow' ||
-    sessionStorage.getItem('is_subscreen') === 'true'
+    (window.name && window.name.includes('QuizrunScreenWindow')) ||
+    (window.name && window.name.includes('QuizrunSubScreenWindow'))
   );
 
+  const isSubScreen = isExplicitSubScreen;
+
   useEffect(() => {
-    if (isSubScreen) {
+    if (isExplicitSubScreen) {
       sessionStorage.setItem('is_subscreen', 'true');
+    } else {
+      sessionStorage.removeItem('is_subscreen');
     }
-  }, [isSubScreen]);
+  }, [isExplicitSubScreen]);
 
   const locationRef = useRef(location);
   useEffect(() => {
@@ -201,14 +206,16 @@ function AppLayout({ socket, isMobileMode, setIsMobileMode }) {
         minHeight: '100vh',
         height: (isScreen || isSubScreen) ? '100vh' : 'auto',
         alignItems: (isScreen || isSubScreen) ? 'stretch' : 'flex-start',
-        overflow: (isScreen || isSubScreen) ? 'hidden' : 'visible'
+        overflowY: 'auto',
+        overflowX: 'hidden'
       }}>
         <div style={{
           flex: 1,
           minWidth: 0,
           width: '100%',
           height: (isScreen || isSubScreen) ? '100vh' : 'auto',
-          overflow: (isScreen || isSubScreen) ? 'hidden' : 'visible'
+          overflowY: 'auto',
+          overflowX: 'hidden'
         }}>
           <Routes>
             <Route path="/" element={<Home socket={socket} />} />

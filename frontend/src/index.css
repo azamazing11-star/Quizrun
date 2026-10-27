@@ -645,3 +645,21 @@ h4 {
     opacity: 1;
   }
 }
+
+/* Custom visible styled scrollbar for Quizrun screens */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.8);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+  border: 2px solid rgba(241, 245, 249, 0.8);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

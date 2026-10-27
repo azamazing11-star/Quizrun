@@ -1215,7 +1215,7 @@ export default function TopicDetail({ socket }) {
             {!(Boolean(window.location.search.includes('subscreen=true') || window.name === 'QuizrunSubScreenWindow' || sessionStorage.getItem('is_subscreen') === 'true')) && (
                 <button
                     onClick={() => {
-                        window.open('/screen?subscreen=true', 'QuizrunScreenWindow', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
+                        window.open('/screen?subscreen=true&t=' + Date.now(), 'QuizrunScreenWindow', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
                     }}
                     style={{
                         position: 'fixed',

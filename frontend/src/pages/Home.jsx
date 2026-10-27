@@ -1094,7 +1094,7 @@ export default function Home({ socket }) {
             {!isSubScreen && (
                 <button
                     onClick={() => {
-                        window.open('/screen?subscreen=true', 'QuizrunScreenWindow', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
+                        window.open('/screen?subscreen=true&t=' + Date.now(), 'QuizrunScreenWindow', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
                     }}
                     style={{
                         position: 'fixed',
