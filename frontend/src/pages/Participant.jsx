@@ -305,7 +305,9 @@ export default function Participant({ socket }) {
                         if (res.points !== undefined) setCurrentPoints(res.points);
                         if (res.mediaUrl) setCurrentMediaUrl(res.mediaUrl);
                         if (res.mediaUrl2) setCurrentMediaUrl2(res.mediaUrl2);
-                        if (res.diffSpots) setDiffSpots(res.diffSpots);
+                        if (res.diffSpots) setCurrentDiffSpots(res.diffSpots);
+                        if (res.timeLimit) setCurrentTimeLimit(res.timeLimit);
+                        if (res.isSpotDiff !== undefined) setIsSpotDiff(res.isSpotDiff);
                         if (res.mediaType) setCurrentMediaType(res.mediaType);
                         if (res.mediaName) setCurrentMediaName(res.mediaName);
                         if (res.mediaDisplayMode) setCurrentMediaDisplayMode(res.mediaDisplayMode);
@@ -365,28 +367,54 @@ export default function Participant({ socket }) {
             if (data.points !== undefined) setCurrentPoints(data.points);
 
             if (data.state === 'question') {
+                const hasNewQuestionData = data.question !== undefined || data.options !== undefined || data.mediaUrl !== undefined || data.mediaUrl2 !== undefined;
                 if (data.question !== undefined) {
                     setCurrentQuestion(typeof data.question === 'object' ? (data.question.text || '') : (data.question || ''));
                 }
-                setCurrentOptions(data.options || []);
-                setCurrentMediaUrl(data.mediaUrl || data.question?.mediaUrl || '');
-                setCurrentMediaUrl2(data.mediaUrl2 || data.question?.mediaUrl2 || '');
-                setCurrentDiffSpots(data.diffSpots || data.question?.diffSpots || []);
-                setCurrentTimeLimit(data.timeLimit || data.question?.timeLimit || 60);
-                setIsSpotDiff(Boolean(data.isSpotDiff || data.question?.isSpotDiff || data.mediaUrl2 || data.question?.mediaUrl2 || (typeof data.question === 'string' && (data.question.includes('다른 곳') || data.question.includes('틀린 곳')))));
-                setCurrentMediaType(data.mediaType || data.question?.mediaType || '');
-                setCurrentMediaName(data.mediaName || data.question?.mediaName || '');
-                setCurrentMediaDisplayMode(data.mediaDisplayMode || data.question?.mediaDisplayMode || 'audio');
-                setCurrentAutoplay(data.autoplay !== undefined ? data.autoplay : (data.question?.autoplay !== undefined ? data.question.autoplay : true));
-                setShowChosung(data.showChosung !== undefined ? data.showChosung : (data.question?.showChosung !== undefined ? data.question.showChosung : true));
-                setMyStatus(null);
-                setLastCorrectIndex(null);
-                setLastCorrectAnswer(data.correctAnswer || '');
-                setLastExplanation(data.explanation || '');
-                setMyLastAnswer(null);
-                setBuzzedInfo(null);
-                setBuzzerJudgeResult(null);
-                setShowConfetti(false);
+                if (data.options !== undefined) {
+                    setCurrentOptions(data.options || []);
+                }
+                if (data.mediaUrl !== undefined || data.question?.mediaUrl !== undefined) {
+                    setCurrentMediaUrl(data.mediaUrl || data.question?.mediaUrl || '');
+                }
+                if (data.mediaUrl2 !== undefined || data.question?.mediaUrl2 !== undefined) {
+                    setCurrentMediaUrl2(data.mediaUrl2 || data.question?.mediaUrl2 || '');
+                }
+                if (data.diffSpots !== undefined || data.question?.diffSpots !== undefined) {
+                    setCurrentDiffSpots(data.diffSpots || data.question?.diffSpots || []);
+                }
+                if (data.timeLimit !== undefined || data.question?.timeLimit !== undefined) {
+                    setCurrentTimeLimit(data.timeLimit || data.question?.timeLimit || 60);
+                }
+                if (data.isSpotDiff !== undefined || data.question?.isSpotDiff !== undefined || data.mediaUrl2 !== undefined || data.question?.mediaUrl2 !== undefined) {
+                    setIsSpotDiff(Boolean(data.isSpotDiff || data.question?.isSpotDiff || data.mediaUrl2 || data.question?.mediaUrl2 || (typeof data.question === 'string' && (data.question.includes('다른 곳') || data.question.includes('틀린 곳')))));
+                }
+                if (data.mediaType !== undefined || data.question?.mediaType !== undefined) {
+                    setCurrentMediaType(data.mediaType || data.question?.mediaType || '');
+                }
+                if (data.mediaName !== undefined || data.question?.mediaName !== undefined) {
+                    setCurrentMediaName(data.mediaName || data.question?.mediaName || '');
+                }
+                if (data.mediaDisplayMode !== undefined || data.question?.mediaDisplayMode !== undefined) {
+                    setCurrentMediaDisplayMode(data.mediaDisplayMode || data.question?.mediaDisplayMode || 'audio');
+                }
+                if (data.autoplay !== undefined || (data.question && data.question.autoplay !== undefined)) {
+                    setCurrentAutoplay(data.autoplay !== undefined ? data.autoplay : data.question.autoplay);
+                }
+                if (data.showChosung !== undefined || (data.question && data.question.showChosung !== undefined)) {
+                    setShowChosung(data.showChosung !== undefined ? data.showChosung : data.question.showChosung);
+                }
+                // Only reset question round state if actual question content was provided
+                if (hasNewQuestionData) {
+                    setMyStatus(null);
+                    setLastCorrectIndex(null);
+                    setLastCorrectAnswer(data.correctAnswer || '');
+                    setLastExplanation(data.explanation || '');
+                    setMyLastAnswer(null);
+                    setBuzzedInfo(null);
+                    setBuzzerJudgeResult(null);
+                    setShowConfetti(false);
+                }
             }
 
             if ((data.state === 'leaderboard' || data.state === 'final_leaderboard') && data.leaderboard) {
@@ -720,6 +748,10 @@ export default function Participant({ socket }) {
                     if (res.totalQuestions !== undefined) setTotalQuestions(res.totalQuestions);
                     if (res.points !== undefined) setCurrentPoints(res.points);
                     if (res.mediaUrl) setCurrentMediaUrl(res.mediaUrl);
+                    if (res.mediaUrl2) setCurrentMediaUrl2(res.mediaUrl2);
+                    if (res.diffSpots) setCurrentDiffSpots(res.diffSpots);
+                    if (res.timeLimit) setCurrentTimeLimit(res.timeLimit);
+                    if (res.isSpotDiff !== undefined) setIsSpotDiff(res.isSpotDiff);
                     if (res.mediaType) setCurrentMediaType(res.mediaType);
                     if (res.mediaName) setCurrentMediaName(res.mediaName);
                     if (res.mediaDisplayMode) setCurrentMediaDisplayMode(res.mediaDisplayMode);

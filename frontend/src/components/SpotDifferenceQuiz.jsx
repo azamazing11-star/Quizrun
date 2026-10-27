@@ -106,20 +106,46 @@ export default function SpotDifferenceQuiz({
     const [confettiActive, setConfettiActive] = useState(false);
     const imgRef = useRef(null);
 
+    // Keep persistent refs to last valid media & spots so partial room:stateUpdate / score adjustments never wipe images
+    const lastValidMediaUrl = useRef(mediaUrl || '');
+    const lastValidMediaUrl2 = useRef(mediaUrl2 || '');
+    const lastValidSpots = useRef(diffSpots || []);
+
+    if (mediaUrl) lastValidMediaUrl.current = mediaUrl;
+    if (mediaUrl2) lastValidMediaUrl2.current = mediaUrl2;
+    if (diffSpots && diffSpots.length > 0) lastValidSpots.current = diffSpots;
+
+    const effectiveMediaUrl = mediaUrl || lastValidMediaUrl.current;
+    const effectiveMediaUrl2 = mediaUrl2 || lastValidMediaUrl2.current || effectiveMediaUrl;
+    const rawSpots = (diffSpots && diffSpots.length > 0) ? diffSpots : (lastValidSpots.current.length > 0 ? lastValidSpots.current : null);
+
     // Fallback if no spots defined: generate 3 default center/corner spots
-    const effectiveSpots = (diffSpots && diffSpots.length > 0) ? diffSpots : [
+    const effectiveSpots = (rawSpots && rawSpots.length > 0) ? rawSpots : [
         { id: 1, x: 28, y: 35, radius: 10 },
         { id: 2, x: 72, y: 45, radius: 10 },
         { id: 3, x: 50, y: 70, radius: 10 }
     ];
 
-    // Countdown Timer
+    // Countdown Timer - Only re-initialize when an actual new question/image arrives
+    const roundMediaKey = `${mediaUrl || ''}_${mediaUrl2 || ''}`;
+    const prevMediaKeyRef = useRef(roundMediaKey);
+
     useEffect(() => {
-        setTimeLeft(timeLimit || 60);
-        setMyFoundSpotIds(new Set());
-        setAllFoundSpots([]);
-        setFirstFinisher(null);
-        setConfettiActive(false);
+        // If mediaUrl is temporarily empty/undefined due to a partial state update, do NOT reset game round
+        if (!mediaUrl && !mediaUrl2 && (lastValidMediaUrl.current || lastValidMediaUrl2.current)) {
+            return;
+        }
+
+        const isNewRound = prevMediaKeyRef.current !== roundMediaKey;
+        prevMediaKeyRef.current = roundMediaKey;
+
+        if (isNewRound) {
+            setTimeLeft(timeLimit || 60);
+            setMyFoundSpotIds(new Set());
+            setAllFoundSpots([]);
+            setFirstFinisher(null);
+            setConfettiActive(false);
+        }
 
         const timer = setInterval(() => {
             setTimeLeft(prev => {
@@ -681,7 +707,7 @@ export default function SpotDifferenceQuiz({
                         }}
                     >
                         <img
-                            src={mediaUrl2 || mediaUrl || '/logo.png'}
+                            src={effectiveMediaUrl2 || '/logo.png'}
                             alt="Difference Area"
                             style={{
                                 display: 'block',
@@ -798,7 +824,7 @@ export default function SpotDifferenceQuiz({
                         }}
                     >
                         <img
-                            src={mediaUrl || '/logo.png'}
+                            src={effectiveMediaUrl || '/logo.png'}
                             alt="Original Reference"
                             style={{
                                 display: 'block',

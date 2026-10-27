@@ -2294,14 +2294,44 @@ io.on('connection', (socket) => {
         if (pNorm) room.preservedParticipants[pNorm] = pSnap;
         if (p.clientId) room.preservedParticipants[p.clientId] = pSnap;
         io.to(cleanPin).emit('host:participantsUpdated', room.participants);
-        const resolvedState = room.isGame ? (room.state || 'game_active') : (room.state === 'lobby' ? 'waiting' : room.state);
-        io.to(cleanPin).emit('room:stateUpdate', {
-          state: resolvedState,
-          isGame: room.isGame || false,
-          gameId: room.gameId || null,
-          participants: room.participants,
-          leaderboard: [...room.participants].sort((a, b) => b.score - a.score)
-        });
+        if (room.state === 'question' && room.quiz?.questions?.[room.currentQuestionIndex]) {
+          const currentQ = room.quiz.questions[room.currentQuestionIndex];
+          io.to(cleanPin).emit('room:stateUpdate', {
+            state: 'question',
+            question: currentQ.text || currentQ.question || '',
+            mediaUrl: currentQ.mediaUrl || '',
+            mediaUrl2: currentQ.mediaUrl2 || '',
+            diffSpots: currentQ.diffSpots || [],
+            timeLimit: currentQ.timeLimit || 60,
+            isSpotDiff: Boolean(currentQ.isSpotDiff || currentQ.mediaUrl2),
+            mediaType: currentQ.mediaType || '',
+            mediaName: currentQ.mediaName || '',
+            mediaDisplayMode: currentQ.mediaDisplayMode || 'audio',
+            autoplay: currentQ.autoplay ?? true,
+            showChosung: Boolean(currentQ.isSpotDiff || currentQ.mediaUrl2) ? false : (currentQ.showChosung ?? true),
+            options: currentQ.options || [],
+            correctIndex: currentQ.correctIndex,
+            correctAnswer: getQuestionAnswer(currentQ),
+            explanation: currentQ.explanation || '',
+            currentQuestionIndex: room.currentQuestionIndex,
+            totalQuestions: room.quiz.questions.length,
+            points: currentQ.points || 10,
+            totalPoints: room.totalPoints,
+            isBuzzerMode: room.isBuzzerMode,
+            quizType: getQuestionType(currentQ),
+            participants: room.participants,
+            leaderboard: [...room.participants].sort((a, b) => (b.score || 0) - (a.score || 0))
+          });
+        } else {
+          const resolvedState = room.isGame ? (room.state || 'game_active') : (room.state === 'lobby' ? 'waiting' : room.state);
+          io.to(cleanPin).emit('room:stateUpdate', {
+            state: resolvedState,
+            isGame: room.isGame || false,
+            gameId: room.gameId || null,
+            participants: room.participants,
+            leaderboard: [...room.participants].sort((a, b) => (b.score || 0) - (a.score || 0))
+          });
+        }
       }
     }
   });
@@ -2312,14 +2342,44 @@ io.on('connection', (socket) => {
       room.participants.forEach(p => { p.score = 0; });
       room.groupScores = {};
       io.to(pin).emit('host:participantsUpdated', room.participants);
-      const resolvedState = room.isGame ? (room.state || 'game_active') : (room.state === 'lobby' ? 'waiting' : room.state);
-      io.to(pin).emit('room:stateUpdate', {
-        state: resolvedState,
-        isGame: room.isGame || false,
-        gameId: room.gameId || null,
-        participants: room.participants,
-        leaderboard: [...room.participants].sort((a, b) => b.score - a.score)
-      });
+      if (room.state === 'question' && room.quiz?.questions?.[room.currentQuestionIndex]) {
+        const currentQ = room.quiz.questions[room.currentQuestionIndex];
+        io.to(pin).emit('room:stateUpdate', {
+          state: 'question',
+          question: currentQ.text || currentQ.question || '',
+          mediaUrl: currentQ.mediaUrl || '',
+          mediaUrl2: currentQ.mediaUrl2 || '',
+          diffSpots: currentQ.diffSpots || [],
+          timeLimit: currentQ.timeLimit || 60,
+          isSpotDiff: Boolean(currentQ.isSpotDiff || currentQ.mediaUrl2),
+          mediaType: currentQ.mediaType || '',
+          mediaName: currentQ.mediaName || '',
+          mediaDisplayMode: currentQ.mediaDisplayMode || 'audio',
+          autoplay: currentQ.autoplay ?? true,
+          showChosung: Boolean(currentQ.isSpotDiff || currentQ.mediaUrl2) ? false : (currentQ.showChosung ?? true),
+          options: currentQ.options || [],
+          correctIndex: currentQ.correctIndex,
+          correctAnswer: getQuestionAnswer(currentQ),
+          explanation: currentQ.explanation || '',
+          currentQuestionIndex: room.currentQuestionIndex,
+          totalQuestions: room.quiz.questions.length,
+          points: currentQ.points || 10,
+          totalPoints: room.totalPoints,
+          isBuzzerMode: room.isBuzzerMode,
+          quizType: getQuestionType(currentQ),
+          participants: room.participants,
+          leaderboard: [...room.participants].sort((a, b) => (b.score || 0) - (a.score || 0))
+        });
+      } else {
+        const resolvedState = room.isGame ? (room.state || 'game_active') : (room.state === 'lobby' ? 'waiting' : room.state);
+        io.to(pin).emit('room:stateUpdate', {
+          state: resolvedState,
+          isGame: room.isGame || false,
+          gameId: room.gameId || null,
+          participants: room.participants,
+          leaderboard: [...room.participants].sort((a, b) => (b.score || 0) - (a.score || 0))
+        });
+      }
     }
   });
 
