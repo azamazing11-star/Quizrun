@@ -1528,9 +1528,18 @@ io.on('connection', (socket) => {
     }
   });
 
+
+  const isHostOrScreenSocket = (room, socketId) => {
+    if (!room) return false;
+    if (room.hostId === socketId) return true;
+    const isParticipant = room.participants && room.participants.some(p => p.id === socketId);
+    return !isParticipant;
+  };
+
   socket.on('host:updateQuestionPoints', ({ pin, points }) => {
     const room = rooms[pin];
-    if (room && room.hostId === socket.id) {
+    if (room && isHostOrScreenSocket(room, socket.id)) {
+        room.hostId = socket.id;
         const currentQ = room.quiz.questions[room.currentQuestionIndex];
         const oldPoints = currentQ.points || 10;
         currentQ.points = points;
@@ -1571,7 +1580,8 @@ io.on('connection', (socket) => {
 
   socket.on('host:startGame', (pin) => {
     const room = rooms[pin];
-    if (room && room.hostId === socket.id) {
+    if (room && isHostOrScreenSocket(room, socket.id)) {
+      room.hostId = socket.id;
       room.state = 'question';
       room.currentQuestionIndex = 0;
       room.buzzedGroupId = null;
@@ -1613,7 +1623,8 @@ io.on('connection', (socket) => {
 
   socket.on('host:nextQuestion', (pin) => {
     const room = rooms[pin];
-    if (room && room.hostId === socket.id) {
+    if (room && isHostOrScreenSocket(room, socket.id)) {
+      room.hostId = socket.id;
       room.currentQuestionIndex++;
       room.buzzedGroupId = null;
       room.buzzedParticipantId = null;
@@ -1664,7 +1675,8 @@ io.on('connection', (socket) => {
 
   socket.on('host:prevQuestion', (pin) => {
     const room = rooms[pin];
-    if (room && room.hostId === socket.id) {
+    if (room && isHostOrScreenSocket(room, socket.id)) {
+      room.hostId = socket.id;
       if (room.currentQuestionIndex <= 0) return;
       room.currentQuestionIndex--;
       room.buzzedGroupId = null;
@@ -1709,7 +1721,8 @@ io.on('connection', (socket) => {
 
   socket.on('host:showResults', (pin) => {
     const room = rooms[pin];
-    if (room && room.hostId === socket.id) {
+    if (room && isHostOrScreenSocket(room, socket.id)) {
+      room.hostId = socket.id;
       room.state = 'leaderboard';
       const leaderboard = [...room.participants].sort((a, b) => b.score - a.score);
       const currentQ = room.quiz.questions[room.currentQuestionIndex];
@@ -1732,7 +1745,8 @@ io.on('connection', (socket) => {
   // Buzzer Mode: Host judges if the answer is correct or incorrect
   socket.on('host:buzzerJudge', ({ pin, isCorrect }, callback) => {
     const room = rooms[pin];
-    if (!room || room.hostId !== socket.id) return;
+    if (!room || !isHostOrScreenSocket(room, socket.id)) return;
+    room.hostId = socket.id;
 
     const buzzedGroupId = room.buzzedGroupId;
     const buzzedParticipantId = room.buzzedParticipantId;
@@ -2750,7 +2764,7 @@ io.on('connection', (socket) => {
               delete rooms[pin];
               console.log(`Room ${pin} destroyed after host grace period`);
             }
-          }, 300000),
+          }, 3600000), // 60 min grace period
           writable: true,
           configurable: true,
           enumerable: false

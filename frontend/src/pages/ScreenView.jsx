@@ -569,6 +569,45 @@ export default function ScreenView({ socket }) {
             }
         };
 
+        if (activePin) {
+            socket.emit('screen:joinRoom', { pin: String(activePin).trim() });
+            socket.emit('room:join', { pin: String(activePin).trim() });
+        }
+
+        const handleStateUpdate = (data) => {
+            if (!data) return;
+            if (data.state === 'question') {
+                setViewMode('quizrun');
+            } else if (data.state === 'waiting' || data.state === 'lobby') {
+                if (!data.isGame && data.gameId !== 'stock_game') {
+                    setViewMode('home');
+                }
+            } else if (data.state === 'leaderboard' || data.state === 'final_leaderboard') {
+                setViewMode('quizrun');
+            }
+            if (data.gameId === 'stock_game' || data.isStockGame) {
+                setViewMode('stock_game');
+            }
+            setScreenData(prev => ({
+                ...prev,
+                ...data,
+                gameState: data.state || prev.gameState,
+                currentQuestion: data.question !== undefined ? data.question : prev.currentQuestion,
+                currentMediaUrl: data.mediaUrl !== undefined ? data.mediaUrl : prev.currentMediaUrl,
+                mediaUrl2: data.mediaUrl2 !== undefined ? data.mediaUrl2 : prev.mediaUrl2,
+                diffSpots: data.diffSpots !== undefined ? data.diffSpots : prev.diffSpots,
+                isSpotDiff: Boolean(data.isSpotDiff || data.mediaUrl2 || (typeof data.question === 'string' && (data.question.includes('다른 곳') || data.question.includes('틀린 곳')))),
+                quizType: data.quizType || prev.quizType,
+                correctIndex: data.correctIndex !== undefined ? data.correctIndex : prev.correctIndex,
+                correctAnswer: data.correctAnswer !== undefined ? data.correctAnswer : prev.correctAnswer,
+                currentExplanation: data.explanation !== undefined ? data.explanation : prev.currentExplanation,
+                currentQuestionIndex: data.currentQuestionIndex !== undefined ? data.currentQuestionIndex : prev.currentQuestionIndex,
+                totalQuestions: data.totalQuestions !== undefined ? data.totalQuestions : prev.totalQuestions,
+                points: data.points !== undefined ? data.points : prev.points
+            }));
+        };
+
+        socket.on('room:stateUpdate', handleStateUpdate);
         socket.on('stock_game:state_sync', handleStockSync);
         socket.on('host:participantsUpdated', handleParticipantsUpdated);
         socket.on('stock_game:participant_joined', handleParticipantJoined);
@@ -636,6 +675,7 @@ export default function ScreenView({ socket }) {
         socket.on('network:updated', handleNetworkUpdate);
 
         return () => {
+            socket.off('room:stateUpdate', handleStateUpdate);
             socket.off('stock_game:state_sync', handleStockSync);
             socket.off('host:participantsUpdated', handleParticipantsUpdated);
             socket.off('stock_game:participant_joined', handleParticipantJoined);
@@ -695,26 +735,28 @@ export default function ScreenView({ socket }) {
     // --- CASE 2: STOCK GAME SUB-MONITOR (Image 1 replica) ---
     if (viewMode === 'stock_game') {
         return (
-            <StockGameScreenView
-                year={stockGameData.year}
-                stocks={stockGameData.stocks}
-                isPubliclyRevealed={stockGameData.isPubliclyRevealed}
-                toggleFullscreen={toggleFullscreen}
-                isFullscreen={isFullscreen}
-                allowAllNews={stockGameData.allowAllNews}
-                allowAllVipHint={stockGameData.allowAllVipHint}
-                predictions={stockGameData.predictions}
-                predictionResults={stockGameData.predictionResults}
-                portfolios={stockGameData.portfolios}
-                teamList={stockGameData.teamList}
-                allOrdersModalOpen={stockGameData.allOrdersModalOpen}
-                tradingProgressModalOpen={stockGameData.tradingProgressModalOpen}
-                completedTrades={stockGameData.completedTrades}
-                pin={stockGameData.pin || activePin}
-                serverIp={activeServerIp}
-                publicUrl={activePublicUrl}
-                socket={socket}
-            />
+            <div style={{ width: '100%', minHeight: '100vh', position: 'relative' }}>
+                <StockGameScreenView
+                    year={stockGameData.year || 2015}
+                    stocks={stockGameData.stocks || STOCK_DATA_2026}
+                    isPubliclyRevealed={stockGameData.isPubliclyRevealed}
+                    toggleFullscreen={toggleFullscreen}
+                    isFullscreen={isFullscreen}
+                    allowAllNews={stockGameData.allowAllNews}
+                    allowAllVipHint={stockGameData.allowAllVipHint}
+                    predictions={stockGameData.predictions || {}}
+                    predictionResults={stockGameData.predictionResults}
+                    portfolios={stockGameData.portfolios || {}}
+                    teamList={stockGameData.teamList}
+                    allOrdersModalOpen={stockGameData.allOrdersModalOpen}
+                    tradingProgressModalOpen={stockGameData.tradingProgressModalOpen}
+                    completedTrades={stockGameData.completedTrades || {}}
+                    pin={stockGameData.pin || activePin}
+                    serverIp={activeServerIp}
+                    publicUrl={activePublicUrl}
+                    socket={socket}
+                />
+            </div>
         );
     }
 

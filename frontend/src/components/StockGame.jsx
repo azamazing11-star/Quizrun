@@ -2186,8 +2186,8 @@ export function StockGameScreenView({
     onEndCurrentGame = null,
     onOpenFinalLeaderboard = null
 }) {
-    const stockList = useMemo(() => Object.values(stocks), [stocks]);
-    const sortedStocks = useMemo(() => [...stockList].sort((a, b) => a.key.localeCompare(b.key)), [stockList]);
+    const stockList = useMemo(() => Object.values(stocks || STOCK_DATA_2026 || {}), [stocks]);
+    const sortedStocks = useMemo(() => [...stockList].filter(Boolean).sort((a, b) => (a?.key || '').localeCompare(b?.key || '')), [stockList]);
     const [selectedNews, setSelectedNews] = useState(null);
     const [selectedStockForDetail, setSelectedStockForDetail] = useState(null);
     const [selectedSector, setSelectedSector] = useState(null);
@@ -2263,7 +2263,7 @@ export function StockGameScreenView({
     const [rewardModalOpen, setRewardModalOpen] = useState(false);
     const [chosenHintStock, setChosenHintStock] = useState(() => {
         try {
-            return sessionStorage.getItem(`quizrun_stock_vip_${pin || effectivePin}_${gameState.year}`) || null;
+            return sessionStorage.getItem(`quizrun_stock_vip_${pin || ''}_${year || ''}`) || null;
         } catch (e) {
             return null;
         }
@@ -3150,6 +3150,7 @@ export function StockGameScreenView({
                 onSelectStock={(key) => {
                     if (!chosenHintStock) {
                         setChosenHintStock(key);
+                        try { sessionStorage.setItem(`quizrun_stock_vip_${pin || ''}_${year || ''}`, key); } catch(e){}
                         setRewardModalOpen(false);
                         const sItem = stockList.find(s => s.key === key);
                         const sNews = yearNewsList.find(n => n.stockKey === key);
