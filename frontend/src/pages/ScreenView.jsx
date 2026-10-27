@@ -1,5 +1,5 @@
 import SpotDifferenceQuiz from '../components/SpotDifferenceQuiz';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Maximize, Minimize, Tv, Users, Zap, Trophy, CheckCircle, Send, XCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 import QRCode from 'react-qr-code';
