@@ -27,16 +27,16 @@ export const DEFAULT_CARD_THEMES = [
         icon: '👑',
         description: '역사를 빛낸 위인들과 인물을 맞춰보세요!',
         items: [
-            { id: 'sejong', name: '세종대왕', emoji: '📜', desc: '훈민정음 창제', bg: '#fef3c7', color: '#b45309' },
-            { id: 'yisunsin', name: '이순신', emoji: '⚔️', desc: '거북선과 한산대첩', bg: '#dbeafe', color: '#1d4ed8' },
-            { id: 'einstein', name: '아인슈타인', emoji: '⚛️', desc: '상대성 이론', bg: '#ede9fe', color: '#6d28d9' },
-            { id: 'edison', name: '에디슨', emoji: '💡', desc: '전구와 축음기 발명', bg: '#fef9c3', color: '#a16207' },
-            { id: 'saimdang', name: '신사임당', emoji: '🎨', desc: '예술가이자 어머니', bg: '#fce7f3', color: '#be185d' },
-            { id: 'lincoln', name: '링컨', emoji: '🎩', desc: '노예 해방 선언', bg: '#f1f5f9', color: '#334155' },
-            { id: 'newton', name: '뉴턴', emoji: '🍎', desc: '만유인력의 법칙', bg: '#dcfce7', color: '#15803d' },
-            { id: 'davinci', name: '다빈치', emoji: '🖌️', desc: '모나리자·르네상스', bg: '#ffedd5', color: '#c2410c' },
-            { id: 'ahn', name: '안중근', emoji: '🖐️', desc: '하얼빈 의거·단지동맹', bg: '#fee2e2', color: '#b91c1c' },
-            { id: 'ryu', name: '유관순', emoji: '🇰🇷', desc: '3·1 만세 운동', bg: '#e0f2fe', color: '#0369a1' }
+            { id: 'sejong', name: '세종대왕', image: '/figures/세종대왕.jpg', emoji: '📜', desc: '훈민정음 창제', bg: '#fef3c7', color: '#b45309' },
+            { id: 'yisunsin', name: '이순신', image: '/figures/이순신.jpg', emoji: '⚔️', desc: '거북선과 한산대첩', bg: '#dbeafe', color: '#1d4ed8' },
+            { id: 'einstein', name: '아인슈타인', image: '/figures/아인슈타인.jpg', emoji: '⚛️', desc: '상대성 이론', bg: '#ede9fe', color: '#6d28d9' },
+            { id: 'edison', name: '에디슨', image: '/figures/에디슨.jpg', emoji: '💡', desc: '전구와 축음기 발명', bg: '#fef9c3', color: '#a16207' },
+            { id: 'saimdang', name: '신사임당', image: '/figures/신사임당.jpg', emoji: '🎨', desc: '예술가이자 어머니', bg: '#fce7f3', color: '#be185d' },
+            { id: 'lincoln', name: '링컨', image: '/figures/링컨.jpg', emoji: '🎩', desc: '노예 해방 선언', bg: '#f1f5f9', color: '#334155' },
+            { id: 'newton', name: '뉴턴', image: '/figures/뉴턴.jpg', emoji: '🍎', desc: '만유인력의 법칙', bg: '#dcfce7', color: '#15803d' },
+            { id: 'davinci', name: '다빈치', image: '/figures/다빈치.jpg', emoji: '🖌️', desc: '모나리자·르네상스', bg: '#ffedd5', color: '#c2410c' },
+            { id: 'ahn', name: '안중근', image: '/figures/안중근.jpg', emoji: '🖐️', desc: '하얼빈 의거·단지동맹', bg: '#fee2e2', color: '#b91c1c' },
+            { id: 'ryu', name: '유관순', image: '/figures/유관순.jpg', emoji: '🇰🇷', desc: '3·1 만세 운동', bg: '#e0f2fe', color: '#0369a1' }
         ]
     },
     {
@@ -68,7 +68,15 @@ export function getSavedCardThemes() {
         if (custom) {
             const parsed = JSON.parse(custom);
             if (Array.isArray(parsed) && parsed.length > 0) {
-                return parsed;
+                // Ensure default themes (flag, figures, safety) always carry latest images
+                return DEFAULT_CARD_THEMES.map(def => {
+                    const found = parsed.find(t => t.id === def.id);
+                    if (!found) return def;
+                    return {
+                        ...found,
+                        items: def.items
+                    };
+                }).concat(parsed.filter(t => !['flag', 'figures', 'safety'].includes(t.id)));
             }
         }
     } catch (e) {
@@ -77,7 +85,6 @@ export function getSavedCardThemes() {
     return DEFAULT_CARD_THEMES;
 }
 
-// Save themes to localStorage
 export function saveCardThemes(themes) {
     try {
         localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(themes));

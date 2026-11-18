@@ -4,11 +4,10 @@ import Confetti from 'react-confetti';
 import { playSound } from '../utils/audio';
 import { DEFAULT_CARD_THEMES } from '../data/cardThemes';
 
-// Helper to get card back coordinate label (A1, A2, B1, B2...)
+// Helper to get card back number label (1, 2, 3, ... 20)
+// 1st row: 1~5, 2nd row: 6~10, 3rd row: 11~15, 4th row: 16~20
 export function getCardCoordinate(idx, cols = 5) {
-    const rowLetter = String.fromCharCode(65 + Math.floor(idx / cols));
-    const colNum = (idx % cols) + 1;
-    return `${rowLetter}${colNum}`;
+    return `${idx + 1}`;
 }
 
 // 1. Mini Card Match Board Spectator (Guaranteed 5x4 Grid, Auto-fit, Zero Scrolling)
