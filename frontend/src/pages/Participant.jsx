@@ -1629,7 +1629,7 @@ export default function Participant({ socket }) {
                             {gameId === 'janggi' && '장기'}
                             {gameId === 'chess' && '체스'}
                             {(gameId === 'card_game' || gameId === 'card_poker') && '카드 게임'}
-                            {gameId === 'gostop' && '고스톱'}
+                            {(gameId === 'reaction_speed' || gameId === 'gostop') && '반응속도게임'}
                             {gameId === 'othello' && '오셀로'}
                             {gameId === 'minesweeper' && '지뢰찾기'}
                             {gameId === 'stock_game' && '주식 게임'}
@@ -1650,7 +1650,7 @@ export default function Participant({ socket }) {
                         {gameId === 'janggi' && <JanggiGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'chess' && <ChessGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {(gameId === 'card_game' || gameId === 'card_poker') && <PokerGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
-                        {gameId === 'gostop' && <GoStopGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
+                        {(gameId === 'reaction_speed' || gameId === 'gostop') && <ReactionSpeedGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'othello' && <OthelloGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'memory_game' && <MemoryGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
                         {gameId === 'pass_bomb' && <PassBombGame socket={socket} pin={pin} nickname={nickname} groupId={groupId} baseScore={myScore} onScoreUpdate={(s) => setMyScore(s)} />}
@@ -4601,98 +4601,602 @@ export function PokerGame({ socket, pin, nickname, groupId, baseScore = 0, onSco
     );
 }
 
-export function GoStopGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
-    const HWATU = [
-        { name: '송학 (일광)', type: '광', points: 30 },
-        { name: '매조 (홍단)', type: '홍단', points: 20 },
-        { name: '사쿠라 (벚꽃)', type: '광', points: 30 },
-        { name: '등나무 (초단)', type: '초단', points: 10 },
-        { name: '창포 (열끗)', type: '멍텅구리', points: 15 },
-        { name: '장미 (피)', type: '피', points: 10 },
-        { name: '홍싸리 (홍단)', type: '홍단', points: 20 },
-        { name: '공산 (팔광)', type: '광', points: 30 },
-        { name: '국진 (쌍피)', type: '피', points: 20 },
-        { name: '단풍 (청단)', type: '청단', points: 20 },
-        { name: '오동 (똥광)', type: '광', points: 30 },
-        { name: '비 (비광)', type: '광', points: 25 }
-    ];
-    const [card, setCard] = useState(null);
+export function ReactionSpeedGame({ socket, pin, nickname = '플레이어', groupId, baseScore = 0, onScoreUpdate }) {
+    // READY: 대기/안내 | WAITING: 빨간색(기다림) | NOW: 초록색(터치!) | EARLY: 부정출발 | RESULT: 라운드결과 | FINAL: 최종평균결과
+    const [gameState, setGameState] = useState('READY');
+    const [reactionTime, setReactionTime] = useState(null);
+    const [history, setHistory] = useState([]); // [{ round: 1, time: 215, points: 80 }]
     const [totalScore, setTotalScore] = useState(0);
-    const [draws, setDraws] = useState(0);
+    const [round, setRound] = useState(1);
+    
+    // 라운드 수 사용자 자유 설정 (3회, 5회, 10회 등)
+    const [maxRounds, setMaxRounds] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem('quizrun_reaction_max_rounds');
+            return saved ? parseInt(saved, 10) : 5;
+        } catch (e) {
+            return 5;
+        }
+    });
+
+    const timerRef = useRef(null);
+    const startTimeRef = useRef(0);
     const initialBaseRef = useRef(baseScore);
 
     useEffect(() => {
         emitLiveGameStream({
-            socket, pin, gameId: 'gostop', nickname, groupId,
+            socket, pin, gameId: 'reaction_speed', nickname, groupId,
             baseScore: initialBaseRef.current, roundScore: 0,
             isAlive: true, isFinished: false, updateRoomScore: false,
-            gameData: { statusText: '🎴 화투 패 뒤집기 대기 중', progressPct: 5, draws: 0 }
+            gameData: { statusText: '⚡ 반응속도 측정 준비 중', progressPct: 10 }
         });
+
+        return () => {
+            if (timerRef.current) clearTimeout(timerRef.current);
+        };
     }, []);
-    
-    const drawCard = () => {
-        const picked = HWATU[Math.floor(Math.random() * HWATU.length)];
-        const nextTotal = totalScore + picked.points;
-        const nextDraws = draws + 1;
-        setCard(picked);
-        setTotalScore(nextTotal);
-        setDraws(nextDraws);
-        playSound(picked.type === '광' ? 'correct' : 'submit');
-        emitLiveGameStream({
-            socket, pin, gameId: 'gostop', nickname, groupId,
-            baseScore: initialBaseRef.current, roundScore: nextTotal,
-            isAlive: true, isFinished: false, onScoreUpdate,
-            gameData: {
-                statusText: `🎴 [${picked.type}] ${picked.name} 획득! (+${picked.points}점)`,
-                progressPct: Math.min(100, nextDraws * 10),
-                lastCard: picked.name,
-                draws: nextDraws
-            }
-        });
+
+    // 라운드 수 변경 핸들러
+    const changeMaxRounds = (n) => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        setMaxRounds(n);
+        try {
+            sessionStorage.setItem('quizrun_reaction_max_rounds', String(n));
+        } catch (e) {}
+        setRound(1);
+        setHistory([]);
+        setTotalScore(0);
+        setGameState('READY');
     };
-    
+
+    // 테스트 시작 (WAITING 단계)
+    const startTest = () => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        setGameState('WAITING');
+        setReactionTime(null);
+        playSound('countdown');
+
+        // 1.5초 ~ 4.2초 무작위 타이머
+        const randomDelay = Math.floor(Math.random() * 2700) + 1500;
+        timerRef.current = setTimeout(() => {
+            startTimeRef.current = performance.now();
+            setGameState('NOW');
+            playSound('submit');
+        }, randomDelay);
+    };
+
+    // 터치/클릭 인터랙션 핸들러
+    const handleInteract = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        if (gameState === 'READY') {
+            startTest();
+        } else if (gameState === 'WAITING') {
+            // 빨간색일 때 너무 일찍 누름 (부정 출발)
+            if (timerRef.current) clearTimeout(timerRef.current);
+            setGameState('EARLY');
+            playSound('wrong');
+            emitLiveGameStream({
+                socket, pin, gameId: 'reaction_speed', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: totalScore,
+                isAlive: true, isFinished: false,
+                gameData: { statusText: `⚠️ [${round}R] 부정 출발!`, progressPct: Math.round(((round - 1) / maxRounds) * 100) }
+            });
+        } else if (gameState === 'NOW') {
+            // 초록색일 때 누름 -> 성공!
+            const elapsed = Math.round(performance.now() - startTimeRef.current);
+            setReactionTime(elapsed);
+            playSound('correct');
+
+            // 점수 계산 (최대 100점)
+            let roundPoints = 20;
+            if (elapsed <= 190) roundPoints = 100;
+            else if (elapsed <= 230) roundPoints = 85;
+            else if (elapsed <= 280) roundPoints = 70;
+            else if (elapsed <= 340) roundPoints = 50;
+            else if (elapsed <= 420) roundPoints = 35;
+
+            const nextTotal = totalScore + roundPoints;
+            setTotalScore(nextTotal);
+
+            const nextHistory = [...history, { round, time: elapsed, points: roundPoints }];
+            setHistory(nextHistory);
+
+            const isDone = round >= maxRounds;
+            if (isDone) {
+                // 모든 라운드 완료 -> 최종 평균 결과 화면으로 직행!
+                setGameState('FINAL');
+                playSound('fanfare');
+            } else {
+                setGameState('RESULT');
+            }
+
+            emitLiveGameStream({
+                socket, pin, gameId: 'reaction_speed', nickname, groupId,
+                baseScore: initialBaseRef.current, roundScore: nextTotal,
+                isAlive: true, isFinished: isDone, onScoreUpdate,
+                gameData: {
+                    statusText: isDone 
+                        ? `🎉 최종 평균: ${Math.round(nextHistory.reduce((a, c) => a + c.time, 0) / nextHistory.length)}ms` 
+                        : `⚡ [${round}R] ${elapsed}ms (${roundPoints}점)`,
+                    progressPct: Math.round((round / maxRounds) * 100),
+                    lastTime: elapsed,
+                    round
+                }
+            });
+        } else if (gameState === 'EARLY') {
+            // 부정 출발 후 다시 시도
+            startTest();
+        } else if (gameState === 'RESULT') {
+            if (round < maxRounds) {
+                setRound(prev => prev + 1);
+                startTest();
+            } else {
+                setGameState('FINAL');
+            }
+        } else if (gameState === 'FINAL') {
+            // 최종 결과 확인 후 처음부터 재도전
+            setRound(1);
+            setHistory([]);
+            setTotalScore(0);
+            startTest();
+        }
+    };
+
+    // 등급 뱃지 & 피드백 텍스트
+    const getGradeInfo = (ms) => {
+        if (!ms) return { label: '측정 중', color: '#94a3b8', badge: '⚡' };
+        if (ms <= 190) return { label: '신(神)의 반응속도! 👑', color: '#8b5cf6', badge: '치타급 초인' };
+        if (ms <= 230) return { label: '빛의 속도! ⚡', color: '#10b981', badge: '프로게이머급' };
+        if (ms <= 280) return { label: '매우 빠른 반응! 🏃', color: '#2563eb', badge: '최상위권' };
+        if (ms <= 340) return { label: '평균적인 반응속도 👍', color: '#f59e0b', badge: '정상 성인' };
+        if (ms <= 420) return { label: '조금 늦었어요 🐢', color: '#ea580c', badge: '집중력 필요' };
+        return { label: '잠이 덜 깼나요? 🦥', color: '#ef4444', badge: '나무늘보' };
+    };
+
+    const avgTime = history.length > 0 
+        ? Math.round(history.reduce((acc, cur) => acc + cur.time, 0) / history.length) 
+        : null;
+    const bestTime = history.length > 0 
+        ? Math.min(...history.map(h => h.time)) 
+        : null;
+
+    // 상태별 배경 스타일
+    let bgStyle = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
+    if (gameState === 'WAITING') bgStyle = 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)';
+    if (gameState === 'NOW') bgStyle = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+    if (gameState === 'EARLY') bgStyle = 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)';
+    if (gameState === 'RESULT') bgStyle = 'linear-gradient(135deg, #312e81 0%, #1e1b4b 100%)';
+    if (gameState === 'FINAL') bgStyle = 'linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%)';
+
     return (
-        <div style={{ padding: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
-                {card ? (
-                    <div 
-                        className="animate-pop-in"
-                        style={{
-                            width: '90px',
-                            height: '140px',
-                            background: '#dc2626',
-                            border: '3px solid #7f1d1d',
-                            borderRadius: '8px',
+        <div style={{
+            width: '100%',
+            maxWidth: '560px',
+            margin: '0 auto',
+            padding: '12px',
+            boxSizing: 'border-box',
+            userSelect: 'none'
+        }}>
+            {/* 상단 스탯 바 & 라운드 선택기 */}
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 14px',
+                background: '#f8fafc',
+                border: '1.5px solid #e2e8f0',
+                borderRadius: '14px',
+                marginBottom: '12px',
+                fontSize: '0.86rem',
+                fontWeight: '800',
+                color: '#64748b',
+                gap: '8px',
+                flexWrap: 'wrap'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>라운드:</span>
+                    {(gameState === 'READY' || gameState === 'FINAL') ? (
+                        <div style={{ display: 'inline-flex', gap: '4px', background: '#e2e8f0', padding: '2px', borderRadius: '8px' }}>
+                            {[3, 5, 10].map(cnt => (
+                                <button
+                                    key={cnt}
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); changeMaxRounds(cnt); }}
+                                    style={{
+                                        border: 'none',
+                                        padding: '3px 8px',
+                                        fontSize: '0.78rem',
+                                        fontWeight: '900',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        background: maxRounds === cnt ? '#2563eb' : 'transparent',
+                                        color: maxRounds === cnt ? '#ffffff' : '#475569',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    {cnt}R
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <strong style={{ color: '#2563eb' }}>{Math.min(round, maxRounds)} / {maxRounds}R</strong>
+                    )}
+                </div>
+
+                {avgTime && <span>평균: <strong style={{ color: '#2563eb' }}>{avgTime}ms</strong></span>}
+                {bestTime && <span>최고: <strong style={{ color: '#16a34a' }}>{bestTime}ms</strong></span>}
+                <span>누적 점수: <strong style={{ color: '#ea580c' }}>+{totalScore}점</strong></span>
+            </div>
+
+            {/* 메인 반응속도 터치 영역 */}
+            <div
+                onClick={handleInteract}
+                onTouchStart={handleInteract}
+                style={{
+                    width: '100%',
+                    minHeight: '380px',
+                    borderRadius: '24px',
+                    background: bgStyle,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px',
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    boxShadow: '0 12px 30px rgba(0,0,0,0.25)',
+                    color: '#ffffff',
+                    textAlign: 'center',
+                    touchAction: 'manipulation',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}
+            >
+                {/* 1. READY STATE (시작 안내 및 라운드 설정) */}
+                {gameState === 'READY' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                            width: '72px',
+                            height: '72px',
+                            borderRadius: '50%',
+                            background: 'rgba(255, 255, 255, 0.12)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '2.5rem',
+                            boxShadow: '0 0 20px rgba(245, 158, 11, 0.35)',
+                            border: '2px solid rgba(245, 158, 11, 0.5)'
+                        }}>
+                            ⚡
+                        </div>
+                        <h2 style={{ fontSize: '1.6rem', fontWeight: '950', margin: 0, letterSpacing: '-0.5px' }}>
+                            반응속도 테스트
+                        </h2>
+                        <p style={{ fontSize: '0.94rem', color: '#cbd5e1', margin: 0, lineHeight: 1.5, maxWidth: '290px' }}>
+                            화면이 <strong style={{ color: '#34d399' }}>초록색</strong>으로 변하는 찰나에<br />
+                            즉시 화면을 터치(클릭)하세요!
+                        </p>
+
+                        {/* 라운드 수 선택 바 */}
+                        <div style={{
                             display: 'flex',
                             flexDirection: 'column',
-                            justifyContent: 'space-between',
-                            padding: '8px',
-                            color: 'white',
-                            fontWeight: 'bold',
-                            boxShadow: '0 10px 15px rgba(220,38,38,0.2)'
-                        }}
-                    >
-                        <span style={{ fontSize: '0.8rem', textAlign: 'left' }}>{card.type}</span>
-                        <span style={{ fontSize: '1.1rem', textAlign: 'center', margin: 'auto 0' }}>{card.name}</span>
-                        <span style={{ fontSize: '0.9rem', textAlign: 'right' }}>+{card.points}점</span>
+                            alignItems: 'center',
+                            gap: '6px',
+                            marginTop: '4px',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            padding: '8px 14px',
+                            borderRadius: '12px',
+                            border: '1px solid rgba(255, 255, 255, 0.15)'
+                        }}>
+                            <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: '800' }}>목표 라운드 수 선택:</span>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                {[3, 5, 10].map(cnt => (
+                                    <button
+                                        key={cnt}
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); changeMaxRounds(cnt); }}
+                                        style={{
+                                            border: maxRounds === cnt ? '1.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.2)',
+                                            padding: '4px 12px',
+                                            fontSize: '0.82rem',
+                                            fontWeight: '900',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            background: maxRounds === cnt ? '#2563eb' : 'rgba(255,255,255,0.1)',
+                                            color: '#ffffff',
+                                            transition: 'all 0.15s ease'
+                                        }}
+                                    >
+                                        {cnt}회 {cnt === 5 ? '(추천)' : ''}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div style={{
+                            marginTop: '8px',
+                            padding: '10px 24px',
+                            background: '#f59e0b',
+                            color: '#0f172a',
+                            borderRadius: '12px',
+                            fontWeight: '900',
+                            fontSize: '1.05rem',
+                            boxShadow: '0 4px 14px rgba(245, 158, 11, 0.4)'
+                        }}>
+                            화면 터치하여 {maxRounds}R 시작 👉
+                        </div>
                     </div>
-                ) : (
-                    <div style={{ width: '90px', height: '140px', background: '#cbd5e1', border: '3px dashed #94a3b8', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 'bold' }}>
-                        화투패
+                )}
+
+                {/* 2. WAITING STATE (빨간색) */}
+                {gameState === 'WAITING' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                        <div style={{ fontSize: '3rem', animation: 'pulse 1s infinite' }}>🔴</div>
+                        <h2 style={{ fontSize: '1.7rem', fontWeight: '950', margin: 0 }}>
+                            기다리세요...
+                        </h2>
+                        <p style={{ fontSize: '0.98rem', color: '#fecaca', margin: 0, fontWeight: '700' }}>
+                            초록색으로 바뀔 때까지 기다리세요!<br />
+                            <span style={{ fontSize: '0.85rem', color: '#fca5a5' }}>(미리 누르면 부정 출발!)</span>
+                        </p>
+                    </div>
+                )}
+
+                {/* 3. NOW STATE (초록색) */}
+                {gameState === 'NOW' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                        <div style={{ fontSize: '3.5rem', animation: 'bounce 0.4s infinite' }}>⚡</div>
+                        <h2 style={{ fontSize: '2.4rem', fontWeight: '950', margin: 0, textShadow: '0 2px 10px rgba(0,0,0,0.3)' }}>
+                            지금 터치하세요!!
+                        </h2>
+                        <span style={{ fontSize: '1.1rem', fontWeight: '900', letterSpacing: '2px', opacity: 0.9 }}>
+                            CLICK NOW!
+                        </span>
+                    </div>
+                )}
+
+                {/* 4. EARLY STATE (부정 출발) */}
+                {gameState === 'EARLY' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ fontSize: '3rem' }}>⚠️</div>
+                        <h2 style={{ fontSize: '1.7rem', fontWeight: '950', margin: 0 }}>
+                            너무 빨라요!
+                        </h2>
+                        <p style={{ fontSize: '0.92rem', color: '#ffedd5', margin: 0, lineHeight: 1.5 }}>
+                            아직 초록색으로 바뀌지 않았습니다.<br />
+                            조금만 더 침착하게 집중해 보세요!
+                        </p>
+                        <div style={{
+                            marginTop: '8px',
+                            padding: '8px 20px',
+                            background: 'rgba(255,255,255,0.2)',
+                            borderRadius: '10px',
+                            fontWeight: '850',
+                            fontSize: '0.95rem'
+                        }}>
+                            화면을 터치해 다시 시도 ↻
+                        </div>
+                    </div>
+                )}
+
+                {/* 5. RESULT STATE (중간 라운드 결과) */}
+                {gameState === 'RESULT' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', width: '100%' }}>
+                        <div style={{
+                            fontSize: '0.82rem',
+                            fontWeight: '900',
+                            background: 'rgba(255,255,255,0.15)',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            letterSpacing: '1px'
+                        }}>
+                            ROUND {round} / {maxRounds}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                            <span style={{
+                                fontSize: '4rem',
+                                fontWeight: '950',
+                                lineHeight: 1,
+                                letterSpacing: '-2px',
+                                textShadow: '0 4px 15px rgba(0,0,0,0.4)',
+                                color: '#ffffff'
+                            }}>
+                                {reactionTime}
+                            </span>
+                            <span style={{ fontSize: '1.4rem', fontWeight: '800', color: '#cbd5e1' }}>ms</span>
+                        </div>
+
+                        {/* 등급 피드백 뱃지 */}
+                        {(() => {
+                            const grade = getGradeInfo(reactionTime);
+                            return (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                    <span style={{
+                                        fontSize: '1.15rem',
+                                        fontWeight: '950',
+                                        color: '#facc15',
+                                        textShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                                    }}>
+                                        {grade.label}
+                                    </span>
+                                    <span style={{
+                                        fontSize: '0.78rem',
+                                        fontWeight: '800',
+                                        background: 'rgba(255,255,255,0.15)',
+                                        padding: '2px 10px',
+                                        borderRadius: '10px',
+                                        color: '#e2e8f0'
+                                    }}>
+                                        {grade.badge} (이번 획득 +{history[history.length - 1]?.points || 0}점)
+                                    </span>
+                                </div>
+                            );
+                        })()}
+
+                        <div style={{
+                            marginTop: '12px',
+                            padding: '10px 24px',
+                            background: '#3b82f6',
+                            color: '#ffffff',
+                            borderRadius: '12px',
+                            fontWeight: '900',
+                            fontSize: '1rem',
+                            boxShadow: '0 4px 14px rgba(0,0,0,0.3)'
+                        }}>
+                            다음 라운드로 ({round + 1}/{maxRounds}) 👉
+                        </div>
+                    </div>
+                )}
+
+                {/* 6. FINAL STATE (모든 라운드 완료: 최종 평균 기록 피날레 대화면) */}
+                {gameState === 'FINAL' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', width: '100%' }}>
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '0.85rem',
+                            fontWeight: '900',
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: '#ffffff',
+                            padding: '4px 14px',
+                            borderRadius: '20px',
+                            letterSpacing: '0.5px',
+                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
+                        }}>
+                            <span>🏆 {maxRounds}라운드 완료! 최종 기록</span>
+                        </div>
+
+                        {/* 메인 거대 평균 반응속도 표시 */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '4px 0' }}>
+                            <span style={{ fontSize: '0.9rem', color: '#93c5fd', fontWeight: '800' }}>
+                                최종 평균 반응속도
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                                <span style={{
+                                    fontSize: '4.2rem',
+                                    fontWeight: '950',
+                                    lineHeight: 1,
+                                    letterSpacing: '-2px',
+                                    color: '#60a5fa',
+                                    textShadow: '0 4px 18px rgba(96, 165, 250, 0.5)'
+                                }}>
+                                    {avgTime}
+                                </span>
+                                <span style={{ fontSize: '1.5rem', fontWeight: '800', color: '#cbd5e1' }}>ms</span>
+                            </div>
+                        </div>
+
+                        {/* 종합 평가 등급 뱃지 */}
+                        {(() => {
+                            const grade = getGradeInfo(avgTime);
+                            return (
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: 'rgba(255, 255, 255, 0.1)',
+                                    padding: '8px 20px',
+                                    borderRadius: '16px',
+                                    border: '1px solid rgba(255, 255, 255, 0.15)'
+                                }}>
+                                    <span style={{
+                                        fontSize: '1.25rem',
+                                        fontWeight: '950',
+                                        color: '#facc15',
+                                        textShadow: '0 2px 10px rgba(250, 204, 21, 0.4)'
+                                    }}>
+                                        종합 평가: {grade.label}
+                                    </span>
+                                    <div style={{ display: 'flex', gap: '12px', fontSize: '0.82rem', color: '#e2e8f0', fontWeight: '800' }}>
+                                        <span>최고 기록: <strong style={{ color: '#34d399' }}>{bestTime}ms</strong></span>
+                                        <span>•</span>
+                                        <span>총 획득 점수: <strong style={{ color: '#fb923c' }}>+{totalScore}점</strong></span>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* 재도전 버튼 */}
+                        <div style={{
+                            marginTop: '10px',
+                            padding: '11px 26px',
+                            background: '#10b981',
+                            color: '#ffffff',
+                            borderRadius: '14px',
+                            fontWeight: '900',
+                            fontSize: '1.05rem',
+                            boxShadow: '0 4px 16px rgba(16, 185, 129, 0.45)'
+                        }}>
+                            다시 도전하기 ({maxRounds}R) ↺
+                        </div>
                     </div>
                 )}
             </div>
-            
-            <button onClick={drawCard} className="primary-btn" style={{ width: '100%', background: '#dc2626', color: 'white', border: 'none', padding: '12px' }}>
-                화투 패 뒤집기! 🎴
-            </button>
-            
-            <div style={{ marginTop: '1.5rem', background: '#fff5f5', border: '2px solid #fca5a5', borderRadius: '12px', padding: '1rem' }}>
-                <span>이번 게임 획득 점수: <strong style={{ color: '#dc2626', fontSize: '1.5rem' }}>+{totalScore}점</strong></span>
-            </div>
+
+            {/* 하단 라운드별 상세 기록 히스토리 목록 */}
+            {history.length > 0 && (
+                <div style={{
+                    marginTop: '14px',
+                    background: '#ffffff',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: '14px',
+                    padding: '12px 14px',
+                    boxSizing: 'border-box'
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '0.82rem',
+                        fontWeight: '900',
+                        color: '#64748b',
+                        marginBottom: '8px'
+                    }}>
+                        <span>📊 라운드별 상세 반응속도</span>
+                        {avgTime && (
+                            <span style={{ color: '#0f172a' }}>
+                                평균: <strong style={{ color: '#2563eb', fontSize: '0.95rem' }}>{avgTime}ms</strong>
+                            </span>
+                        )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {history.map((h, idx) => (
+                            <div
+                                key={idx}
+                                style={{
+                                    flex: 1,
+                                    minWidth: '60px',
+                                    padding: '6px 8px',
+                                    borderRadius: '8px',
+                                    background: h.time === bestTime ? '#ecfdf5' : '#f8fafc',
+                                    border: h.time === bestTime ? '1.5px solid #10b981' : '1px solid #e2e8f0',
+                                    textAlign: 'center'
+                                }}
+                            >
+                                <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800' }}>
+                                    {h.round}R {h.time === bestTime ? '🏆' : ''}
+                                </div>
+                                <div style={{ fontSize: '0.92rem', fontWeight: '950', color: h.time === bestTime ? '#059669' : '#1e293b' }}>
+                                    {h.time}ms
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+export const GoStopGame = ReactionSpeedGame;
 
 export function OthelloGame({ socket, pin, nickname, groupId, baseScore = 0, onScoreUpdate }) {
     const [board, setBoard] = useState(Array(36).fill(null)); // 6x6 board

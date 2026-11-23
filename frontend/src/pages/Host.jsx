@@ -21,6 +21,7 @@ import {
     JanggiGame, 
     ChessGame, 
     PokerGame, 
+    ReactionSpeedGame, 
     GoStopGame, 
     OthelloGame, 
     BrickBreakerGame,
@@ -2125,7 +2126,7 @@ export default function Host({ socket }) {
                                                 <PokerGame />
                                             </div>
                                         )}
-                                        {gameId === 'gostop' && <GoStopGame />}
+                                        {(gameId === 'reaction_speed' || gameId === 'gostop') && <ReactionSpeedGame />}
                                         {gameId === 'othello' && <OthelloGame />}
                                         {gameId === 'tetris' && <TetrisGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
                                         {gameId === 'brick_breaker' && <BrickBreakerGame socket={socket} pin={location.state?.pin || pin} isHost={true} />}
