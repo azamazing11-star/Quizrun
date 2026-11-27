@@ -901,6 +901,32 @@ app.all(['/api/git/sync', '/api/git-sync'], async (req, res) => {
   }
 });
 
+// 5. Manual Render.com Deploy Hook Trigger (only when user explicitly clicks Render Deploy)
+app.post('/api/render-deploy', async (req, res) => {
+  const hookUrl = String(req.body?.hookUrl || '').trim();
+  if (!hookUrl.startsWith('https://api.render.com/deploy/')) {
+    return res.status(400).json({
+      success: false,
+      message: '올바른 Render Deploy Hook 주소(https://api.render.com/deploy/...)를 입력해 주세요.'
+    });
+  }
+  try {
+    const r = await fetch(hookUrl, { method: 'POST' });
+    return res.status(r.ok ? 200 : 500).json({
+      success: r.ok,
+      status: r.status,
+      message: r.ok
+        ? 'Render 최종 사이트 배포가 시작되었습니다! (약 1~2분 후 반영됩니다)'
+        : `Render 배포 요청 실패 (HTTP ${r.status})`
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: `Render 배포 요청 실패: ${err.message || err}`
+    });
+  }
+});
+
 const server = http.createServer(app);
 server.keepAliveTimeout = 120000;
 server.headersTimeout = 125000;
@@ -1025,6 +1051,9 @@ function loadPersistedData(filePath, defaultValue = {}) {
 let autoGitBackupTimer = null;
 
 function scheduleAutoGitBackup() {
+  // Disabled to prevent burning Render.com free build minutes on every data save.
+  // GitHub push & Render deploy now happen ONLY when the user clicks the manual GitHub Sync button.
+  return;
   if (autoGitBackupTimer) clearTimeout(autoGitBackupTimer);
   autoGitBackupTimer = setTimeout(async () => {
     if (isGitOperating) return;

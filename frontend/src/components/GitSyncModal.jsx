@@ -44,7 +44,7 @@ import {
 } from '../services/cloudSync';
 
 export default function GitSyncModal({ isOpen, onClose }) {
-    const [activeTab, setActiveTab] = useState('repo'); // 'repo' | 'cloud' | 'json'
+    const [activeTab, setActiveTab] = useState('cloud'); // 'cloud' | 'json'
 
     // Supabase 클라우드 설정 상태
     const [config, setConfig] = useState({ url: '', anonKey: '' });
@@ -69,6 +69,9 @@ export default function GitSyncModal({ isOpen, onClose }) {
     const [statusMessage, setStatusMessage] = useState(null);
     const [showManualOptions, setShowManualOptions] = useState(false);
     const [isSyncingAll, setIsSyncingAll] = useState(false);
+    const [renderHookUrl, setRenderHookUrl] = useState(() => localStorage.getItem('quizrun_render_deploy_hook') || '');
+    const [showHookBox, setShowHookBox] = useState(() => !localStorage.getItem('quizrun_render_deploy_hook'));
+    const [renderDeployLoading, setRenderDeployLoading] = useState(false);
 
     const jsonFileInputRef = useRef(null);
 
@@ -164,9 +167,25 @@ export default function GitSyncModal({ isOpen, onClose }) {
 
         try {
             const res = await uploadCurrentDataToCloud((msg) => setSyncProgress(msg));
+            let gitNote = '';
+            if (isLocal) {
+                try {
+                    setSyncProgress('GitHub 저장소에도 함께 백업 중...');
+                    await syncLocalWithBackend();
+                    const gRes = await fetch(`${apiBase}/api/git/sync`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: 'Quizrun Cloud+GitHub Unified Sync' })
+                    });
+                    const gData = await gRes.json().catch(() => ({}));
+                    if (gData.success) gitNote = ' + GitHub 백업 완료';
+                } catch (ge) {
+                    console.warn('Optional GitHub sync skipped:', ge);
+                }
+            }
             setSyncMessage({
                 type: 'success',
-                text: `클라우드 최신화 완료! (${formatTime(res.timestamp)} 저장됨 · 총 ${res.totalChunks}개 블록 약 ${res.sizeMB}MB 안전 저장)`
+                text: `클라우드${gitNote} 최신화 완료! (${formatTime(res.timestamp)} 저장됨 · 약 ${res.sizeMB}MB · Render 자동 빌드 안 함)`
             });
             checkStatus();
         } catch (err) {
@@ -207,6 +226,16 @@ export default function GitSyncModal({ isOpen, onClose }) {
         setSyncProgress('클라우드 데이터 가져오는 중...');
 
         try {
+            if (isLocal) {
+                try {
+                    setSyncProgress('GitHub 최신 코드 확인 중...');
+                    await fetch(`${apiBase}/api/git/pull`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ force: false })
+                    });
+                } catch (ge) {}
+            }
             await downloadDataFromCloud((msg) => setSyncProgress(msg));
             alert('✅ 최신 데이터를 성공적으로 가져왔습니다! 최신 상태로 새로고침합니다.');
             window.location.reload();
@@ -214,6 +243,48 @@ export default function GitSyncModal({ isOpen, onClose }) {
             alert('데이터 가져오기 오류: ' + err.message);
             setSyncLoading(false);
             setSyncProgress(null);
+        }
+    };
+
+    const handleSaveRenderHook = () => {
+        const val = (renderHookUrl || '').trim();
+        if (!val.startsWith('https://api.render.com/deploy/')) {
+            alert('⚠️ 올바른 Render Deploy Hook 주소(https://api.render.com/deploy/...)를 입력해 주세요.');
+            return;
+        }
+        localStorage.setItem('quizrun_render_deploy_hook', val);
+        setRenderHookUrl(val);
+        setShowHookBox(false);
+        setSyncMessage({ type: 'success', text: 'Render Deploy Hook 주소가 저장되었습니다!' });
+    };
+
+    const handleTriggerRenderDeploy = async () => {
+        const hookUrl = (localStorage.getItem('quizrun_render_deploy_hook') || '').trim();
+        if (!hookUrl) {
+            setShowHookBox(true);
+            alert('먼저 Render 대시보드(quizrun24 → Settings → Deploy Hook)에서 복사한 주소를 입력·저장해 주세요.');
+            return;
+        }
+        if (!window.confirm('🚀 지금 Quizrun Render 최종 웹사이트를 빌드·배포하시겠습니까?\n\n※ 먼저 [1단계: 올리기 (클라우드+GitHub)]를 완료하셨는지 확인해 주세요.\n※ Render 무료 빌드 시간이 1회 사용됩니다.')) {
+            return;
+        }
+        setRenderDeployLoading(true);
+        try {
+            const res = await fetch(`${apiBase}/api/render-deploy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hookUrl })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.success) {
+                setSyncMessage({ type: 'success', text: data.message || 'Render 최종 배포가 시작되었습니다! (약 1~2분 후 반영)' });
+            } else {
+                setSyncMessage({ type: 'error', text: 'Render 배포 실패: ' + (data.message || 'Hook 주소를 확인해 주세요.') });
+            }
+        } catch (e) {
+            setSyncMessage({ type: 'error', text: '로컬 서버(Quizrun_Start.bat)가 실행 중인지 확인해 주세요.' });
+        } finally {
+            setRenderDeployLoading(false);
         }
     };
 
@@ -479,27 +550,8 @@ export default function GitSyncModal({ isOpen, onClose }) {
                             fontWeight: '800'
                         }}
                     >
-                        <Cloud size={16} />
-                        <span>원클릭 데이터 동기화 (Supabase)</span>
-                    </button>
-
-                    <button
-                        onClick={() => setActiveTab('repo')}
-                        style={{
-                            padding: '0.75rem 0.2rem',
-                            border: 'none',
-                            background: 'none',
-                            cursor: 'pointer',
-                            borderBottom: activeTab === 'repo' ? '2.5px solid #4f46e5' : '2.5px solid transparent',
-                            color: activeTab === 'repo' ? '#4f46e5' : '#64748b',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            fontWeight: '800'
-                        }}
-                    >
                         <Zap size={16} />
-                        <span>GitHub 코드 동기화</span>
+                        <span>통합 동기화 &amp; Render 배포</span>
                     </button>
 
                     <button
@@ -553,10 +605,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                 </div>
                             )}
 
-                            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '10px 14px', fontSize: '0.75rem', color: '#92400e', lineHeight: '1.4' }}>
-                                💡 <strong>안내</strong>: 이 탭은 Onrender 웹사이트 배포가 아닌 <strong>외부 Supabase DB 백업용</strong>입니다. Onrender 라이브 사이트(quizrun24.onrender.com)를 최신화하시려면 첫 번째 <strong>[GitHub & Onrender 최신화]</strong> 탭의 최신화 버튼을 이용해 주세요.
-                            </div>
-
+                            
                             {/* 메인 스마트 액션 카드 */}
                             <div style={{
                                 background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -571,7 +620,7 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         <Zap size={16} color="#38bdf8" />
-                                        <span style={{ fontSize: '0.88rem', fontWeight: '900' }}>원클릭 스마트 데이터 동기화</span>
+                                        <span style={{ fontSize: '0.88rem', fontWeight: '900' }}>1단계: 클라우드 + GitHub 통합 동기화 (무제한 · 빌드 없음)</span>
                                     </div>
                                     <button
                                         onClick={checkStatus}
@@ -678,6 +727,70 @@ export default function GitSyncModal({ isOpen, onClose }) {
                                     </button>
                                 </div>
                             </div>
+
+                            {/* 2단계: Render 최종 사이트 수동 배포 카드 (로컬 전용) */}
+                            {isLocal && (
+                                <div style={{
+                                    background: 'linear-gradient(135deg, #064e3b 0%, #0f172a 100%)',
+                                    color: 'white',
+                                    borderRadius: '18px',
+                                    padding: '1.05rem 1.15rem',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.75rem',
+                                    border: '1px solid #059669'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                        <div>
+                                            <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '900', color: '#6ee7b7', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span>🚀</span> <span>2단계: Render 최종 사이트 배포하기 (필요할 때만 1회 빌드)</span>
+                                            </h4>
+                                            <p style={{ margin: '3px 0 0', fontSize: '0.73rem', color: '#d1fae5', lineHeight: '1.4' }}>
+                                                최종 웹사이트(quizrun24)에 새 기능을 반영할 때만 눌러 무료 빌드 시간을 아끼세요.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowHookBox(prev => !prev)}
+                                            style={{ flexShrink: 0, padding: '4px 9px', background: 'rgba(255,255,255,0.12)', color: '#a7f3d0', border: '1px solid rgba(167,243,208,0.35)', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer' }}
+                                        >
+                                            ⚙️ Hook 설정
+                                        </button>
+                                    </div>
+
+                                    {showHookBox && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.28)', padding: '10px', borderRadius: '10px', border: '1px solid rgba(16,185,129,0.35)' }}>
+                                            <label style={{ fontSize: '0.72rem', color: '#a7f3d0', fontWeight: '700' }}>Render Deploy Hook URL (최초 1회만 입력)</label>
+                                            <div style={{ display: 'flex', gap: '6px' }}>
+                                                <input
+                                                    type="text"
+                                                    value={renderHookUrl}
+                                                    onChange={(e) => setRenderHookUrl(e.target.value)}
+                                                    placeholder="https://api.render.com/deploy/srv-..."
+                                                    style={{ flex: 1, padding: '7px 10px', borderRadius: '8px', border: '1px solid #34d399', background: '#0f172a', color: 'white', fontSize: '0.75rem', outline: 'none' }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleSaveRenderHook}
+                                                    style={{ padding: '7px 12px', background: '#10b981', color: '#022c22', border: 'none', borderRadius: '8px', fontWeight: '800', fontSize: '0.75rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                                >
+                                                    저장
+                                                </button>
+                                            </div>
+                                            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>위치: Render 대시보드 → quizrun24 → Settings → Deploy Hook 복사</span>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={handleTriggerRenderDeploy}
+                                        disabled={renderDeployLoading}
+                                        style={{ padding: '12px', background: '#10b981', color: '#022c22', border: 'none', borderRadius: '12px', fontWeight: '900', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                    >
+                                        <span>{renderDeployLoading ? '🔄 Render 최종 배포 요청 중...' : '🚀 Render 최종 배포하기 (실제 사이트 반영)'}</span>
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Supabase 설정 아코디언 */}
                             <div style={{ border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden', background: '#f8fafc' }}>
